@@ -1,4 +1,4 @@
-# NanoProg Language Specification
+# nanolang Language Specification
 
 ## Type System
 
@@ -6,17 +6,15 @@
 
 A value in NanoProg has a **category** indicated by a prefix sigil:
 
-| Sigil | Category   | Description                          |
+| Sigil | Category   | Description                         |
 |-------|-----------|--------------------------------------|
-| `%`   | Data      | Plain value (default, sigil optional)|
+| `%`   | Data      | Plain value                          |
 | `&`   | Reference | Reference to a value                 |
 | `^`   | Iterator  | Iterator into a container            |
 | `@`   | Lambda    | Callable function reference          |
 | `#`   | Enum      | Enumeration value                    |
 | `!`   | Bang      | Trigger signal (no data)             |
 | `~`   | Event     | Event source                         |
-
-When no sigil is specified, `%` (data) is assumed.
 
 ### Scalar Types
 
