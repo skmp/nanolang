@@ -130,9 +130,21 @@ bool imgui_color_edit4(std::string label, f32& r, f32& g, f32& b, f32& a) {
 }
 
 // Plotting
-void imgui_plot_lines(std::string label, std::vector<f32>& values, std::string overlay) {
-    ImGui::PlotLines(label.c_str(), values.data(), (int)values.size(), 0,
-                     overlay.empty() ? nullptr : overlay.c_str());
+void imgui_plot_lines(std::string label, std::vector<f32>& values, s32 offset, s32 count, f32 scale_min, f32 scale_max, std::string overlay) {
+    int safe_offset = std::clamp(offset, 0, (int)values.size());
+    int safe_count = std::clamp(count, 0, (int)values.size() - safe_offset);
+    ImGui::PlotLines(label.c_str(), values.data() + safe_offset, safe_count, 0,
+                     overlay.empty() ? nullptr : overlay.c_str(),
+                     scale_min, scale_max);
+}
+
+void imgui_plot_lines_fill(std::string label, std::vector<f32>& values, s32 offset, s32 count, f32 scale_min, f32 scale_max, std::string overlay) {
+    auto avail = ImGui::GetContentRegionAvail();
+    int safe_offset = std::clamp(offset, 0, (int)values.size());
+    int safe_count = std::clamp(count, 0, (int)values.size() - safe_offset);
+    ImGui::PlotLines(label.c_str(), values.data() + safe_offset, safe_count, 0,
+                     overlay.empty() ? nullptr : overlay.c_str(),
+                     scale_min, scale_max, avail);
 }
 
 

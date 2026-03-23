@@ -115,7 +115,11 @@ args = ["imgui_color_edit4", "(label:string r:&f32 g:&f32 b:&f32 a:&f32)", "->",
 # Plotting
 [[node]]
 type = "ffi"
-args = ["imgui_plot_lines", "(label:string values:&vector<f32> overlay:string)", "->", "void"]
+args = ["imgui_plot_lines", "(label:string values:&vector<f32> offset:s32 count:s32 scale_min:f32 scale_max:f32 overlay:string)", "->", "void"]
+
+[[node]]
+type = "ffi"
+args = ["imgui_plot_lines_fill", "(label:string values:&vector<f32> offset:s32 count:s32 scale_min:f32 scale_max:f32 overlay:string)", "->", "void"]
 
 # Popups
 [[node]]

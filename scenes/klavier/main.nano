@@ -335,7 +335,7 @@ connections = ["cast_delay_node.out0->plot_delay_node.1", "cast_delay_node.out0-
 [[node]]
 guid = "plot_delay_node"
 type = "call!"
-args = ["$imgui_plot_lines", "\"Delay Line\"", "$0", "\"\""]
+args = ["$imgui_plot_lines_fill", "\"Delay Line\"", "$0", "0", "$delay_line_size", "-1.0f", "1.0f", "\"\""]
 position = [4945.95, 1869.43]
 connections = ["plot_delay_node.bang0->gui_end_node.bang_in0"]
 
