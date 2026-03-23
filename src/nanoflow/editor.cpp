@@ -14,6 +14,7 @@
 #ifndef _WIN32
 #include <signal.h>
 #include <sys/wait.h>
+#include <unistd.h>
 #endif
 
 static constexpr float NODE_ROUNDING = 4.0f;
