@@ -349,6 +349,11 @@ bool load_nano(const std::string& path, FlowGraph& graph) {
 void save_nano_stream(std::ostream& f, const FlowGraph& graph) {
     f << "version = \"nanoprog@0\"\n\n";
 
+    f << "[viewport]\n";
+    f << "x = " << graph.viewport_x << "\n";
+    f << "y = " << graph.viewport_y << "\n";
+    f << "zoom = " << graph.viewport_zoom << "\n\n";
+
     for (auto& node : graph.nodes) {
         if (node.imported) continue; // Don't save imported nodes — they're loaded from nanostd
         f << "[[node]]\n";
@@ -398,10 +403,6 @@ void save_nano_stream(std::ostream& f, const FlowGraph& graph) {
         f << "\n";
     }
 
-    f << "[viewport]\n";
-    f << "x = " << graph.viewport_x << "\n";
-    f << "y = " << graph.viewport_y << "\n";
-    f << "zoom = " << graph.viewport_zoom << "\n";
 }
 
 std::string save_nano_string(const FlowGraph& graph) {
