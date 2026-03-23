@@ -210,7 +210,7 @@ bool GraphInference::infer_expr_nodes(FlowGraph& graph) {
         // - declarations (decl_type, decl_var, etc.)
         // - type-based nodes where args are type names, not expressions (new, event!)
         // - nodes with no args
-        bool needs_type_propagation = (node.type == "dup" || node.type == "select" || node.type == "next" || node.type == "void" || node.type == "discard");
+        bool needs_type_propagation = (node.type == "dup" || node.type == "select" || node.type == "next" || node.type == "void" || node.type == "discard" || node.type == "str");
         bool has_custom_output = needs_type_propagation ||
             node.type == "append!" || node.type == "erase" || node.type == "erase!" ||
             node.type == "decl_local" || node.type == "call" || node.type == "call!" ||
@@ -316,6 +316,13 @@ bool GraphInference::infer_expr_nodes(FlowGraph& graph) {
         if (node.type == "void") {
             if (!node.outputs.empty() && !node.outputs[0].resolved_type) {
                 node.outputs[0].resolved_type = pool.t_void;
+                changed = true;
+            }
+        }
+
+        if (node.type == "str") {
+            if (!node.outputs.empty() && !node.outputs[0].resolved_type) {
+                node.outputs[0].resolved_type = pool.intern("string");
                 changed = true;
             }
         }
@@ -800,12 +807,42 @@ bool GraphInference::infer_expr_nodes(FlowGraph& graph) {
                         node.error = std::string(node.type) + ": first argument must be a function (got " +
                             type_to_string(fn_expr->resolved_type) + ")";
                 } else {
-                    // Set input pin types from function args
-                    for (int j = 0; j < (int)fn_resolved->func_args.size() && j < (int)node.inputs.size(); j++) {
-                        if (fn_resolved->func_args[j].type) {
-                            if (!node.inputs[j].resolved_type || node.inputs[j].resolved_type->is_generic) {
-                                node.inputs[j].resolved_type = fn_resolved->func_args[j].type;
-                                changed = true;
+                    // Set input pin types from function args.
+                    // $N ref pins map to specific inline arg positions, not to fn_arg[0..N].
+                    // Build a map from pin name to the fn arg index it corresponds to.
+                    {
+                        auto tokens = tokenize_args(node.args, false);
+                        for (int ai = 0; ai < (int)tokens.size() - 1 && ai < (int)fn_resolved->func_args.size(); ai++) {
+                            auto& tok = tokens[ai + 1]; // skip fn name
+                            // Check for bare $N ref
+                            if (tok.size() >= 2 && tok[0] == '$' && tok[1] >= '0' && tok[1] <= '9') {
+                                size_t end = 1;
+                                while (end < tok.size() && tok[end] >= '0' && tok[end] <= '9') end++;
+                                if (end == tok.size()) {
+                                    // Bare $N — find the pin and set its type
+                                    std::string pin_name = tok.substr(1);
+                                    for (auto& p : node.inputs) {
+                                        if (p.name == pin_name && fn_resolved->func_args[ai].type) {
+                                            if (!p.resolved_type || p.resolved_type->is_generic) {
+                                                p.resolved_type = fn_resolved->func_args[ai].type;
+                                                changed = true;
+                                            }
+                                        }
+                                    }
+                                }
+                                // $N.field etc.: don't set pin type from fn arg
+                            }
+                        }
+                        // Also set types for remaining descriptor pins (after inline args)
+                        int num_inline = (int)tokens.size() - 1;
+                        int slot_count = (int)scan_slots(node.args).slots.size();
+                        for (int pi = slot_count; pi < (int)node.inputs.size(); pi++) {
+                            int fn_arg_idx = num_inline + (pi - slot_count);
+                            if (fn_arg_idx < (int)fn_resolved->func_args.size() && fn_resolved->func_args[fn_arg_idx].type) {
+                                if (!node.inputs[pi].resolved_type || node.inputs[pi].resolved_type->is_generic) {
+                                    node.inputs[pi].resolved_type = fn_resolved->func_args[fn_arg_idx].type;
+                                    changed = true;
+                                }
                             }
                         }
                     }

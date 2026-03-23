@@ -38,12 +38,14 @@ static const PortDesc P_SELECT_IN[]  = {{"condition", "boolean selector", PortKi
 static const PortDesc P_LOCAL_IN[]   = {{"name", "variable name"}, {"type", "variable type"}};
 static const PortDesc P_ITERATE_IN[] = {{"collection", "collection to iterate over", PortKind::Data, "collection"}, {"fn", "it=fn(it); while it!=end", PortKind::Lambda, "lambda"}};
 static const PortDesc P_LOCK_IN[]   = {{"mutex", "mutex to lock", PortKind::Data, "&mutex"}, {"fn", "body to execute under lock", PortKind::Lambda, "lambda"}};
+static const PortDesc P_RESIZE_IN[] = {{"target", "vector to resize", PortKind::Data, "value"}, {"size", "new size", PortKind::Data, "s32"}};
 
 static const NodeType NODE_TYPES[] = {
     {"expr",   "Evaluate expression",                 0,0, 0,1, false,false,true, false, nullptr, nullptr, nullptr, P_RESULT},
     {"select", "Select value by condition",            0,3, 0,1, false,false,true, false, nullptr, P_SELECT_IN, nullptr, P_RESULT},
     {"new",    "Instantiate a type",                   0,0, 0,1, false,false,true, false, nullptr, nullptr, nullptr, P_RESULT},
     {"dup",    "Duplicate input to output",           0,1, 0,1, false,false,true, false, nullptr, P_VALUE, nullptr, P_RESULT},
+    {"str",    "Convert to string",                   0,1, 0,1, false,false,true, false, nullptr, P_VALUE, nullptr, P_RESULT},
     {"void",   "Void result (no-op)",                 0,0, 0,1, false,false,true, false, nullptr, nullptr, nullptr, P_RESULT},
     {"discard!","Discard value, pass bang",             1,1, 1,0, false,true, false,false, P_BANG_IN, P_VALUE, P_BANG_TRIG, nullptr},
     {"discard","Discard input values",               0,1, 0,0, false,false,true, false, nullptr, P_VALUE, nullptr, nullptr},
@@ -58,7 +60,7 @@ static const NodeType NODE_TYPES[] = {
     {"erase","Erase from collection",                 0,2, 0,1, false,false,false,false, nullptr, P_ERASE_IN, nullptr, P_RESULT},
     {"output_mix!","Mix into audio output",            1,1, 0,0, false,false,false,false, P_BANG_IN, P_VALUE, nullptr, nullptr},
     {"append", "Append item to collection",            0,2, 0,1, false,false,true, false, nullptr, P_APPEND_IN, nullptr, P_RESULT},
-    {"append!","Append item to collection",           1,2, 0,1, false,false,true, false, P_BANG_IN, P_APPEND_IN, nullptr, P_RESULT},
+    {"append!","Append item to collection",           1,2, 1,1, false,true, true, false, P_BANG_IN, P_APPEND_IN, P_BANG_TRIG, P_RESULT},
     {"store",  "Store value into variable/reference",  0,2, 0,0, false,false,true, false, nullptr, P_STORE_IN, nullptr, nullptr},
     {"store!", "Store value into variable/reference",  1,2, 1,0, false,true, false,false, P_BANG_IN, P_STORE_IN, P_BANG_TRIG, nullptr},
     {"event!", "Event source (args from decl_event)",  0,0, 1,0, false,true, false,false, nullptr, nullptr, P_BANG_TRIG, nullptr},
@@ -69,9 +71,10 @@ static const NodeType NODE_TYPES[] = {
     {"erase!", "Erase from collection",              1,2, 1,1, false,true, false,false, P_BANG_IN, P_ERASE_IN, P_BANG_TRIG, P_RESULT},
     {"iterate", "it=first; while it!=end: it=fn(it)",  0,2, 0,0, false,false,true, false, nullptr, P_ITERATE_IN, nullptr, nullptr},
     {"iterate!","it=first; while it!=end: it=fn(it)",  1,2, 1,0, false,true, false,false, P_BANG_IN, P_ITERATE_IN, P_BANG_TRIG, nullptr},
-    {"next",   "Advance iterator to next element",     0,1, 0,1, false,false,false,false, nullptr, P_VALUE, nullptr, P_RESULT},
+    {"next",   "Advance iterator to next element",     0,1, 0,1, false,false,true, false, nullptr, P_VALUE, nullptr, P_RESULT},
     {"lock",   "Execute lambda under mutex lock",      0,2, 0,0, false,false,true, false, nullptr, P_LOCK_IN, nullptr, nullptr},
     {"lock!",  "Execute lambda under mutex lock (bang)",1,2, 1,0, false,true, false,false, P_BANG_IN, P_LOCK_IN, P_BANG_TRIG, nullptr},
+    {"resize!","Resize vector",                         1,2, 1,0, false,true, false,false, P_BANG_IN, P_RESIZE_IN, P_BANG_TRIG, nullptr},
     {"cast",   "Cast value to type",                    0,1, 0,1, false,false,false,false, nullptr, P_VALUE, nullptr, P_RESULT},
     {"label",  "Text label (no connections)",          0,0, 0,0, false,true, false,false, nullptr, nullptr, nullptr, nullptr},
 };

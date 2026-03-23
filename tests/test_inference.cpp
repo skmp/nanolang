@@ -3598,6 +3598,50 @@ TEST(call_bang_dollar_ref_pin_gets_type_from_resolve) {
     ASSERT_EQ(n->inputs[0].type_name, "&vector<f32>");
 }
 
+TEST(call_dollar_ref_with_field_access_no_type_on_pin) {
+    // $0.field should NOT set pin "0" type from the fn arg at that position,
+    // because the fn arg type is for the field value, not the struct on pin 0.
+    // Mirrors: call $imgui_slider_float "" $0.amplitude 0 1
+    GraphBuilder gb;
+    gb.add("ffi1", "ffi", R"(my_func (label:string value:&f32 min:f32 max:f32) -> bool)");
+    auto& call_node = gb.add("call1", "call", R"($my_func "" $0.amplitude 0 1)");
+
+    resolve_type_based_pins(gb.graph);
+
+    auto* n = gb.find("call1");
+    ASSERT(n != nullptr);
+    ASSERT_EQ((int)n->inputs.size(), 1);
+    ASSERT_EQ(n->inputs[0].name, "0");
+    // Pin type should NOT be &f32 — the pin carries the struct, not the field
+    ASSERT(n->inputs[0].type_name != "&f32");
+
+    // After inference, pin 0 should not be typed as string (the first fn arg).
+    // Without a connected struct, the field access can't fully resolve, but
+    // the pin type must not be incorrectly set from fn arg position mismatch.
+    GraphInference gi(gb.pool);
+    gi.run(gb.graph);
+    n = gb.find("call1");
+    ASSERT(n != nullptr);
+    // Pin 0 should not be string — it carries a struct, not the label arg
+    if (n->inputs[0].resolved_type) {
+        ASSERT(type_to_string(n->inputs[0].resolved_type) != "string");
+    }
+}
+
+TEST(call_bare_dollar_ref_gets_type) {
+    // Bare $0 (no field access) SHOULD get type from fn arg
+    GraphBuilder gb;
+    gb.add("ffi1", "ffi", R"(my_func (a:string b:&f32 c:string) -> void)");
+    auto& call_node = gb.add("call1", "call!", R"($my_func "hello" $0 "world")");
+
+    resolve_type_based_pins(gb.graph);
+
+    auto* n = gb.find("call1");
+    ASSERT(n != nullptr);
+    ASSERT_EQ((int)n->inputs.size(), 1);
+    ASSERT_EQ(n->inputs[0].type_name, "&f32");
+}
+
 // ============================================================
 // cast node pin generation
 // ============================================================
@@ -3644,6 +3688,254 @@ TEST(call_bang_no_false_too_many_args_with_dollar_ref) {
     ASSERT(n != nullptr);
     // Should have no error — 3 args expected, 2 inline + 1 pin ref = 3 total
     ASSERT(n->error.empty());
+}
+
+// ============================================================
+// cast node: additional tests
+// ============================================================
+
+TEST(cast_different_dest_type) {
+    // Cast to a different type, e.g. vector<s32>
+    GraphBuilder gb;
+    gb.add("c1", "cast", "vector<s32>");
+    GraphInference gi(gb.pool);
+    gi.run(gb.graph);
+    auto* n = gb.find("c1");
+    ASSERT(n != nullptr);
+    ASSERT(n->outputs[0].resolved_type != nullptr);
+    ASSERT_EQ(type_to_string(n->outputs[0].resolved_type), "vector<s32>");
+}
+
+TEST(cast_preserves_input_pin_after_resolve) {
+    // cast should keep its input pin through resolve_type_based_pins
+    GraphBuilder gb;
+    gb.add("c1", "cast", "vector<f32>");
+    resolve_type_based_pins(gb.graph);
+    auto* n = gb.find("c1");
+    ASSERT(n != nullptr);
+    ASSERT_EQ((int)n->inputs.size(), 1);
+    ASSERT_EQ(n->inputs[0].name, "value");
+}
+
+TEST(cast_no_error) {
+    // A valid cast node should have no error
+    GraphBuilder gb;
+    gb.add("c1", "cast", "vector<f32>");
+    GraphInference gi(gb.pool);
+    gi.run(gb.graph);
+    auto* n = gb.find("c1");
+    ASSERT(n != nullptr);
+    ASSERT(n->error.empty());
+}
+
+TEST(cast_output_type_independent_of_input) {
+    // Cast output type should be the dest type regardless of what's connected to input
+    GraphBuilder gb;
+    gb.add("decl1", "decl_var", "my_arr array<f32,48000>");
+    gb.add("e1", "expr", "$my_arr");
+    gb.add("c1", "cast", "vector<f32>");
+    gb.link("e1.out0", "c1.value");
+    GraphInference gi(gb.pool);
+    gi.run(gb.graph);
+    auto* n = gb.find("c1");
+    ASSERT(n != nullptr);
+    // Output should always be the dest type
+    ASSERT(n->outputs[0].resolved_type != nullptr);
+    ASSERT_EQ(type_to_string(n->outputs[0].resolved_type), "vector<f32>");
+}
+
+// ============================================================
+// resize! node tests
+// ============================================================
+
+TEST(resize_has_bang_input) {
+    GraphBuilder gb;
+    auto& node = gb.add("r1", "resize!", "$my_vec 32");
+    ASSERT_EQ((int)node.bang_inputs.size(), 1);
+}
+
+TEST(resize_has_bang_output) {
+    GraphBuilder gb;
+    auto& node = gb.add("r1", "resize!", "$my_vec 32");
+    ASSERT_EQ((int)node.bang_outputs.size(), 1);
+}
+
+TEST(resize_no_data_outputs) {
+    GraphBuilder gb;
+    auto& node = gb.add("r1", "resize!", "$my_vec 32");
+    ASSERT_EQ((int)node.outputs.size(), 0);
+}
+
+TEST(resize_args_parsed) {
+    GraphBuilder gb;
+    auto& node = gb.add("r1", "resize!", "$my_vec $my_size");
+    ASSERT_EQ(node.args, "$my_vec $my_size");
+}
+
+TEST(resize_no_error) {
+    GraphBuilder gb;
+    gb.add("decl1", "decl_var", "my_vec vector<f32>");
+    gb.add("r1", "resize!", "$my_vec 32");
+    GraphInference gi(gb.pool);
+    gi.run(gb.graph);
+    auto* n = gb.find("r1");
+    ASSERT(n != nullptr);
+    ASSERT(n->error.empty());
+}
+
+// ============================================================
+// str node tests
+// ============================================================
+
+TEST(str_has_input_pin) {
+    GraphBuilder gb;
+    auto& node = gb.add("s1", "str", "");
+    ASSERT_EQ((int)node.inputs.size(), 1);
+    ASSERT_EQ(node.inputs[0].name, "value");
+}
+
+TEST(str_has_output_pin) {
+    GraphBuilder gb;
+    auto& node = gb.add("s1", "str", "");
+    ASSERT_EQ((int)node.outputs.size(), 1);
+}
+
+TEST(str_output_type_is_string) {
+    GraphBuilder gb;
+    gb.add("s1", "str", "");
+    GraphInference gi(gb.pool);
+    gi.run(gb.graph);
+    auto* n = gb.find("s1");
+    ASSERT(n != nullptr);
+    ASSERT(n->outputs[0].resolved_type != nullptr);
+    ASSERT_EQ(type_to_string(n->outputs[0].resolved_type), "string");
+}
+
+TEST(str_output_is_string_regardless_of_input) {
+    // Even with an integer input, str output is always string
+    GraphBuilder gb;
+    gb.add("e1", "expr", "42");
+    gb.add("s1", "str", "");
+    gb.link("e1.out0", "s1.value");
+    GraphInference gi(gb.pool);
+    gi.run(gb.graph);
+    auto* n = gb.find("s1");
+    ASSERT(n != nullptr);
+    ASSERT(n->outputs[0].resolved_type != nullptr);
+    ASSERT_EQ(type_to_string(n->outputs[0].resolved_type), "string");
+}
+
+// ============================================================
+// string + unknown defers (expr.cpp fix)
+// ============================================================
+
+TEST(string_plus_string_resolves) {
+    // string + string should resolve to string
+    GraphBuilder gb;
+    gb.add("e1", "expr", "\"hello\"+\"world\"");
+    GraphInference gi(gb.pool);
+    gi.run(gb.graph);
+    auto* n = gb.find("e1");
+    ASSERT(n != nullptr);
+    ASSERT(n->outputs[0].resolved_type != nullptr);
+    ASSERT_EQ(type_to_string(n->outputs[0].resolved_type), "string");
+}
+
+TEST(string_plus_unknown_defers_no_error) {
+    // "##amp"+$0 where $0 is not yet resolved should NOT produce an error
+    // It should defer and resolve once $0 is known to be string
+    GraphBuilder gb;
+    gb.add("s1", "str", "");
+    gb.add("e1", "expr", "\"##amp\"+$0");
+    gb.link("s1.out0", "e1.0");
+    GraphInference gi(gb.pool);
+    gi.run(gb.graph);
+    auto* n = gb.find("e1");
+    ASSERT(n != nullptr);
+    // Should have no error — str outputs string, so "##amp"+string is valid
+    ASSERT(n->error.empty());
+    ASSERT(n->outputs[0].resolved_type != nullptr);
+    ASSERT_EQ(type_to_string(n->outputs[0].resolved_type), "string");
+}
+
+TEST(string_plus_int_still_errors) {
+    // string + s32 should still produce an error
+    GraphBuilder gb;
+    gb.add("e1", "expr", "42");
+    gb.add("e2", "expr", "\"hello\"+$0");
+    gb.link("e1.out0", "e2.0");
+    GraphInference gi(gb.pool);
+    gi.run(gb.graph);
+    auto* n = gb.find("e2");
+    ASSERT(n != nullptr);
+    ASSERT(!n->error.empty());
+    ASSERT_CONTAINS(n->error, "Cannot add string");
+}
+
+// ============================================================
+// call! arg counting with $N refs (regression tests)
+// ============================================================
+
+TEST(call_bang_multiple_dollar_refs_no_false_error) {
+    // call! with multiple $N refs should count correctly
+    GraphBuilder gb;
+    gb.add("ffi1", "ffi", R"(my_func (a:&f32 b:&f32 c:string) -> void)");
+    auto& call_node = gb.add("call1", "call!", R"($my_func $0 $1 "hello")");
+    resolve_type_based_pins(gb.graph);
+    GraphInference gi(gb.pool);
+    gi.run(gb.graph);
+    auto* n = gb.find("call1");
+    ASSERT(n != nullptr);
+    ASSERT(n->error.empty());
+    ASSERT_EQ((int)n->inputs.size(), 2);
+}
+
+TEST(call_bang_all_inline_no_pins) {
+    // call! with all inline args should have 0 input pins
+    GraphBuilder gb;
+    gb.add("ffi1", "ffi", R"(my_func (a:string b:s32) -> void)");
+    auto& call_node = gb.add("call1", "call!", R"($my_func "hello" 42)");
+    resolve_type_based_pins(gb.graph);
+    auto* n = gb.find("call1");
+    ASSERT(n != nullptr);
+    ASSERT_EQ((int)n->inputs.size(), 0);
+}
+
+TEST(call_dollar_ref_field_access_pin_count) {
+    // $0.field should create exactly 1 pin
+    GraphBuilder gb;
+    gb.add("ffi1", "ffi", R"(my_func (label:string value:&f32 min:f32 max:f32) -> bool)");
+    gb.add("call1", "call!", R"($my_func "##test" $0.freq 0 1)");
+    resolve_type_based_pins(gb.graph);
+    auto* n = gb.find("call1");
+    ASSERT(n != nullptr);
+    ASSERT_EQ((int)n->inputs.size(), 1);
+    ASSERT_EQ(n->inputs[0].name, "0");
+}
+
+TEST(call_multiple_dollar_refs_with_field_access) {
+    // Multiple $N.field refs
+    GraphBuilder gb;
+    gb.add("ffi1", "ffi", R"(my_func (a:&f32 b:&f32) -> void)");
+    gb.add("call1", "call!", R"($my_func $0.x $1.y)");
+    resolve_type_based_pins(gb.graph);
+    auto* n = gb.find("call1");
+    ASSERT(n != nullptr);
+    ASSERT_EQ((int)n->inputs.size(), 2);
+    ASSERT_EQ(n->inputs[0].name, "0");
+    ASSERT_EQ(n->inputs[1].name, "1");
+}
+
+TEST(call_string_concat_with_dollar_ref) {
+    // "##amp"+$1 pattern used in multifader
+    GraphBuilder gb;
+    gb.add("ffi1", "ffi", R"(my_slider (label:string value:&f32 min:f32 max:f32) -> bool)");
+    gb.add("call1", "call!", R"($my_slider "##amp"+$1 $0.amplitude 0 1)");
+    resolve_type_based_pins(gb.graph);
+    auto* n = gb.find("call1");
+    ASSERT(n != nullptr);
+    // Should have 2 pins: $0 and $1
+    ASSERT_EQ((int)n->inputs.size(), 2);
 }
 
 // ============================================================

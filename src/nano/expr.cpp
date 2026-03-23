@@ -875,6 +875,20 @@ TypePtr TypeInferenceContext::infer_scalar_binop(const TypePtr& left_t, const Ty
         return (op == BinOp::Spaceship) ? pool.t_s32 : pool.t_bool;
     }
 
+    // String concatenation: string + string
+    if (op == BinOp::Add) {
+        bool l_str = (left_t->kind == TypeKind::String);
+        bool r_str = (right_t->kind == TypeKind::String);
+        if (l_str && r_str) return left_t;
+        if (l_str || r_str) {
+            // If the other side is still unknown, defer — it may resolve to string later
+            if (left_t == pool.t_unknown || right_t == pool.t_unknown) return pool.t_unknown;
+            add_error("Cannot add string and " + type_to_string(l_str ? right_t : left_t) +
+                       " (convert to string first)");
+            return pool.t_unknown;
+        }
+    }
+
     // Arithmetic: +, -, *, /
     if (left_t->is_generic && right_t->is_generic) {
         // If either is a float literal, result is float literal

@@ -229,14 +229,21 @@ void resolve_type_based_pins(FlowGraph& graph) {
                     int tok_idx = ai + 1; // skip fn name token
                     if (tok_idx >= (int)tokens.size()) break;
                     auto& tok = tokens[tok_idx];
-                    // Check if this token is a $N pin ref
+                    // Check if this token is a bare $N pin ref (not $N.field or $N+expr)
                     if (tok.size() >= 2 && tok[0] == '$' && tok[1] >= '0' && tok[1] <= '9') {
-                        std::string pin_name = tok.substr(1); // "0", "1", etc.
-                        for (auto& p : node.inputs) {
-                            if (p.name == pin_name && fn_type->func_args[ai].type) {
-                                p.type_name = type_to_string(fn_type->func_args[ai].type);
+                        // Extract pin number and check it's the entire token
+                        size_t end = 1;
+                        while (end < tok.size() && tok[end] >= '0' && tok[end] <= '9') end++;
+                        if (end == tok.size()) {
+                            // Bare $N — set pin type from function arg
+                            std::string pin_name = tok.substr(1);
+                            for (auto& p : node.inputs) {
+                                if (p.name == pin_name && fn_type->func_args[ai].type) {
+                                    p.type_name = type_to_string(fn_type->func_args[ai].type);
+                                }
                             }
                         }
+                        // $N.field, $N[i], etc.: pin type can't be derived from fn arg
                     }
                 }
 
