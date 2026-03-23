@@ -1,5 +1,6 @@
 #include "inference.h"
 #include "serial.h"
+#include "type_utils.h"
 #include <cstdio>
 #include <cstdlib>
 #include <sstream>
@@ -85,6 +86,18 @@ struct GraphBuilder {
             if (!args.empty() && num_outputs < 0) {
                 auto tokens = tokenize_args(args, false);
                 no = std::max(1, (int)tokens.size());
+            }
+        } else if (type == "cast" || type == "new") {
+            // Args are type names — use descriptor defaults
+            int ni = (num_inputs >= 0) ? num_inputs : di;
+            for (int i = 0; i < ni; i++) {
+                std::string pn; std::string pt; bool il = false;
+                if (nt && nt->input_ports && i < nt->inputs) {
+                    pn = nt->input_ports[i].name;
+                    il = (nt->input_ports[i].kind == PortKind::Lambda);
+                    if (nt->input_ports[i].type_name) pt = nt->input_ports[i].type_name;
+                } else pn = std::to_string(i);
+                node.inputs.push_back({"", pn, pt, nullptr, il ? FlowPin::Lambda : FlowPin::Input});
             }
         } else {
             // Non-expr: use compute_inline_args (same as serial loader)
@@ -3486,6 +3499,151 @@ TEST(link_type_compatible_no_error) {
     gb.link("e1.out0", "e2.0");
     gb.run_inference();
     for (auto& l : gb.graph.links) ASSERT(l.error.empty());
+}
+
+// ============================================================
+// call! pin generation from $N refs
+// ============================================================
+
+TEST(call_bang_generates_input_pin_for_dollar_ref) {
+    GraphBuilder gb;
+    // call! with $0 should generate 1 input pin
+    auto& node = gb.add("c1", "call!", R"($imgui_plot_lines "Delay Line" $0 "")");
+    ASSERT_EQ((int)node.inputs.size(), 1);
+    ASSERT_EQ(node.inputs[0].name, "0");
+    ASSERT_EQ(node.inputs[0].direction, FlowPin::Input);
+}
+
+TEST(call_bang_generates_multiple_input_pins) {
+    GraphBuilder gb;
+    auto& node = gb.add("c2", "call!", R"($some_func $0 $1 "hello")");
+    ASSERT_EQ((int)node.inputs.size(), 2);
+    ASSERT_EQ(node.inputs[0].name, "0");
+    ASSERT_EQ(node.inputs[1].name, "1");
+}
+
+TEST(call_bang_no_dollar_refs_no_input_pins) {
+    GraphBuilder gb;
+    auto& node = gb.add("c3", "call!", R"($imgui_end)");
+    ASSERT_EQ((int)node.inputs.size(), 0);
+}
+
+TEST(call_bang_lambda_ref_creates_lambda_pin) {
+    GraphBuilder gb;
+    auto& node = gb.add("c4", "call!", R"($some_func @0 $1)");
+    ASSERT_EQ((int)node.inputs.size(), 2);
+    ASSERT_EQ(node.inputs[0].name, "@0");
+    ASSERT_EQ(node.inputs[0].direction, FlowPin::Lambda);
+    ASSERT_EQ(node.inputs[1].name, "1");
+    ASSERT_EQ(node.inputs[1].direction, FlowPin::Input);
+}
+
+TEST(call_bang_pin_from_nano_file_roundtrip) {
+    // Simulate loading from a .nano file: args array gets joined with spaces
+    // args = ["$imgui_plot_lines", "\"Delay Line\"", "$0", "\"\""]
+    // After parse_array + unquote, cur_args = {$imgui_plot_lines, "Delay Line", $0, ""}
+    // After join: $imgui_plot_lines "Delay Line" $0 ""
+    std::vector<std::string> cur_args = {"$imgui_plot_lines", "\"Delay Line\"", "$0", "\"\""};
+    std::string args_str;
+    for (auto& a : cur_args) { if (!args_str.empty()) args_str += " "; args_str += a; }
+
+    GraphBuilder gb;
+    auto& node = gb.add("c5", "call!", args_str);
+    ASSERT_EQ((int)node.inputs.size(), 1);
+    ASSERT_EQ(node.inputs[0].name, "0");
+    ASSERT_EQ(node.inputs[0].direction, FlowPin::Input);
+}
+
+TEST(call_bang_dollar_ref_pin_survives_resolve_type_based_pins) {
+    // Regression: resolve_type_based_pins was wiping $N ref pins
+    // because it reconciled with only non-inline pins (empty list when
+    // all function args are covered by inline args).
+    GraphBuilder gb;
+    // Declare an ffi function: my_func(a:string b:&vector<f32> c:string) -> void
+    gb.add("ffi1", "ffi", R"(my_func (a:string b:&vector<f32> c:string) -> void)");
+    // call! with all 3 args inline, $0 is a pin ref
+    auto& call_node = gb.add("call1", "call!", R"($my_func "hello" $0 "world")");
+
+    // Before resolve: should have 1 input pin for $0
+    ASSERT_EQ((int)call_node.inputs.size(), 1);
+    ASSERT_EQ(call_node.inputs[0].name, "0");
+
+    // Now run resolve_type_based_pins (this is what the loader does after flush_node)
+    resolve_type_based_pins(gb.graph);
+
+    // After resolve: $0 pin must still exist
+    auto* n = gb.find("call1");
+    ASSERT(n != nullptr);
+    ASSERT_EQ((int)n->inputs.size(), 1);
+    ASSERT_EQ(n->inputs[0].name, "0");
+    ASSERT_EQ(n->inputs[0].direction, FlowPin::Input);
+}
+
+TEST(call_bang_dollar_ref_pin_gets_type_from_resolve) {
+    // The $0 pin should get type info from the function signature.
+    // $0 is at inline arg position 1 (after fn name), mapping to fn arg[1] = b:&vector<f32>.
+    // However, the type annotation loop maps by pin name ("0") to fn arg[0] ("a:string").
+    // This is a known limitation: pin name $N doesn't match inline arg position.
+    // For now, just verify the pin survives and has some type set.
+    GraphBuilder gb;
+    gb.add("ffi1", "ffi", R"(my_func (a:string b:&vector<f32> c:string) -> void)");
+    auto& call_node = gb.add("call1", "call!", R"($my_func "hello" $0 "world")");
+
+    resolve_type_based_pins(gb.graph);
+
+    auto* n = gb.find("call1");
+    ASSERT(n != nullptr);
+    ASSERT_EQ((int)n->inputs.size(), 1);
+    // $0 is at inline arg position 1 → fn_arg[1] = b:&vector<f32>
+    ASSERT_EQ(n->inputs[0].type_name, "&vector<f32>");
+}
+
+// ============================================================
+// cast node pin generation
+// ============================================================
+
+TEST(cast_has_input_pin) {
+    GraphBuilder gb;
+    auto& node = gb.add("c1", "cast", "vector<f32>");
+    ASSERT_EQ((int)node.inputs.size(), 1);
+    ASSERT_EQ(node.inputs[0].name, "value");
+    ASSERT_EQ(node.inputs[0].direction, FlowPin::Input);
+}
+
+TEST(cast_has_output_pin) {
+    GraphBuilder gb;
+    auto& node = gb.add("c1", "cast", "vector<f32>");
+    ASSERT_EQ((int)node.outputs.size(), 1);
+}
+
+TEST(cast_output_type_is_dest_type) {
+    GraphBuilder gb;
+    gb.add("c1", "cast", "vector<f32>");
+    GraphInference gi(gb.pool);
+    gi.run(gb.graph);
+    auto* n = gb.find("c1");
+    ASSERT(n != nullptr);
+    ASSERT(n->outputs[0].resolved_type != nullptr);
+    ASSERT_EQ(type_to_string(n->outputs[0].resolved_type), "vector<f32>");
+}
+
+TEST(call_bang_no_false_too_many_args_with_dollar_ref) {
+    // Regression: $N ref pins were double-counted as both inline args AND input pins,
+    // causing a false "too many arguments" error.
+    GraphBuilder gb;
+    gb.add("ffi1", "ffi", R"(my_func (a:string b:&vector<f32> c:string) -> void)");
+    auto& call_node = gb.add("call1", "call!", R"($my_func "hello" $0 "world")");
+
+    resolve_type_based_pins(gb.graph);
+
+    // Run inference
+    GraphInference gi(gb.pool);
+    gi.run(gb.graph);
+
+    auto* n = gb.find("call1");
+    ASSERT(n != nullptr);
+    // Should have no error — 3 args expected, 2 inline + 1 pin ref = 3 total
+    ASSERT(n->error.empty());
 }
 
 // ============================================================

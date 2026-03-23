@@ -1486,6 +1486,19 @@ void FlowEditorWindow::draw() {
                             auto tokens = tokenize_args(rest_args, false);
                             needed_outputs = std::max(1, (int)tokens.size());
                         }
+                    } else if (node_type == "cast" || node_type == "new") {
+                        // Args are type names — use descriptor defaults directly
+                        for (int i = 0; i < default_inputs; i++) {
+                            std::string pin_name;
+                            bool is_lambda = false;
+                            if (nt && nt->input_ports && i < nt->inputs) {
+                                pin_name = nt->input_ports[i].name;
+                                is_lambda = (nt->input_ports[i].kind == PortKind::Lambda);
+                            } else {
+                                pin_name = std::to_string(i);
+                            }
+                            desired_inputs.push_back({pin_name, is_lambda ? FlowPin::Lambda : FlowPin::Input});
+                        }
                     } else {
                         // Non-expr nodes: use inline arg computation
                         auto info = compute_inline_args(rest_args, default_inputs);

@@ -213,7 +213,8 @@ bool GraphInference::infer_expr_nodes(FlowGraph& graph) {
         bool needs_type_propagation = (node.type == "dup" || node.type == "select" || node.type == "next" || node.type == "void" || node.type == "discard");
         bool has_custom_output = needs_type_propagation ||
             node.type == "append!" || node.type == "erase" || node.type == "erase!" ||
-            node.type == "decl_local" || node.type == "call" || node.type == "call!";
+            node.type == "decl_local" || node.type == "call" || node.type == "call!" ||
+            node.type == "cast";
         if (!is_expr) {
             if (!nt || nt->is_declaration) continue;
             if (node.type == "new" || node.type == "event!") continue;
@@ -223,7 +224,7 @@ bool GraphInference::infer_expr_nodes(FlowGraph& graph) {
         }
 
         // Skip expression parsing for nodes whose args aren't expressions
-        bool skip_expr_parse = (node.type == "decl_local" || node.type == "void");
+        bool skip_expr_parse = (node.type == "decl_local" || node.type == "void" || node.type == "cast");
 
         // Parse expression(s) if not cached.
         // For expr nodes, each space-separated token is a separate expression/output.
@@ -316,6 +317,17 @@ bool GraphInference::infer_expr_nodes(FlowGraph& graph) {
             if (!node.outputs.empty() && !node.outputs[0].resolved_type) {
                 node.outputs[0].resolved_type = pool.t_void;
                 changed = true;
+            }
+        }
+
+        if (node.type == "cast") {
+            // Output type is the destination type from args
+            if (!node.outputs.empty() && !node.outputs[0].resolved_type && !node.args.empty()) {
+                auto dest_type = pool.intern(node.args);
+                if (dest_type) {
+                    node.outputs[0].resolved_type = dest_type;
+                    changed = true;
+                }
             }
         }
 
@@ -806,10 +818,13 @@ bool GraphInference::infer_expr_nodes(FlowGraph& graph) {
                             }
                         }
                     }
-                    // Check too many inline args
+                    // Check too many inline args.
+                    // num_inline_args already includes $N pin refs (which are also
+                    // represented as input pins), so don't add node.inputs.size()
+                    // for those — subtract them to avoid double-counting.
                     int num_inline_args = (int)node.parsed_exprs.size() - 1; // exclude fn ref
                     int expected_args = (int)fn_resolved->func_args.size();
-                    int total_args = num_inline_args + (int)node.inputs.size();
+                    int total_args = num_inline_args + (int)node.inputs.size() - (int)scan_slots(node.args).slots.size();
                     if (total_args > expected_args) {
                         if (node.error.empty())
                             node.error = std::string(node.type) + ": too many arguments (" +

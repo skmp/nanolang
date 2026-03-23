@@ -1,5 +1,6 @@
 /.claude
 /build
+/build_test
 /out
 /.vs
 .generated/

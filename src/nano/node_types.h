@@ -72,6 +72,7 @@ static const NodeType NODE_TYPES[] = {
     {"next",   "Advance iterator to next element",     0,1, 0,1, false,false,false,false, nullptr, P_VALUE, nullptr, P_RESULT},
     {"lock",   "Execute lambda under mutex lock",      0,2, 0,0, false,false,true, false, nullptr, P_LOCK_IN, nullptr, nullptr},
     {"lock!",  "Execute lambda under mutex lock (bang)",1,2, 1,0, false,true, false,false, P_BANG_IN, P_LOCK_IN, P_BANG_TRIG, nullptr},
+    {"cast",   "Cast value to type",                    0,1, 0,1, false,false,false,false, nullptr, P_VALUE, nullptr, P_RESULT},
     {"label",  "Text label (no connections)",          0,0, 0,0, false,true, false,false, nullptr, nullptr, nullptr, nullptr},
 };
 static constexpr int NUM_NODE_TYPES = sizeof(NODE_TYPES) / sizeof(NODE_TYPES[0]);

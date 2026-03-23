@@ -126,6 +126,9 @@ bool load_nano(const std::string& path, FlowGraph& graph) {
         for (int i = 0; i < default_bang_inputs; i++)
             node.bang_inputs.push_back({"", "bang_in" + std::to_string(i), "", nullptr, FlowPin::BangInput});
 
+        // Nodes whose args are type names, not expressions
+        bool args_are_type = (cur_type == "cast" || cur_type == "new");
+
         if (is_expr) {
             // Expr nodes: pin count from $N refs, output count from tokens
             auto parsed = scan_slots(args_str);
@@ -138,6 +141,21 @@ bool load_nano(const std::string& path, FlowGraph& graph) {
                 bool is_lambda = parsed.is_lambda_slot(i);
                 std::string pin_name = is_lambda ? ("@" + std::to_string(i)) : std::to_string(i);
                 node.inputs.push_back({"", pin_name, "", nullptr, is_lambda ? FlowPin::Lambda : FlowPin::Input});
+            }
+        } else if (args_are_type) {
+            // Args are type names — use descriptor defaults directly
+            for (int i = 0; i < default_inputs; i++) {
+                std::string pin_name;
+                std::string pin_type;
+                bool is_lambda = false;
+                if (nt && nt->input_ports && i < nt->inputs) {
+                    pin_name = nt->input_ports[i].name;
+                    is_lambda = (nt->input_ports[i].kind == PortKind::Lambda);
+                    if (nt->input_ports[i].type_name) pin_type = nt->input_ports[i].type_name;
+                } else {
+                    pin_name = std::to_string(i);
+                }
+                node.inputs.push_back({"", pin_name, pin_type, nullptr, is_lambda ? FlowPin::Lambda : FlowPin::Input});
             }
         } else {
             // Non-expr nodes: use inline arg computation
@@ -465,6 +483,8 @@ bool load_nano_string(const std::string& data, FlowGraph& graph) {
         node.position = {cur_x, cur_y};
         for (int i = 0; i < dbi; i++) node.bang_inputs.push_back({"","bang_in"+std::to_string(i), "", nullptr, FlowPin::BangInput});
 
+        bool args_are_type = (cur_type == "cast" || cur_type == "new");
+
         if (is_expr) {
             auto parsed = scan_slots(args_str);
             int tt = parsed.total_pin_count(di);
@@ -473,6 +493,16 @@ bool load_nano_string(const std::string& data, FlowGraph& graph) {
                 bool il = parsed.is_lambda_slot(i);
                 std::string pn = il ? ("@"+std::to_string(i)) : std::to_string(i);
                 node.inputs.push_back({"", pn, "", nullptr, il ? FlowPin::Lambda : FlowPin::Input});
+            }
+        } else if (args_are_type) {
+            for (int i = 0; i < di; i++) {
+                std::string pn; std::string pt; bool il = false;
+                if (nt && nt->input_ports && i < nt->inputs) {
+                    pn = nt->input_ports[i].name;
+                    il = (nt->input_ports[i].kind == PortKind::Lambda);
+                    if (nt->input_ports[i].type_name) pt = nt->input_ports[i].type_name;
+                } else pn = std::to_string(i);
+                node.inputs.push_back({"", pn, pt, nullptr, il ? FlowPin::Lambda : FlowPin::Input});
             }
         } else {
             auto info = compute_inline_args(args_str, di);

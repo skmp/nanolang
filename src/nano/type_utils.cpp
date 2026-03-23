@@ -205,7 +205,17 @@ void resolve_type_based_pins(FlowGraph& graph) {
                 // Inline args after the function name (tokens[1..]) cover function args left-to-right.
                 // Only create input pins for function args NOT covered by inline expressions.
                 int num_inline_args = (int)tokens.size() - 1; // exclude the fn ref token
+
+                // Build desired pins: first keep $N ref pins from inline args,
+                // then add remaining function args as named pins.
                 std::vector<DesiredPinDesc> desired_inputs;
+
+                // Preserve existing $N/@N ref pins (created by scan_slots during loading)
+                for (auto& p : node.inputs) {
+                    desired_inputs.push_back({p.name, p.type_name, p.direction});
+                }
+
+                // Add remaining function args not covered by inline expressions
                 for (int ai = num_inline_args; ai < (int)fn_type->func_args.size(); ai++) {
                     auto& arg = fn_type->func_args[ai];
                     std::string type_str = arg.type ? type_to_string(arg.type) : "value";
@@ -213,13 +223,19 @@ void resolve_type_based_pins(FlowGraph& graph) {
                 }
                 reconcile_pins(node.inputs, desired_inputs, node.guid, false, graph.links);
 
-                // Set type info on existing pins from inline $N refs
+                // Set type info on existing pins from inline $N refs.
+                // Token[i+1] is inline arg i; if it's a $N ref, pin "N" gets fn_arg[i]'s type.
                 for (int ai = 0; ai < num_inline_args && ai < (int)fn_type->func_args.size(); ai++) {
-                    // Find pin with matching index name (from $N ref)
-                    std::string pin_name = std::to_string(ai);
-                    for (auto& p : node.inputs) {
-                        if (p.name == pin_name && fn_type->func_args[ai].type) {
-                            p.type_name = type_to_string(fn_type->func_args[ai].type);
+                    int tok_idx = ai + 1; // skip fn name token
+                    if (tok_idx >= (int)tokens.size()) break;
+                    auto& tok = tokens[tok_idx];
+                    // Check if this token is a $N pin ref
+                    if (tok.size() >= 2 && tok[0] == '$' && tok[1] >= '0' && tok[1] <= '9') {
+                        std::string pin_name = tok.substr(1); // "0", "1", etc.
+                        for (auto& p : node.inputs) {
+                            if (p.name == pin_name && fn_type->func_args[ai].type) {
+                                p.type_name = type_to_string(fn_type->func_args[ai].type);
+                            }
                         }
                     }
                 }

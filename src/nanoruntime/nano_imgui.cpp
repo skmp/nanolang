@@ -135,6 +135,7 @@ void imgui_plot_lines(std::string label, std::vector<f32>& values, std::string o
                      overlay.empty() ? nullptr : overlay.c_str());
 }
 
+
 // Popups
 void imgui_open_popup(std::string id) {
     ImGui::OpenPopup(id.c_str());

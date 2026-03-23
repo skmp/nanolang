@@ -315,14 +315,35 @@ connections = ["4320923f2a319682.bang0->gui_slider_node.bang_in0"]
 guid = "gui_slider_node"
 type = "call!"
 args = ["$imgui_slider_int", "\"Delay Size\"", "$delay_line_size", "1", "48000"]
-position = [4945.95, 1729.43]
-connections = ["gui_slider_node.bang0->gui_end_node.bang_in0"]
+position = [4945.95, 1652.43]
+connections = ["gui_slider_node.bang0->plot_delay_node.bang_in0"]
+
+[[node]]
+guid = "expr_delay_ref"
+type = "expr"
+args = ["$delay_line"]
+position = [5122.24, 1727.07]
+connections = ["expr_delay_ref.out0->cast_delay_node.value"]
+
+[[node]]
+guid = "cast_delay_node"
+type = "cast"
+args = ["vector<f32>"]
+position = [5041.65, 1803.23]
+connections = ["cast_delay_node.out0->plot_delay_node.1", "cast_delay_node.out0->plot_delay_node.0"]
+
+[[node]]
+guid = "plot_delay_node"
+type = "call!"
+args = ["$imgui_plot_lines", "\"Delay Line\"", "$0", "\"\""]
+position = [4945.95, 1869.43]
+connections = ["plot_delay_node.bang0->gui_end_node.bang_in0"]
 
 [[node]]
 guid = "gui_end_node"
 type = "call!"
 args = ["$imgui_end"]
-position = [4945.95, 1879.43]
+position = [4945.95, 1939.43]
 
 [[node]]
 guid = "c5373cf3d77e7979"

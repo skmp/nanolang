@@ -756,6 +756,33 @@ std::string CodeGenerator::materialize_node(FlowNode& node, std::ostringstream& 
         return "/* lock void */";
     }
 
+    if (node.type == "cast") {
+        // Cast node: currently only supports array -> vector
+        // Materialize input dependency
+        if (!node.inputs.empty()) {
+            std::string src = find_source_pin(node.inputs[0].id);
+            if (!src.empty()) {
+                auto* src_node = find_source_node(node.inputs[0].id);
+                if (src_node && !materialized.count(src_node->guid) && src_node->type != "event!") {
+                    materialize_node(*src_node, out, indent);
+                }
+            }
+        }
+
+        std::string dest_type = type_to_cpp_str(node.args);
+        std::string input_val = resolve_pin_value(node, 0);
+        std::string var = fresh_var("cast");
+        out << ind << dest_type << " " << var << "(" << input_val << ".begin(), " << input_val << ".end());\n";
+        if (!node.outputs.empty())
+            pin_to_value[node.outputs[0].id] = var;
+
+        auto bang_targets = follow_bang_from(node.bang_pin.id);
+        for (auto* bt : bang_targets)
+            emit_node(*bt, out, indent);
+
+        return var;
+    }
+
     if (node.type == "new") {
         // Materialize non-lambda dependencies first
         // Skip inputs connected via as_lambda (those are handled as inline lambdas below)
@@ -1130,7 +1157,7 @@ std::string CodeGenerator::materialize_node(FlowNode& node, std::ostringstream& 
         call_expr << fn_name << "(";
         auto tokens = tokenize_args(node.args, false);
         int num_inline_args = (int)tokens.size() - 1;
-        int total_args = num_inline_args + (int)node.inputs.size();
+        int total_args = num_inline_args + (int)node.inputs.size() - (int)scan_slots(node.args).slots.size();
         for (int i = 0; i < total_args; i++) {
             if (i > 0) call_expr << ", ";
             if (i < num_inline_args) {
@@ -1757,7 +1784,8 @@ void CodeGenerator::emit_node(FlowNode& node, std::ostringstream& out, int inden
         call_expr << fn_name << "(";
         auto tokens = tokenize_args(node.args, false);
         int num_inline_args = (int)tokens.size() - 1; // args after fn name
-        int total_args = num_inline_args + (int)node.inputs.size();
+        // $N refs are already in num_inline_args AND in node.inputs — subtract to avoid duplication
+        int total_args = num_inline_args + (int)node.inputs.size() - (int)scan_slots(node.args).slots.size();
         for (int i = 0; i < total_args; i++) {
             if (i > 0) call_expr << ", ";
             if (i < num_inline_args) {
