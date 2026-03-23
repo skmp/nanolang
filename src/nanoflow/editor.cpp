@@ -765,6 +765,7 @@ void FlowEditorWindow::draw() {
     auto hit_test_node = [&](ImVec2 mc) -> int {
         for (int i = (int)active().graph.nodes.size() - 1; i >= 0; i--) {
             auto& node = active().graph.nodes[i];
+            if (node.imported) continue;
             if (mc.x >= node.position.x && mc.x <= node.position.x + node.size.x &&
                 mc.y >= node.position.y && mc.y <= node.position.y + node.size.y)
                 return node.id;
@@ -1145,7 +1146,10 @@ void FlowEditorWindow::draw() {
 
     // --- Draw nodes ---
     auto hovered_pin = hit_test_pin(mouse_pos, canvas_origin);
-    for (auto& node : active().graph.nodes) draw_node(dl, node, canvas_origin);
+    for (auto& node : active().graph.nodes) {
+        if (node.imported) continue;
+        draw_node(dl, node, canvas_origin);
+    }
 
     // Pin hover highlight
     if (!hovered_pin.pin_id.empty()) {
