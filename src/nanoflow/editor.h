@@ -96,6 +96,11 @@ private:
     void copy_selection();
     void paste_at(ImVec2 canvas_pos);
 
+    // Debounced save
+    void schedule_save();
+    double save_deadline_ = 0; // 0 = no pending save
+    void check_debounced_save();
+
     // Interaction state (global — always applies to active tab)
     int dragging_node_ = -1;
     bool dragging_selection_ = false;
@@ -142,6 +147,9 @@ private:
 
     // Navigation
     void center_on_node(const FlowNode& node, ImVec2 canvas_size);
+
+    // Viewport sync
+    void sync_viewport(TabState& tab);
 
     // Panel sizes
     float side_panel_width_ = 200.0f;

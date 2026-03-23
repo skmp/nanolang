@@ -197,6 +197,8 @@ bool load_nano(const std::string& path, FlowGraph& graph) {
         cur_x = 0; cur_y = 0;
     };
 
+    bool in_viewport = false;
+
     while (std::getline(f, line)) {
         line = trim(line);
         if (line.empty() || line[0] == '#') continue;
@@ -205,10 +207,30 @@ bool load_nano(const std::string& path, FlowGraph& graph) {
             flush_node();
             if (load_error) break;
             in_node = true;
+            in_viewport = false;
+            continue;
+        }
+
+        if (line == "[viewport]") {
+            flush_node();
+            in_node = false;
+            in_viewport = true;
             continue;
         }
 
         if (line.find("version:") == 0 || line.find("version =") == 0) continue;
+
+        if (in_viewport) {
+            auto eq = line.find('=');
+            if (eq == std::string::npos) continue;
+            std::string key = trim(line.substr(0, eq));
+            std::string val = trim(line.substr(eq + 1));
+            if (key == "x") graph.viewport_x = std::stof(val);
+            else if (key == "y") graph.viewport_y = std::stof(val);
+            else if (key == "zoom") graph.viewport_zoom = std::stof(val);
+            graph.has_viewport = true;
+            continue;
+        }
 
         if (!in_node) continue;
 
@@ -375,6 +397,11 @@ void save_nano_stream(std::ostream& f, const FlowGraph& graph) {
 
         f << "\n";
     }
+
+    f << "[viewport]\n";
+    f << "x = " << graph.viewport_x << "\n";
+    f << "y = " << graph.viewport_y << "\n";
+    f << "zoom = " << graph.viewport_zoom << "\n";
 }
 
 std::string save_nano_string(const FlowGraph& graph) {
@@ -531,11 +558,24 @@ bool load_nano_string(const std::string& data, FlowGraph& graph) {
         cur_guid.clear(); cur_type.clear(); cur_args.clear(); cur_x=0; cur_y=0;
     };
 
+    bool in_viewport = false;
+
     while (std::getline(f, line)) {
         line = trim(line);
         if (line.empty() || line[0] == '#') continue;
-        if (line == "[[node]]") { flush_node(); in_node = true; continue; }
+        if (line == "[[node]]") { flush_node(); in_node = true; in_viewport = false; continue; }
+        if (line == "[viewport]") { flush_node(); in_node = false; in_viewport = true; continue; }
         if (line.find("version") == 0) continue;
+        if (in_viewport) {
+            auto eq = line.find('=');
+            if (eq == std::string::npos) continue;
+            std::string key = trim(line.substr(0,eq)), val = trim(line.substr(eq+1));
+            if (key == "x") graph.viewport_x = std::stof(val);
+            else if (key == "y") graph.viewport_y = std::stof(val);
+            else if (key == "zoom") graph.viewport_zoom = std::stof(val);
+            graph.has_viewport = true;
+            continue;
+        }
         if (!in_node) continue;
         auto eq = line.find('=');
         if (eq == std::string::npos) continue;

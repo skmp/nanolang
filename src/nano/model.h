@@ -98,6 +98,10 @@ public:
     std::vector<FlowNode> nodes;
     std::vector<FlowLink> links;
 
+    // Viewport state (saved/loaded from [viewport] section)
+    float viewport_x = 0, viewport_y = 0, viewport_zoom = 1.0f;
+    bool has_viewport = false; // true if loaded from file
+
     int add_node(const std::string& guid, Vec2 pos, int num_inputs = 1, int num_outputs = 1) {
         FlowNode node;
         node.id = next_id_++;

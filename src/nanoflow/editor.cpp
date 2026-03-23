@@ -231,6 +231,10 @@ void FlowEditorWindow::open_tab(const std::string& file_path) {
     if (fs::exists(abs_path)) {
         load_nano(abs_path, tab.graph);
     }
+    if (tab.graph.has_viewport) {
+        tab.canvas_offset = {tab.graph.viewport_x, tab.graph.viewport_y};
+        tab.canvas_zoom = tab.graph.viewport_zoom;
+    }
     tab.inference_dirty = true;
     tabs_.push_back(std::move(tab));
     active_tab_ = (int)tabs_.size() - 1;
@@ -240,6 +244,7 @@ void FlowEditorWindow::close_tab(int idx) {
     if (idx < 0 || idx >= (int)tabs_.size()) return;
     // Auto-save before closing
     if (tabs_[idx].dirty && !tabs_[idx].file_path.empty()) {
+        sync_viewport(tabs_[idx]);
         save_nano(tabs_[idx].file_path, tabs_[idx].graph);
     }
     tabs_.erase(tabs_.begin() + idx);
@@ -256,6 +261,7 @@ void FlowEditorWindow::mark_dirty() {
     push_undo();
     active().dirty = true;
     active().inference_dirty = true;
+    schedule_save();
 }
 
 void FlowEditorWindow::push_undo() {
@@ -285,8 +291,27 @@ void FlowEditorWindow::redo() {
     active().dirty = true;
 }
 
+void FlowEditorWindow::schedule_save() {
+    active().dirty = true;
+    save_deadline_ = ImGui::GetTime() + 0.5; // 500ms debounce
+}
+
+void FlowEditorWindow::check_debounced_save() {
+    if (save_deadline_ > 0 && ImGui::GetTime() >= save_deadline_) {
+        save_deadline_ = 0;
+        auto_save();
+    }
+}
+
+void FlowEditorWindow::sync_viewport(TabState& tab) {
+    tab.graph.viewport_x = tab.canvas_offset.x;
+    tab.graph.viewport_y = tab.canvas_offset.y;
+    tab.graph.viewport_zoom = tab.canvas_zoom;
+}
+
 void FlowEditorWindow::auto_save() {
     if (active().dirty && !active().file_path.empty()) {
+        sync_viewport(active());
         save_nano(active().file_path, active().graph);
         active().dirty = false;
     }
@@ -744,6 +769,7 @@ void FlowEditorWindow::draw() {
             active().canvas_offset.x += delta.x / active().canvas_zoom;
             active().canvas_offset.y += delta.y / active().canvas_zoom;
             canvas_drag_start_ = mouse_pos;
+            schedule_save();
         } else { canvas_dragging_ = false; }
     }
 
@@ -758,6 +784,7 @@ void FlowEditorWindow::draw() {
             ImVec2 mc2 = screen_to_canvas(mouse_pos, canvas_origin);
             active().canvas_offset.x += mc2.x - mc.x;
             active().canvas_offset.y += mc2.y - mc.y;
+            schedule_save();
         }
     }
 
@@ -1708,7 +1735,7 @@ void FlowEditorWindow::draw() {
     ImGui::EndChild();
 
     ImGui::End(); // main
-    auto_save();
+    check_debounced_save();
     win_.end_frame(30, 30, 40);
 }
 
