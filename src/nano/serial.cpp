@@ -125,7 +125,7 @@ bool load_nano(const std::string& path, FlowGraph& graph) {
         node.position = {cur_x, cur_y};
 
         for (int i = 0; i < default_bang_inputs; i++)
-            node.bang_inputs.push_back({"", "bang_in" + std::to_string(i), "", nullptr, FlowPin::BangInput});
+            node.bang_inputs.push_back(make_pin("", "bang_in" + std::to_string(i), "", nullptr, FlowPin::BangInput));
 
         // Nodes whose args are type names, not expressions
         bool args_are_type = is_any_of(cur_type_id, NodeTypeID::Cast, NodeTypeID::New);
@@ -141,7 +141,7 @@ bool load_nano(const std::string& path, FlowGraph& graph) {
             for (int i = 0; i < total_top; i++) {
                 bool is_lambda = parsed.is_lambda_slot(i);
                 std::string pin_name = is_lambda ? ("@" + std::to_string(i)) : std::to_string(i);
-                node.inputs.push_back({"", pin_name, "", nullptr, is_lambda ? FlowPin::Lambda : FlowPin::Input});
+                node.inputs.push_back(make_pin("", pin_name, "", nullptr, is_lambda ? FlowPin::Lambda : FlowPin::Input));
             }
         } else if (args_are_type) {
             // Args are type names — use descriptor defaults directly
@@ -156,7 +156,7 @@ bool load_nano(const std::string& path, FlowGraph& graph) {
                 } else {
                     pin_name = std::to_string(i);
                 }
-                node.inputs.push_back({"", pin_name, pin_type, nullptr, is_lambda ? FlowPin::Lambda : FlowPin::Input});
+                node.inputs.push_back(make_pin("", pin_name, pin_type, nullptr, is_lambda ? FlowPin::Lambda : FlowPin::Input));
             }
         } else {
             // Non-expr nodes: use inline arg computation
@@ -168,7 +168,7 @@ bool load_nano(const std::string& path, FlowGraph& graph) {
             for (int i = 0; i < ref_pins; i++) {
                 bool is_lambda = info.pin_slots.is_lambda_slot(i);
                 std::string pin_name = is_lambda ? ("@" + std::to_string(i)) : std::to_string(i);
-                node.inputs.push_back({"", pin_name, "", nullptr, is_lambda ? FlowPin::Lambda : FlowPin::Input});
+                node.inputs.push_back(make_pin("", pin_name, "", nullptr, is_lambda ? FlowPin::Lambda : FlowPin::Input));
             }
             // Then: remaining descriptor inputs not covered by inline args
             for (int i = info.num_inline_args; i < default_inputs; i++) {
@@ -182,14 +182,14 @@ bool load_nano(const std::string& path, FlowGraph& graph) {
                 } else {
                     pin_name = std::to_string(i);
                 }
-                node.inputs.push_back({"", pin_name, pin_type, nullptr, is_lambda ? FlowPin::Lambda : FlowPin::Input});
+                node.inputs.push_back(make_pin("", pin_name, pin_type, nullptr, is_lambda ? FlowPin::Lambda : FlowPin::Input));
             }
         }
 
         for (int i = 0; i < default_bang_outputs; i++)
-            node.bang_outputs.push_back({"", "bang" + std::to_string(i), "", nullptr, FlowPin::BangOutput});
+            node.bang_outputs.push_back(make_pin("", "bang" + std::to_string(i), "", nullptr, FlowPin::BangOutput));
         for (int i = 0; i < num_outputs; i++)
-            node.outputs.push_back({"", "out" + std::to_string(i), "", nullptr, FlowPin::Output});
+            node.outputs.push_back(make_pin("", "out" + std::to_string(i), "", nullptr, FlowPin::Output));
 
         node.rebuild_pin_ids();
         graph.nodes.push_back(std::move(node));
@@ -385,8 +385,8 @@ void save_nano_stream(std::ostream& f, const FlowGraph& graph) {
         std::vector<std::string> conns;
         for (auto& link : graph.links) {
             bool from_this = false;
-            for (auto& p : node.outputs) if (p.id == link.from_pin) from_this = true;
-            for (auto& p : node.bang_outputs) if (p.id == link.from_pin) from_this = true;
+            for (auto& p : node.outputs) if (p->id == link.from_pin) from_this = true;
+            for (auto& p : node.bang_outputs) if (p->id == link.from_pin) from_this = true;
             if (node.lambda_grab.id == link.from_pin) from_this = true;
             if (node.bang_pin.id == link.from_pin) from_this = true;
             if (!from_this) continue;
@@ -511,7 +511,7 @@ bool load_nano_string(const std::string& data, FlowGraph& graph) {
         node.id = graph.next_node_id();
         node.guid = cur_guid; node.type_id = cur_type_id; node.args = args_str;
         node.position = {cur_x, cur_y};
-        for (int i = 0; i < dbi; i++) node.bang_inputs.push_back({"","bang_in"+std::to_string(i), "", nullptr, FlowPin::BangInput});
+        for (int i = 0; i < dbi; i++) node.bang_inputs.push_back(make_pin("","bang_in"+std::to_string(i), "", nullptr, FlowPin::BangInput));
 
         bool args_are_type = is_any_of(cur_type_id, NodeTypeID::Cast, NodeTypeID::New);
 
@@ -522,7 +522,7 @@ bool load_nano_string(const std::string& data, FlowGraph& graph) {
             for (int i = 0; i < tt; i++) {
                 bool il = parsed.is_lambda_slot(i);
                 std::string pn = il ? ("@"+std::to_string(i)) : std::to_string(i);
-                node.inputs.push_back({"", pn, "", nullptr, il ? FlowPin::Lambda : FlowPin::Input});
+                node.inputs.push_back(make_pin("", pn, "", nullptr, il ? FlowPin::Lambda : FlowPin::Input));
             }
         } else if (args_are_type) {
             for (int i = 0; i < di; i++) {
@@ -532,7 +532,7 @@ bool load_nano_string(const std::string& data, FlowGraph& graph) {
                     il = (nt->input_ports[i].kind == PortKind::Lambda);
                     if (nt->input_ports[i].type_name) pt = nt->input_ports[i].type_name;
                 } else pn = std::to_string(i);
-                node.inputs.push_back({"", pn, pt, nullptr, il ? FlowPin::Lambda : FlowPin::Input});
+                node.inputs.push_back(make_pin("", pn, pt, nullptr, il ? FlowPin::Lambda : FlowPin::Input));
             }
         } else {
             auto info = compute_inline_args(args_str, di);
@@ -541,7 +541,7 @@ bool load_nano_string(const std::string& data, FlowGraph& graph) {
             for (int i = 0; i < ref_pins; i++) {
                 bool il = info.pin_slots.is_lambda_slot(i);
                 std::string pn = il ? ("@"+std::to_string(i)) : std::to_string(i);
-                node.inputs.push_back({"", pn, "", nullptr, il ? FlowPin::Lambda : FlowPin::Input});
+                node.inputs.push_back(make_pin("", pn, "", nullptr, il ? FlowPin::Lambda : FlowPin::Input));
             }
             for (int i = info.num_inline_args; i < di; i++) {
                 std::string pn; std::string pt; bool il = false;
@@ -550,12 +550,12 @@ bool load_nano_string(const std::string& data, FlowGraph& graph) {
                     il = (nt->input_ports[i].kind == PortKind::Lambda);
                     if (nt->input_ports[i].type_name) pt = nt->input_ports[i].type_name;
                 } else pn = std::to_string(i);
-                node.inputs.push_back({"", pn, pt, nullptr, il ? FlowPin::Lambda : FlowPin::Input});
+                node.inputs.push_back(make_pin("", pn, pt, nullptr, il ? FlowPin::Lambda : FlowPin::Input));
             }
         }
 
-        for (int i = 0; i < dbo; i++) node.bang_outputs.push_back({"","bang"+std::to_string(i), "", nullptr, FlowPin::BangOutput});
-        for (int i = 0; i < no; i++) node.outputs.push_back({"","out"+std::to_string(i), "", nullptr, FlowPin::Output});
+        for (int i = 0; i < dbo; i++) node.bang_outputs.push_back(make_pin("","bang"+std::to_string(i), "", nullptr, FlowPin::BangOutput));
+        for (int i = 0; i < no; i++) node.outputs.push_back(make_pin("","out"+std::to_string(i), "", nullptr, FlowPin::Output));
         node.rebuild_pin_ids();
         graph.nodes.push_back(std::move(node));
         cur_guid.clear(); cur_type.clear(); cur_args.clear(); cur_x=0; cur_y=0;

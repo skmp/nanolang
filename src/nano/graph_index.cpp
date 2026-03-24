@@ -25,10 +25,10 @@ void GraphIndex::rebuild(FlowGraph& graph) {
             }
         };
 
-        for (auto& p : node.bang_inputs) index_pin(p);
-        for (auto& p : node.inputs) index_pin(p);
-        for (auto& p : node.outputs) index_pin(p);
-        for (auto& p : node.bang_outputs) index_pin(p);
+        for (auto& p : node.bang_inputs) index_pin(*p);
+        for (auto& p : node.inputs) index_pin(*p);
+        for (auto& p : node.outputs) index_pin(*p);
+        for (auto& p : node.bang_outputs) index_pin(*p);
         index_pin(node.lambda_grab);
         index_pin(node.bang_pin);
     }

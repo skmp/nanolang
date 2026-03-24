@@ -16,9 +16,10 @@ std::vector<std::string> GraphInference::run(FlowGraph& graph) {
     resolve_pin_type_names(graph);
 
     // Phase 5: Fixed-point propagation
+    // Build initial index (pin pointers are stable via unique_ptr)
+    idx.rebuild(graph);
+
     for (int iter = 0; iter < 10; iter++) {
-        // Rebuild index each iteration (pin vectors may change during inference)
-        idx.rebuild(graph);
         bool changed = false;
 
         // 5.1: Propagate across connections
@@ -27,7 +28,7 @@ std::vector<std::string> GraphInference::run(FlowGraph& graph) {
         // 5.2: Infer expression nodes (may modify pin vectors)
         changed |= infer_expr_nodes(graph);
 
-        // Rebuild index if pins were modified
+        // Rebuild index if pins were added/renamed (IDs may have changed)
         if (changed) idx.rebuild(graph);
 
         // 5.3: Resolve lambda types
@@ -63,10 +64,10 @@ std::vector<std::string> GraphInference::run(FlowGraph& graph) {
 
 void GraphInference::clear_all(FlowGraph& graph) {
     for (auto& node : graph.nodes) {
-        for (auto& p : node.inputs) p.resolved_type = nullptr;
-        for (auto& p : node.outputs) p.resolved_type = nullptr;
-        for (auto& p : node.bang_inputs) p.resolved_type = nullptr;
-        for (auto& p : node.bang_outputs) p.resolved_type = nullptr;
+        for (auto& p : node.inputs) p->resolved_type = nullptr;
+        for (auto& p : node.outputs) p->resolved_type = nullptr;
+        for (auto& p : node.bang_inputs) p->resolved_type = nullptr;
+        for (auto& p : node.bang_outputs) p->resolved_type = nullptr;
         node.lambda_grab.resolved_type = nullptr;
         node.bang_pin.resolved_type = nullptr;
         for (auto& e : node.parsed_exprs) clear_expr_types(e);
@@ -179,10 +180,10 @@ void GraphInference::resolve_pin_type_names(FlowGraph& graph) {
         p.resolved_type = pool.intern(p.type_name);
     };
     for (auto& node : graph.nodes) {
-        for (auto& p : node.bang_inputs) resolve(p);
-        for (auto& p : node.inputs) resolve(p);
-        for (auto& p : node.outputs) resolve(p);
-        for (auto& p : node.bang_outputs) resolve(p);
+        for (auto& p : node.bang_inputs) resolve(*p);
+        for (auto& p : node.inputs) resolve(*p);
+        for (auto& p : node.outputs) resolve(*p);
+        for (auto& p : node.bang_outputs) resolve(*p);
         resolve(node.lambda_grab);
         resolve(node.bang_pin);
     }
@@ -256,8 +257,8 @@ bool GraphInference::infer_expr_nodes(FlowGraph& graph) {
         // Build input pin type map
         ctx.input_pin_types.clear();
         for (int i = 0; i < (int)node.inputs.size(); i++) {
-            if (node.inputs[i].resolved_type)
-                ctx.input_pin_types[i] = node.inputs[i].resolved_type;
+            if (node.inputs[i]->resolved_type)
+                ctx.input_pin_types[i] = node.inputs[i]->resolved_type;
         }
 
         // Run forward inference for each expression → each output pin
@@ -274,7 +275,7 @@ bool GraphInference::infer_expr_nodes(FlowGraph& graph) {
 
             // Assign to corresponding output pin (skip for nodes with custom output logic)
             if (!has_custom_output && ei < (int)node.outputs.size()) {
-                auto& out = node.outputs[ei];
+                auto& out = *node.outputs[ei];
                 if (result_type && (!out.resolved_type || out.resolved_type->is_generic)) {
                     if (out.resolved_type != result_type) {
                         out.resolved_type = result_type;
@@ -319,15 +320,15 @@ bool GraphInference::infer_expr_nodes(FlowGraph& graph) {
             // dup: output = input type
             // Input can be from a connection OR from inline expression
             TypePtr input_type = nullptr;
-            if (!node.inputs.empty() && node.inputs[0].resolved_type)
-                input_type = node.inputs[0].resolved_type;
+            if (!node.inputs.empty() && node.inputs[0]->resolved_type)
+                input_type = node.inputs[0]->resolved_type;
             else if (!node.parsed_exprs.empty() && node.parsed_exprs[0] &&
                      node.parsed_exprs[0]->resolved_type)
                 input_type = node.parsed_exprs[0]->resolved_type;
             if (input_type && !node.outputs.empty()) {
-                if (!node.outputs[0].resolved_type || node.outputs[0].resolved_type->is_generic) {
-                    if (node.outputs[0].resolved_type != input_type) {
-                        node.outputs[0].resolved_type = input_type;
+                if (!node.outputs[0]->resolved_type || node.outputs[0]->resolved_type->is_generic) {
+                    if (node.outputs[0]->resolved_type != input_type) {
+                        node.outputs[0]->resolved_type = input_type;
                         changed = true;
                     }
                 }
@@ -335,25 +336,25 @@ bool GraphInference::infer_expr_nodes(FlowGraph& graph) {
         }
 
         if (node.type_id == NodeTypeID::Void) {
-            if (!node.outputs.empty() && !node.outputs[0].resolved_type) {
-                node.outputs[0].resolved_type = pool.t_void;
+            if (!node.outputs.empty() && !node.outputs[0]->resolved_type) {
+                node.outputs[0]->resolved_type = pool.t_void;
                 changed = true;
             }
         }
 
         if (node.type_id == NodeTypeID::Str) {
-            if (!node.outputs.empty() && !node.outputs[0].resolved_type) {
-                node.outputs[0].resolved_type = pool.intern("string");
+            if (!node.outputs.empty() && !node.outputs[0]->resolved_type) {
+                node.outputs[0]->resolved_type = pool.intern("string");
                 changed = true;
             }
         }
 
         if (node.type_id == NodeTypeID::Cast) {
             // Output type is the destination type from args
-            if (!node.outputs.empty() && !node.outputs[0].resolved_type && !node.args.empty()) {
+            if (!node.outputs.empty() && !node.outputs[0]->resolved_type && !node.args.empty()) {
                 auto dest_type = pool.intern(node.args);
                 if (dest_type) {
-                    node.outputs[0].resolved_type = dest_type;
+                    node.outputs[0]->resolved_type = dest_type;
                     changed = true;
                 }
             }
@@ -362,8 +363,8 @@ bool GraphInference::infer_expr_nodes(FlowGraph& graph) {
         if (node.type_id == NodeTypeID::Next) {
             // next: input must be an iterator, output = same iterator type
             TypePtr input_type = nullptr;
-            if (!node.inputs.empty() && node.inputs[0].resolved_type)
-                input_type = node.inputs[0].resolved_type;
+            if (!node.inputs.empty() && node.inputs[0]->resolved_type)
+                input_type = node.inputs[0]->resolved_type;
             else if (!node.parsed_exprs.empty() && node.parsed_exprs[0] &&
                      node.parsed_exprs[0]->resolved_type)
                 input_type = node.parsed_exprs[0]->resolved_type;
@@ -377,9 +378,9 @@ bool GraphInference::infer_expr_nodes(FlowGraph& graph) {
             }
             // Output = same type as input (advanced iterator)
             if (input_type && !node.outputs.empty()) {
-                if (!node.outputs[0].resolved_type || node.outputs[0].resolved_type->is_generic) {
-                    if (node.outputs[0].resolved_type != input_type) {
-                        node.outputs[0].resolved_type = input_type;
+                if (!node.outputs[0]->resolved_type || node.outputs[0]->resolved_type->is_generic) {
+                    if (node.outputs[0]->resolved_type != input_type) {
+                        node.outputs[0]->resolved_type = input_type;
                         changed = true;
                     }
                 }
@@ -414,10 +415,10 @@ bool GraphInference::infer_expr_nodes(FlowGraph& graph) {
 
                 // Set output type to a reference to the declared type
                 if (local_type && !node.outputs.empty()) {
-                    if (!node.outputs[0].resolved_type || node.outputs[0].resolved_type->is_generic) {
+                    if (!node.outputs[0]->resolved_type || node.outputs[0]->resolved_type->is_generic) {
                         auto ref_type = std::make_shared<TypeExpr>(*local_type);
                         ref_type->category = TypeCategory::Reference;
-                        node.outputs[0].resolved_type = ref_type;
+                        node.outputs[0]->resolved_type = ref_type;
                         changed = true;
                     }
                 }
@@ -450,8 +451,8 @@ bool GraphInference::infer_expr_nodes(FlowGraph& graph) {
                 if (idx < (int)node.parsed_exprs.size() && node.parsed_exprs[idx] &&
                     node.parsed_exprs[idx]->resolved_type)
                     return node.parsed_exprs[idx]->resolved_type;
-                if (idx < (int)node.inputs.size() && node.inputs[idx].resolved_type)
-                    return node.inputs[idx].resolved_type;
+                if (idx < (int)node.inputs.size() && node.inputs[idx]->resolved_type)
+                    return node.inputs[idx]->resolved_type;
                 return nullptr;
             };
 
@@ -482,9 +483,9 @@ bool GraphInference::infer_expr_nodes(FlowGraph& graph) {
             else result_type = false_type;
 
             if (result_type && !node.outputs.empty()) {
-                if (!node.outputs[0].resolved_type || node.outputs[0].resolved_type->is_generic) {
-                    if (node.outputs[0].resolved_type != result_type) {
-                        node.outputs[0].resolved_type = result_type;
+                if (!node.outputs[0]->resolved_type || node.outputs[0]->resolved_type->is_generic) {
+                    if (node.outputs[0]->resolved_type != result_type) {
+                        node.outputs[0]->resolved_type = result_type;
                         changed = true;
                     }
                 }
@@ -525,9 +526,9 @@ bool GraphInference::infer_expr_nodes(FlowGraph& graph) {
                     for (auto& inp : node.inputs) {
                         // Check if this pin is connected from an as_lambda
                         for (auto& l : graph.links) {
-                            if (l.to_pin == inp.id && l.from_pin.find(".as_lambda") != std::string::npos) {
-                                if (!inp.resolved_type || inp.resolved_type->is_generic) {
-                                    inp.resolved_type = target_type;
+                            if (l.to_pin == inp->id && l.from_pin.find(".as_lambda") != std::string::npos) {
+                                if (!inp->resolved_type || inp->resolved_type->is_generic) {
+                                    inp->resolved_type = target_type;
                                     changed = true;
                                 }
                                 break;
@@ -605,8 +606,8 @@ bool GraphInference::infer_expr_nodes(FlowGraph& graph) {
                             iter_type->iterator = it_kind->second;
                             iter_type->value_type = target_resolved->value_type;
                             iter_type->key_type = target_resolved->key_type;
-                            if (!node.outputs[0].resolved_type || node.outputs[0].resolved_type->is_generic) {
-                                node.outputs[0].resolved_type = iter_type;
+                            if (!node.outputs[0]->resolved_type || node.outputs[0]->resolved_type->is_generic) {
+                                node.outputs[0]->resolved_type = iter_type;
                                 changed = true;
                             }
                         }
@@ -677,9 +678,9 @@ bool GraphInference::infer_expr_nodes(FlowGraph& graph) {
 
                     // Find the lambda input pin (either from inline @0 or remaining descriptor pin)
                     for (auto& inp : node.inputs) {
-                        if (inp.direction == FlowPin::Lambda) {
-                            if (!inp.resolved_type || inp.resolved_type->is_generic) {
-                                inp.resolved_type = fn_type;
+                        if (inp->direction == FlowPin::Lambda) {
+                            if (!inp->resolved_type || inp->resolved_type->is_generic) {
+                                inp->resolved_type = fn_type;
                                 changed = true;
                             }
                             break;
@@ -708,9 +709,9 @@ bool GraphInference::infer_expr_nodes(FlowGraph& graph) {
                 // Find the lambda root and collect its params to determine the function signature
                 FlowNode* lambda_root = nullptr;
                 for (auto& inp : node.inputs) {
-                    if (inp.direction != FlowPin::Lambda) continue;
+                    if (inp->direction != FlowPin::Lambda) continue;
                     for (auto& link : graph.links) {
-                        if (link.to_pin == inp.id) {
+                        if (link.to_pin == inp->id) {
                             for (auto& src : graph.nodes) {
                                 if (src.lambda_grab.id == link.from_pin) {
                                     lambda_root = &src;
@@ -743,22 +744,22 @@ bool GraphInference::infer_expr_nodes(FlowGraph& graph) {
                 // Count existing non-Lambda, non-mutex data inputs
                 int existing_extra = 0;
                 for (auto& inp : node.inputs) {
-                    if (inp.direction != FlowPin::Lambda && inp.name != "mutex")
+                    if (inp->direction != FlowPin::Lambda && inp->name != "mutex")
                         existing_extra++;
                 }
                 int needed_extra = (int)lambda_params.size();
                 if (needed_extra != existing_extra) {
                     // Remove old extra pins and add new ones
-                    std::vector<FlowPin> new_inputs;
+                    PinVec new_inputs;
                     for (auto& inp : node.inputs) {
-                        if (inp.direction == FlowPin::Lambda || inp.name == "mutex")
-                            new_inputs.push_back(inp);
+                        if (inp->direction == FlowPin::Lambda || inp->name == "mutex")
+                            new_inputs.push_back(make_pin(inp->id, inp->name, inp->type_name, inp->resolved_type, inp->direction));
                     }
                     for (int pi = 0; pi < needed_extra; pi++) {
                         std::string pname = "arg" + std::to_string(pi);
                         std::string ptype = lambda_params[pi]->resolved_type ?
                             type_to_string(lambda_params[pi]->resolved_type) : "value";
-                        new_inputs.push_back({"", pname, ptype, nullptr, FlowPin::Input});
+                        new_inputs.push_back(make_pin("", pname, ptype, nullptr, FlowPin::Input));
                     }
                     node.inputs = std::move(new_inputs);
                     node.rebuild_pin_ids();
@@ -767,9 +768,9 @@ bool GraphInference::infer_expr_nodes(FlowGraph& graph) {
                 // Set types on extra input pins
                 for (int pi = 0; pi < needed_extra; pi++) {
                     for (auto& inp : node.inputs) {
-                        if (inp.name == "arg" + std::to_string(pi) && lambda_params[pi]->resolved_type) {
-                            if (!inp.resolved_type || inp.resolved_type->is_generic) {
-                                inp.resolved_type = lambda_params[pi]->resolved_type;
+                        if (inp->name == "arg" + std::to_string(pi) && lambda_params[pi]->resolved_type) {
+                            if (!inp->resolved_type || inp->resolved_type->is_generic) {
+                                inp->resolved_type = lambda_params[pi]->resolved_type;
                                 changed = true;
                             }
                         }
@@ -778,27 +779,27 @@ bool GraphInference::infer_expr_nodes(FlowGraph& graph) {
 
                 // Set expected type on lambda input pin
                 for (auto& inp : node.inputs) {
-                    if (inp.direction == FlowPin::Lambda) {
-                        if (!inp.resolved_type || inp.resolved_type->is_generic) {
-                            inp.resolved_type = fn_type;
+                    if (inp->direction == FlowPin::Lambda) {
+                        if (!inp->resolved_type || inp->resolved_type->is_generic) {
+                            inp->resolved_type = fn_type;
                             changed = true;
                         }
 
                         // Resolve return type from the lambda root's output
                         TypePtr lambda_ret_type;
                         if (lambda_root && !lambda_root->outputs.empty() &&
-                            lambda_root->outputs[0].resolved_type &&
-                            !lambda_root->outputs[0].resolved_type->is_generic) {
-                            lambda_ret_type = lambda_root->outputs[0].resolved_type;
+                            lambda_root->outputs[0]->resolved_type &&
+                            !lambda_root->outputs[0]->resolved_type->is_generic) {
+                            lambda_ret_type = lambda_root->outputs[0]->resolved_type;
                         }
 
                         if (lambda_ret_type && lambda_ret_type->kind != TypeKind::Void) {
                             if (node.outputs.empty()) {
-                                node.outputs.push_back({"", "result", "", nullptr, FlowPin::Output});
+                                node.outputs.push_back(make_pin("", "result", "", nullptr, FlowPin::Output));
                                 node.rebuild_pin_ids();
                             }
-                            if (!node.outputs[0].resolved_type || node.outputs[0].resolved_type->is_generic) {
-                                node.outputs[0].resolved_type = lambda_ret_type;
+                            if (!node.outputs[0]->resolved_type || node.outputs[0]->resolved_type->is_generic) {
+                                node.outputs[0]->resolved_type = lambda_ret_type;
                                 changed = true;
                             }
                         } else if (lambda_ret_type && lambda_ret_type->kind == TypeKind::Void) {
@@ -843,9 +844,9 @@ bool GraphInference::infer_expr_nodes(FlowGraph& graph) {
                                     // Bare $N — find the pin and set its type
                                     std::string pin_name = tok.substr(1);
                                     for (auto& p : node.inputs) {
-                                        if (p.name == pin_name && fn_resolved->func_args[ai].type) {
-                                            if (!p.resolved_type || p.resolved_type->is_generic) {
-                                                p.resolved_type = fn_resolved->func_args[ai].type;
+                                        if (p->name == pin_name && fn_resolved->func_args[ai].type) {
+                                            if (!p->resolved_type || p->resolved_type->is_generic) {
+                                                p->resolved_type = fn_resolved->func_args[ai].type;
                                                 changed = true;
                                             }
                                         }
@@ -860,8 +861,8 @@ bool GraphInference::infer_expr_nodes(FlowGraph& graph) {
                         for (int pi = slot_count; pi < (int)node.inputs.size(); pi++) {
                             int fn_arg_idx = num_inline + (pi - slot_count);
                             if (fn_arg_idx < (int)fn_resolved->func_args.size() && fn_resolved->func_args[fn_arg_idx].type) {
-                                if (!node.inputs[pi].resolved_type || node.inputs[pi].resolved_type->is_generic) {
-                                    node.inputs[pi].resolved_type = fn_resolved->func_args[fn_arg_idx].type;
+                                if (!node.inputs[pi]->resolved_type || node.inputs[pi]->resolved_type->is_generic) {
+                                    node.inputs[pi]->resolved_type = fn_resolved->func_args[fn_arg_idx].type;
                                     changed = true;
                                 }
                             }
@@ -870,8 +871,8 @@ bool GraphInference::infer_expr_nodes(FlowGraph& graph) {
                     // Set output type from return type
                     if (fn_resolved->return_type && fn_resolved->return_type->kind != TypeKind::Void) {
                         if (!node.outputs.empty()) {
-                            if (!node.outputs[0].resolved_type || node.outputs[0].resolved_type->is_generic) {
-                                node.outputs[0].resolved_type = fn_resolved->return_type;
+                            if (!node.outputs[0]->resolved_type || node.outputs[0]->resolved_type->is_generic) {
+                                node.outputs[0]->resolved_type = fn_resolved->return_type;
                                 changed = true;
                             }
                         }
@@ -943,9 +944,9 @@ bool GraphInference::infer_expr_nodes(FlowGraph& graph) {
                     default: break;
                     }
                     // Always set — append output is always an iterator, not the container type
-                    if (!node.outputs[0].resolved_type ||
-                        node.outputs[0].resolved_type->kind != TypeKind::ContainerIterator) {
-                        node.outputs[0].resolved_type = iter_type;
+                    if (!node.outputs[0]->resolved_type ||
+                        node.outputs[0]->resolved_type->kind != TypeKind::ContainerIterator) {
+                        node.outputs[0]->resolved_type = iter_type;
                         changed = true;
                     }
                 }
@@ -977,8 +978,8 @@ bool GraphInference::infer_expr_nodes(FlowGraph& graph) {
                 if (!node.parsed_exprs.empty() && node.parsed_exprs[0] &&
                     node.parsed_exprs[0]->resolved_type)
                     return node.parsed_exprs[0]->resolved_type;
-                if (!node.inputs.empty() && node.inputs[0].resolved_type)
-                    return node.inputs[0].resolved_type;
+                if (!node.inputs.empty() && node.inputs[0]->resolved_type)
+                    return node.inputs[0]->resolved_type;
                 return nullptr;
             };
             auto cond_type = get_cond_type();
@@ -997,8 +998,8 @@ bool GraphInference::infer_expr_nodes(FlowGraph& graph) {
                 if (!node.parsed_exprs.empty() && node.parsed_exprs[0] &&
                     node.parsed_exprs[0]->resolved_type)
                     return node.parsed_exprs[0]->resolved_type;
-                if (!node.inputs.empty() && node.inputs[0].resolved_type)
-                    return node.inputs[0].resolved_type;
+                if (!node.inputs.empty() && node.inputs[0]->resolved_type)
+                    return node.inputs[0]->resolved_type;
                 return nullptr;
             };
             auto input_type = get_input_type();
@@ -1020,7 +1021,7 @@ void GraphInference::propagate_pin_ref_types(FlowNode& node, bool& changed) {
         if (!e) return;
         if (e->kind == ExprKind::PinRef && e->pin_ref.index >= 0 &&
             e->pin_ref.index < (int)node.inputs.size()) {
-            auto& pin = node.inputs[e->pin_ref.index];
+            auto& pin = *node.inputs[e->pin_ref.index];
             if (e->resolved_type && !e->resolved_type->is_generic &&
                 (!pin.resolved_type || pin.resolved_type->is_generic)) {
                 pin.resolved_type = e->resolved_type;
@@ -1066,8 +1067,8 @@ bool GraphInference::resolve_lambdas(FlowGraph& graph) {
             // Assign return type
             if (expected->return_type && expected->return_type->kind != TypeKind::Void) {
                 for (auto& out : node.outputs) {
-                    if (!out.resolved_type) {
-                        out.resolved_type = expected->return_type;
+                    if (!out->resolved_type) {
+                        out->resolved_type = expected->return_type;
                         changed = true;
                     }
                 }
@@ -1104,13 +1105,13 @@ void GraphInference::collect_lambda_params(FlowGraph& graph, FlowNode& node,
     // 1. Data inputs: recurse into connected sources, collect unconnected as params
     //    Skip Lambda inputs — they define inner lambda boundaries
     for (auto& inp : node.inputs) {
-        if (inp.direction == FlowPin::Lambda) continue;
-        auto* src_pin = idx.source_pin(&inp);
+        if (inp->direction == FlowPin::Lambda) continue;
+        auto* src_pin = idx.source_pin(inp.get());
         if (!src_pin) {
-            params.push_back(&inp);
+            params.push_back(inp.get());
         } else {
             // Don't recurse through as_lambda (LambdaGrab) pins — they are lambda boundaries
-            auto* src_node = idx.source_node(&inp);
+            auto* src_node = idx.source_node(inp.get());
             if (src_node) {
                 bool is_lambda_grab = (src_pin->direction == FlowPin::LambdaGrab);
                 if (!is_lambda_grab)
@@ -1124,7 +1125,7 @@ void GraphInference::collect_lambda_params(FlowGraph& graph, FlowNode& node,
 
     // 3. Output bangs (left to right): follow each bang output's chain
     for (auto& bout : node.bang_outputs) {
-        follow_bang_chain(graph, bout.id, params, visited);
+        follow_bang_chain(graph, bout->id, params, visited);
     }
 }
 
@@ -1135,8 +1136,8 @@ void GraphInference::validate_lambda(FlowNode& node, const std::vector<FlowPin*>
     lambda_type->kind = TypeKind::Function;
     for (auto* p : params)
         lambda_type->func_args.push_back({"", p->resolved_type});
-    if (!node.outputs.empty() && node.outputs[0].resolved_type)
-        lambda_type->return_type = node.outputs[0].resolved_type;
+    if (!node.outputs.empty() && node.outputs[0]->resolved_type)
+        lambda_type->return_type = node.outputs[0]->resolved_type;
     else
         lambda_type->return_type = pool.t_void;
     node.lambda_grab.resolved_type = lambda_type;

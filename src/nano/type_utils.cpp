@@ -98,27 +98,27 @@ std::vector<TypeField> parse_event_args(const FlowNode& event_decl, const FlowGr
     return result;
 }
 
-void reconcile_pins(std::vector<FlowPin>& pins,
+void reconcile_pins(PinVec& pins,
                     const std::vector<DesiredPinDesc>& desired,
                     const std::string& node_guid, bool is_output,
                     std::vector<FlowLink>& links) {
     std::map<std::string, int> existing;
     for (int i = 0; i < (int)pins.size(); i++)
-        existing[pins[i].name] = i;
+        existing[pins[i]->name] = i;
 
-    std::vector<FlowPin> new_pins;
+    PinVec new_pins;
     for (auto& d : desired) {
         auto it = existing.find(d.name);
         if (it != existing.end()) {
-            auto pin = pins[it->second];
-            pin.direction = d.dir;
-            pin.type_name = d.type_name;
-            if (d.resolved) pin.resolved_type = d.resolved;
+            auto pin = std::move(pins[it->second]);
+            pin->direction = d.dir;
+            pin->type_name = d.type_name;
+            if (d.resolved) pin->resolved_type = d.resolved;
             new_pins.push_back(std::move(pin));
             existing.erase(it);
         } else {
             std::string id = node_guid + "." + d.name;
-            new_pins.push_back({id, d.name, d.type_name, d.resolved, d.dir});
+            new_pins.push_back(make_pin(id, d.name, d.type_name, d.resolved, d.dir));
         }
     }
 
@@ -126,9 +126,9 @@ void reconcile_pins(std::vector<FlowPin>& pins,
     for (auto& [name, idx] : existing) {
         auto& old_pin = pins[idx];
         if (is_output)
-            std::erase_if(links, [&](auto& l) { return l.from_pin == old_pin.id; });
+            std::erase_if(links, [&](auto& l) { return l.from_pin == old_pin->id; });
         else
-            std::erase_if(links, [&](auto& l) { return l.to_pin == old_pin.id; });
+            std::erase_if(links, [&](auto& l) { return l.to_pin == old_pin->id; });
     }
 
     pins = std::move(new_pins);
@@ -147,7 +147,7 @@ void resolve_type_based_pins(FlowGraph& graph) {
                     desired.push_back({field.name, field.type_name, FlowPin::Input, field.resolved});
                 reconcile_pins(node.inputs, desired, node.guid, false, graph.links);
                 // Set output type to the instantiated type
-                for (auto& p : node.outputs) p.type_name = inst_type_name;
+                for (auto& p : node.outputs) p->type_name = inst_type_name;
                 node.rebuild_pin_ids();
             }
         }
@@ -214,7 +214,7 @@ void resolve_type_based_pins(FlowGraph& graph) {
 
                 // Preserve existing $N/@N ref pins (created by scan_slots during loading)
                 for (auto& p : node.inputs) {
-                    desired_inputs.push_back({p.name, p.type_name, p.direction, p.resolved_type});
+                    desired_inputs.push_back({p->name, p->type_name, p->direction, p->resolved_type});
                 }
 
                 // Add remaining function args not covered by inline expressions
@@ -240,9 +240,9 @@ void resolve_type_based_pins(FlowGraph& graph) {
                             // Bare $N — set pin type from function arg
                             std::string pin_name = tok.substr(1);
                             for (auto& p : node.inputs) {
-                                if (p.name == pin_name && fn_type->func_args[ai].type) {
-                                    p.type_name = type_to_string(fn_type->func_args[ai].type);
-                                    p.resolved_type = fn_type->func_args[ai].type;
+                                if (p->name == pin_name && fn_type->func_args[ai].type) {
+                                    p->type_name = type_to_string(fn_type->func_args[ai].type);
+                                    p->resolved_type = fn_type->func_args[ai].type;
                                 }
                             }
                         }

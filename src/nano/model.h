@@ -35,6 +35,14 @@ struct FlowPin {
     enum Direction { Input, BangInput, Output, BangOutput, Lambda, LambdaGrab } direction = Input;
 };
 
+using PinPtr = std::unique_ptr<FlowPin>;
+using PinVec = std::vector<PinPtr>;
+
+inline PinPtr make_pin(std::string id, std::string name, std::string type_name,
+                       TypePtr resolved, FlowPin::Direction dir) {
+    return std::make_unique<FlowPin>(FlowPin{std::move(id), std::move(name), std::move(type_name), std::move(resolved), dir});
+}
+
 struct FlowNode {
     int id = 0;                   // internal numeric id (for UI operations)
     std::string guid;             // unique identifier for serialization/connections
@@ -42,10 +50,10 @@ struct FlowNode {
     std::string args;             // arguments string
     Vec2 position = {0, 0};     // canvas coordinates
     Vec2 size = {120, 60};      // computed during draw
-    std::vector<FlowPin> bang_inputs;   // bang inputs (top, squares, before data)
-    std::vector<FlowPin> inputs;        // data inputs AND lambdas (top, in slot order)
-    std::vector<FlowPin> outputs;       // data outputs (bottom, circles)
-    std::vector<FlowPin> bang_outputs;  // bang outputs (bottom, squares, before data)
+    PinVec bang_inputs;   // bang inputs (top, squares, before data)
+    PinVec inputs;        // data inputs AND lambdas (top, in slot order)
+    PinVec outputs;       // data outputs (bottom, circles)
+    PinVec bang_outputs;  // bang outputs (bottom, squares, before data)
     FlowPin lambda_grab = {"", "as_lambda", "lambda", nullptr, FlowPin::LambdaGrab};
     FlowPin bang_pin = {"", "bang", "bang", nullptr, FlowPin::BangOutput};
     std::string error;            // non-empty if node has a validation error
@@ -67,10 +75,10 @@ struct FlowNode {
         bang_pin.id = pin_id("post_bang");
         bang_pin.type_name = "bang";
         bang_pin.resolved_type = nullptr;
-        for (auto& p : bang_inputs)  { p.id = pin_id(p.name); p.type_name = "bang"; p.resolved_type = nullptr; }
-        for (auto& p : inputs)      { p.id = pin_id(p.name); if (p.type_name.empty()) p.type_name = "value"; p.resolved_type = nullptr; }
-        for (auto& p : outputs)     { p.id = pin_id(p.name); if (p.type_name.empty()) p.type_name = "value"; p.resolved_type = nullptr; }
-        for (auto& p : bang_outputs) { p.id = pin_id(p.name); p.type_name = "bang"; p.resolved_type = nullptr; }
+        for (auto& p : bang_inputs)  { p->id = pin_id(p->name); p->type_name = "bang"; p->resolved_type = nullptr; }
+        for (auto& p : inputs)      { p->id = pin_id(p->name); if (p->type_name.empty()) p->type_name = "value"; p->resolved_type = nullptr; }
+        for (auto& p : outputs)     { p->id = pin_id(p->name); if (p->type_name.empty()) p->type_name = "value"; p->resolved_type = nullptr; }
+        for (auto& p : bang_outputs) { p->id = pin_id(p->name); p->type_name = "bang"; p->resolved_type = nullptr; }
         type_dirty = true;
     }
 
@@ -116,12 +124,10 @@ public:
         node.lambda_grab = {"", "as_lambda", "lambda", nullptr, FlowPin::LambdaGrab};
         node.bang_pin = {"", "bang", "bang", nullptr, FlowPin::BangOutput};
         for (int i = 0; i < num_inputs; i++) {
-            std::string name = std::to_string(i);
-            node.inputs.push_back({"", name, "", nullptr, FlowPin::Input});
+            node.inputs.push_back(make_pin("", std::to_string(i), "", nullptr, FlowPin::Input));
         }
         for (int i = 0; i < num_outputs; i++) {
-            std::string name = "out" + std::to_string(i);
-            node.outputs.push_back({"", name, "", nullptr, FlowPin::Output});
+            node.outputs.push_back(make_pin("", "out" + std::to_string(i), "", nullptr, FlowPin::Output));
         }
         if (!guid.empty()) node.rebuild_pin_ids();
         nodes.push_back(std::move(node));
@@ -133,10 +139,10 @@ public:
         for (auto& node : nodes) {
             if (node.lambda_grab.id == pin_id) return &node.lambda_grab;
             if (node.bang_pin.id == pin_id) return &node.bang_pin;
-            for (auto& p : node.bang_inputs) if (p.id == pin_id) return &p;
-            for (auto& p : node.inputs) if (p.id == pin_id) return &p;
-            for (auto& p : node.outputs) if (p.id == pin_id) return &p;
-            for (auto& p : node.bang_outputs) if (p.id == pin_id) return &p;
+            for (auto& p : node.bang_inputs) if (p->id == pin_id) return p.get();
+            for (auto& p : node.inputs) if (p->id == pin_id) return p.get();
+            for (auto& p : node.outputs) if (p->id == pin_id) return p.get();
+            for (auto& p : node.bang_outputs) if (p->id == pin_id) return p.get();
         }
         return nullptr;
     }
@@ -159,10 +165,10 @@ public:
                 else
                     std::erase_if(links, [&](auto& l) { return l.to_pin == pid; });
             };
-            for (auto& pin : node.bang_inputs)  erase_pin(pin.id, false);
-            for (auto& pin : node.inputs)       erase_pin(pin.id, false);
-            for (auto& pin : node.outputs)      erase_pin(pin.id, true);
-            for (auto& pin : node.bang_outputs)  erase_pin(pin.id, true);
+            for (auto& pin : node.bang_inputs)  erase_pin(pin->id, false);
+            for (auto& pin : node.inputs)       erase_pin(pin->id, false);
+            for (auto& pin : node.outputs)      erase_pin(pin->id, true);
+            for (auto& pin : node.bang_outputs)  erase_pin(pin->id, true);
             erase_pin(node.lambda_grab.id, true);
             erase_pin(node.bang_pin.id, true);
         }

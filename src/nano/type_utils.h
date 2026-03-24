@@ -29,7 +29,7 @@ std::vector<TypeField> parse_event_args(const FlowNode& event_decl, const FlowGr
 struct DesiredPinDesc { std::string name; std::string type_name; FlowPin::Direction dir; TypePtr resolved = nullptr; };
 
 // Reconcile a pin vector with a desired pin list, preserving links where pin names match.
-void reconcile_pins(std::vector<FlowPin>& pins,
+void reconcile_pins(PinVec& pins,
                     const std::vector<DesiredPinDesc>& desired,
                     const std::string& node_guid, bool is_output,
                     std::vector<FlowLink>& links);

@@ -73,7 +73,7 @@ struct GraphBuilder {
         node.position = {0, 0};
 
         for (int i = 0; i < nbi; i++)
-            node.bang_inputs.push_back({"", "bang_in" + std::to_string(i), "", nullptr, FlowPin::BangInput});
+            node.bang_inputs.push_back(make_pin("", "bang_in" + std::to_string(i), "", nullptr, FlowPin::BangInput));
 
         if (is_expr) {
             auto slots = scan_slots(args);
@@ -81,7 +81,7 @@ struct GraphBuilder {
             for (int i = 0; i < ni; i++) {
                 bool il = slots.is_lambda_slot(i);
                 std::string pn = il ? ("@" + std::to_string(i)) : std::to_string(i);
-                node.inputs.push_back({"", pn, "", nullptr, il ? FlowPin::Lambda : FlowPin::Input});
+                node.inputs.push_back(make_pin("", pn, "", nullptr, il ? FlowPin::Lambda : FlowPin::Input));
             }
             if (!args.empty() && num_outputs < 0) {
                 auto tokens = tokenize_args(args, false);
@@ -97,7 +97,7 @@ struct GraphBuilder {
                     il = (nt->input_ports[i].kind == PortKind::Lambda);
                     if (nt->input_ports[i].type_name) pt = nt->input_ports[i].type_name;
                 } else pn = std::to_string(i);
-                node.inputs.push_back({"", pn, pt, nullptr, il ? FlowPin::Lambda : FlowPin::Input});
+                node.inputs.push_back(make_pin("", pn, pt, nullptr, il ? FlowPin::Lambda : FlowPin::Input));
             }
         } else {
             // Non-expr: use compute_inline_args (same as serial loader)
@@ -108,7 +108,7 @@ struct GraphBuilder {
             for (int i = 0; i < ref_pins; i++) {
                 bool il = info.pin_slots.is_lambda_slot(i);
                 std::string pn = il ? ("@" + std::to_string(i)) : std::to_string(i);
-                node.inputs.push_back({"", pn, "", nullptr, il ? FlowPin::Lambda : FlowPin::Input});
+                node.inputs.push_back(make_pin("", pn, "", nullptr, il ? FlowPin::Lambda : FlowPin::Input));
             }
             for (int i = info.num_inline_args; i < di; i++) {
                 std::string pn; std::string pt; bool il = false;
@@ -117,14 +117,14 @@ struct GraphBuilder {
                     il = (nt->input_ports[i].kind == PortKind::Lambda);
                     if (nt->input_ports[i].type_name) pt = nt->input_ports[i].type_name;
                 } else pn = std::to_string(i);
-                node.inputs.push_back({"", pn, pt, nullptr, il ? FlowPin::Lambda : FlowPin::Input});
+                node.inputs.push_back(make_pin("", pn, pt, nullptr, il ? FlowPin::Lambda : FlowPin::Input));
             }
         }
 
         for (int i = 0; i < no; i++)
-            node.outputs.push_back({"", "out" + std::to_string(i), "", nullptr, FlowPin::Output});
+            node.outputs.push_back(make_pin("", "out" + std::to_string(i), "", nullptr, FlowPin::Output));
         for (int i = 0; i < nbo; i++)
-            node.bang_outputs.push_back({"", "bang" + std::to_string(i), "", nullptr, FlowPin::BangOutput});
+            node.bang_outputs.push_back(make_pin("", "bang" + std::to_string(i), "", nullptr, FlowPin::BangOutput));
 
         node.rebuild_pin_ids();
         graph.nodes.push_back(std::move(node));
@@ -308,16 +308,16 @@ TEST(infer_int_literal_standalone) {
     gb.run_inference();
     auto* n = gb.find("1");
     ASSERT(n != nullptr);
-    ASSERT(n->outputs[0].resolved_type != nullptr);
+    ASSERT(n->outputs[0]->resolved_type != nullptr);
     // Should be int? (generic, no context)
-    ASSERT(n->outputs[0].resolved_type->is_generic);
+    ASSERT(n->outputs[0]->resolved_type->is_generic);
 }
 
 TEST(infer_f32_literal) {
     GraphBuilder gb;
     gb.add("1", "expr", "1.0f");
     gb.run_inference();
-    ASSERT_TYPE(&gb.find("1")->outputs[0], "f32");
+    ASSERT_TYPE(gb.find("1")->outputs[0].get(), "f32");
 }
 
 TEST(infer_var_ref) {
@@ -328,8 +328,8 @@ TEST(infer_var_ref) {
     gb.run_inference();
     auto* n = gb.find("e");
     ASSERT(n != nullptr);
-    ASSERT(n->outputs[0].resolved_type != nullptr);
-    ASSERT_TYPE(&n->outputs[0], "mytype");
+    ASSERT(n->outputs[0]->resolved_type != nullptr);
+    ASSERT_TYPE(n->outputs[0].get(), "mytype");
 }
 
 TEST(infer_unknown_var_error) {
@@ -355,8 +355,8 @@ TEST(infer_pi_constant) {
     auto* n = gb.find("1");
     ASSERT(n->error.empty());
     // pi is float? (generic float)
-    ASSERT(n->outputs[0].resolved_type != nullptr);
-    ASSERT(n->outputs[0].resolved_type->is_generic);
+    ASSERT(n->outputs[0]->resolved_type != nullptr);
+    ASSERT(n->outputs[0]->resolved_type->is_generic);
 }
 
 TEST(infer_propagation) {
@@ -369,8 +369,8 @@ TEST(infer_propagation) {
     // b's input 0 should have f32 from connection
     auto* b = gb.find("b");
     ASSERT(b != nullptr);
-    ASSERT(b->inputs[0].resolved_type != nullptr);
-    ASSERT_TYPE(&b->inputs[0], "f32");
+    ASSERT(b->inputs[0]->resolved_type != nullptr);
+    ASSERT_TYPE(b->inputs[0].get(), "f32");
 }
 
 TEST(infer_field_access) {
@@ -379,7 +379,7 @@ TEST(infer_field_access) {
     gb.add("dv", "decl_var", "pos vec2");
     gb.add("e", "expr", "$pos.x");
     gb.run_inference();
-    ASSERT_TYPE(&gb.find("e")->outputs[0], "f32");
+    ASSERT_TYPE(gb.find("e")->outputs[0].get(), "f32");
 }
 
 TEST(infer_index_vector) {
@@ -411,7 +411,7 @@ TEST(infer_query_index_bool) {
     gb.add("dv", "decl_var", "m map<u32, f32>");
     gb.add("e", "expr", "$m?[$0]", 1);
     gb.run_inference();
-    ASSERT_TYPE(&gb.find("e")->outputs[0], "bool");
+    ASSERT_TYPE(gb.find("e")->outputs[0].get(), "bool");
 }
 
 // --- Lambda tests ---
@@ -434,7 +434,7 @@ TEST(lambda_simple) {
     // Find callback pin
     FlowPin* callback_pin = nullptr;
     for (auto& p : inst->inputs) {
-        if (p.name == "callback") { callback_pin = &p; break; }
+        if (p->name == "callback") { callback_pin = p.get(); break; }
     }
 
     if (callback_pin) {
@@ -445,8 +445,8 @@ TEST(lambda_simple) {
         // Lambda's $0 input should get type f32
         auto* lam = gb.find("lam");
         ASSERT(lam != nullptr);
-        if (!lam->inputs.empty() && lam->inputs[0].resolved_type) {
-            ASSERT_TYPE(&lam->inputs[0], "f32");
+        if (!lam->inputs.empty() && lam->inputs[0]->resolved_type) {
+            ASSERT_TYPE(lam->inputs[0].get(), "f32");
         }
     }
 }
@@ -461,8 +461,8 @@ TEST(lambda_param_count_mismatch) {
     fn_type->func_args.push_back({"x", gb.pool.t_f32});
     fn_type->func_args.push_back({"y", gb.pool.t_f32});
     fn_type->return_type = gb.pool.t_f32;
-    gb.find("target")->inputs[0].resolved_type = fn_type;
-    gb.find("target")->inputs[0].type_name = "(x:f32 y:f32) -> f32";
+    gb.find("target")->inputs[0]->resolved_type = fn_type;
+    gb.find("target")->inputs[0]->type_name = "(x:f32 y:f32) -> f32";
 
     gb.add("lam", "expr", "$0", 1, 1); // 1 param, but fn expects 2
     gb.link("lam.as_lambda", "target.0");
@@ -492,7 +492,7 @@ TEST(lambda_param_count_mismatch_with_decl_type) {
     ASSERT(inst != nullptr);
     FlowPin* callback_pin = nullptr;
     for (auto& p : inst->inputs) {
-        if (p.name == "callback") { callback_pin = &p; break; }
+        if (p->name == "callback") { callback_pin = p.get(); break; }
     }
     ASSERT(callback_pin != nullptr);
 
@@ -534,7 +534,7 @@ TEST(lambda_recursive_params) {
     auto* holder = gb.find("holder");
     FlowPin* cb_pin = nullptr;
     for (auto& p : holder->inputs) {
-        if (p.name == "cb") { cb_pin = &p; break; }
+        if (p->name == "cb") { cb_pin = p.get(); break; }
     }
     ASSERT(cb_pin != nullptr);
 
@@ -551,8 +551,8 @@ TEST(lambda_recursive_params) {
     // dup's $0 should get type u64 from callback_fn's parameter
     auto* dup = gb.find("dup");
     ASSERT(dup != nullptr);
-    if (!dup->inputs.empty() && dup->inputs[0].resolved_type) {
-        ASSERT_TYPE(&dup->inputs[0], "u64");
+    if (!dup->inputs.empty() && dup->inputs[0]->resolved_type) {
+        ASSERT_TYPE(dup->inputs[0].get(), "u64");
     }
 }
 
@@ -566,12 +566,12 @@ TEST(expr_multi_output) {
     auto* n = gb.find("e");
     ASSERT(n != nullptr);
     ASSERT_EQ(n->outputs.size(), (size_t)3);
-    ASSERT(n->outputs[0].resolved_type != nullptr);
-    ASSERT(n->outputs[0].resolved_type->is_generic); // int?
-    ASSERT(n->outputs[1].resolved_type != nullptr);
-    ASSERT(n->outputs[1].resolved_type->is_generic); // int?
-    ASSERT(n->outputs[2].resolved_type != nullptr);
-    ASSERT(n->outputs[2].resolved_type->is_generic); // int?
+    ASSERT(n->outputs[0]->resolved_type != nullptr);
+    ASSERT(n->outputs[0]->resolved_type->is_generic); // int?
+    ASSERT(n->outputs[1]->resolved_type != nullptr);
+    ASSERT(n->outputs[1]->resolved_type->is_generic); // int?
+    ASSERT(n->outputs[2]->resolved_type != nullptr);
+    ASSERT(n->outputs[2]->resolved_type->is_generic); // int?
     ASSERT(n->error.empty());
 }
 
@@ -583,8 +583,8 @@ TEST(expr_multi_output_mixed) {
     auto* n = gb.find("e");
     ASSERT(n != nullptr);
     ASSERT_EQ(n->outputs.size(), (size_t)3);
-    ASSERT_TYPE(&n->outputs[0], "f32");
-    ASSERT_TYPE(&n->outputs[2], "bool");
+    ASSERT_TYPE(n->outputs[0].get(), "f32");
+    ASSERT_TYPE(n->outputs[2].get(), "bool");
 }
 
 TEST(expr_multi_output_with_parens) {
@@ -617,7 +617,7 @@ TEST(lambda_compatible_named_return_type) {
     ASSERT(inst != nullptr);
     FlowPin* gen_pin = nullptr;
     for (auto& p : inst->inputs) {
-        if (p.name == "gen") { gen_pin = &p; break; }
+        if (p->name == "gen") { gen_pin = p.get(); break; }
     }
     ASSERT(gen_pin != nullptr);
 
@@ -656,7 +656,7 @@ TEST(lambda_connection_not_red) {
     auto* inst = gb.find("inst");
     FlowPin* cb_pin = nullptr;
     for (auto& p : inst->inputs) {
-        if (p.name == "cb") { cb_pin = &p; break; }
+        if (p->name == "cb") { cb_pin = p.get(); break; }
     }
     ASSERT(cb_pin != nullptr);
 
@@ -716,7 +716,7 @@ TEST(klavier_gen_lambda) {
     ASSERT(target != nullptr);
     FlowPin* gen_pin = nullptr;
     for (auto& p : target->inputs)
-        if (p.name == "gen") { gen_pin = &p; break; }
+        if (p->name == "gen") { gen_pin = p.get(); break; }
     ASSERT(gen_pin != nullptr);
     std::string gen_pin_id = gen_pin->id;
 
@@ -745,8 +745,8 @@ TEST(klavier_gen_lambda) {
     FlowPin* s_pin = nullptr;
     FlowPin* e_pin = nullptr;
     for (auto& p : lam->inputs) {
-        if (p.name == "s") s_pin = &p;
-        if (p.name == "e") e_pin = &p;
+        if (p->name == "s") s_pin = p.get();
+        if (p->name == "e") e_pin = p.get();
     }
     ASSERT(s_pin != nullptr);
     ASSERT(e_pin != nullptr);
@@ -770,8 +770,8 @@ TEST(klavier_gen_lambda) {
     // dup.$0 should get u64 from lambda param
     auto* dup = gb.find("dup");
     ASSERT(dup != nullptr);
-    if (dup->inputs[0].resolved_type) {
-        printf("  (dup.$0 type: %s)\n", type_to_string(dup->inputs[0].resolved_type).c_str());
+    if (dup->inputs[0]->resolved_type) {
+        printf("  (dup.$0 type: %s)\n", type_to_string(dup->inputs[0]->resolved_type).c_str());
     } else {
         printf("  (dup.$0 type: null)\n");
     }
@@ -793,7 +793,7 @@ TEST(index_vector_f32) {
     setup_index_test(gb, "vector<f32>", "$data[$0]");
     auto* n = gb.find("e");
     ASSERT(n->error.empty());
-    ASSERT_TYPE(&n->outputs[0], "f32");
+    ASSERT_TYPE(n->outputs[0].get(), "f32");
 }
 
 TEST(index_vector_u64) {
@@ -801,7 +801,7 @@ TEST(index_vector_u64) {
     setup_index_test(gb, "vector<u64>", "$data[$0]");
     auto* n = gb.find("e");
     ASSERT(n->error.empty());
-    ASSERT_TYPE(&n->outputs[0], "u64");
+    ASSERT_TYPE(n->outputs[0].get(), "u64");
 }
 
 TEST(index_map_u32_f32) {
@@ -809,7 +809,7 @@ TEST(index_map_u32_f32) {
     setup_index_test(gb, "map<u32, f32>", "$data[$0]");
     auto* n = gb.find("e");
     ASSERT(n->error.empty());
-    ASSERT_TYPE(&n->outputs[0], "f32");
+    ASSERT_TYPE(n->outputs[0].get(), "f32");
 }
 
 TEST(index_ordered_map) {
@@ -817,7 +817,7 @@ TEST(index_ordered_map) {
     setup_index_test(gb, "ordered_map<u32, string>", "$data[$0]");
     auto* n = gb.find("e");
     ASSERT(n->error.empty());
-    ASSERT_TYPE(&n->outputs[0], "string");
+    ASSERT_TYPE(n->outputs[0].get(), "string");
 }
 
 TEST(index_array) {
@@ -827,7 +827,7 @@ TEST(index_array) {
     gb.run_inference();
     auto* n = gb.find("e");
     ASSERT(n->error.empty());
-    ASSERT_TYPE(&n->outputs[0], "f32");
+    ASSERT_TYPE(n->outputs[0].get(), "f32");
 }
 
 TEST(index_tensor) {
@@ -837,7 +837,7 @@ TEST(index_tensor) {
     gb.run_inference();
     auto* n = gb.find("e");
     ASSERT(n->error.empty());
-    ASSERT_TYPE(&n->outputs[0], "s16");
+    ASSERT_TYPE(n->outputs[0].get(), "s16");
 }
 
 TEST(index_string) {
@@ -845,7 +845,7 @@ TEST(index_string) {
     setup_index_test(gb, "string", "$data[$0]");
     auto* n = gb.find("e");
     ASSERT(n->error.empty());
-    ASSERT_TYPE(&n->outputs[0], "u8");
+    ASSERT_TYPE(n->outputs[0].get(), "u8");
 }
 
 // --- [] on non-indexable types (should error) ---
@@ -899,7 +899,7 @@ TEST(query_index_map) {
     setup_index_test(gb, "map<u32, f32>", "$data?[$0]");
     auto* n = gb.find("e");
     ASSERT(n->error.empty());
-    ASSERT_TYPE(&n->outputs[0], "bool");
+    ASSERT_TYPE(n->outputs[0].get(), "bool");
 }
 
 TEST(query_index_ordered_map) {
@@ -907,7 +907,7 @@ TEST(query_index_ordered_map) {
     setup_index_test(gb, "ordered_map<u32, f32>", "$data?[$0]");
     auto* n = gb.find("e");
     ASSERT(n->error.empty());
-    ASSERT_TYPE(&n->outputs[0], "bool");
+    ASSERT_TYPE(n->outputs[0].get(), "bool");
 }
 
 TEST(query_index_set) {
@@ -915,7 +915,7 @@ TEST(query_index_set) {
     setup_index_test(gb, "set<u32>", "$data?[$0]");
     auto* n = gb.find("e");
     ASSERT(n->error.empty());
-    ASSERT_TYPE(&n->outputs[0], "bool");
+    ASSERT_TYPE(n->outputs[0].get(), "bool");
 }
 
 TEST(query_index_ordered_set) {
@@ -923,7 +923,7 @@ TEST(query_index_ordered_set) {
     setup_index_test(gb, "ordered_set<u32>", "$data?[$0]");
     auto* n = gb.find("e");
     ASSERT(n->error.empty());
-    ASSERT_TYPE(&n->outputs[0], "bool");
+    ASSERT_TYPE(n->outputs[0].get(), "bool");
 }
 
 TEST(query_index_vector_error) {
@@ -957,7 +957,7 @@ TEST(index_named_vector_alias) {
     gb.run_inference();
     auto* n = gb.find("e");
     ASSERT(n->error.empty());
-    ASSERT_TYPE(&n->outputs[0], "f32");
+    ASSERT_TYPE(n->outputs[0].get(), "f32");
 }
 
 TEST(index_named_list_alias_error) {
@@ -980,7 +980,7 @@ TEST(index_into_broadcasted_result) {
     gb.run_inference();
     auto* n = gb.find("e");
     ASSERT(n->error.empty());
-    ASSERT_TYPE(&n->outputs[0], "f32");
+    ASSERT_TYPE(n->outputs[0].get(), "f32");
 }
 
 // --- Struct validation tests ---
@@ -1005,7 +1005,7 @@ TEST(decl_type_map_alias) {
     gb.run_inference();
     auto* n = gb.find("e");
     ASSERT(n->error.empty());
-    ASSERT_TYPE(&n->outputs[0], "u64"); // map value type
+    ASSERT_TYPE(n->outputs[0].get(), "u64"); // map value type
 }
 
 TEST(decl_type_ordered_map_alias) {
@@ -1016,7 +1016,7 @@ TEST(decl_type_ordered_map_alias) {
     gb.run_inference();
     auto* n = gb.find("e");
     ASSERT(n->error.empty());
-    ASSERT_TYPE(&n->outputs[0], "f32");
+    ASSERT_TYPE(n->outputs[0].get(), "f32");
 }
 
 TEST(classify_decl_type_cases) {
@@ -1042,7 +1042,7 @@ TEST(decl_type_alias_no_fields_ok) {
     auto* n = gb.find("e");
     ASSERT(n != nullptr);
     ASSERT(n->error.empty());
-    ASSERT_TYPE(&n->outputs[0], "my_float");
+    ASSERT_TYPE(n->outputs[0].get(), "my_float");
 }
 
 TEST(decl_type_func_alias_no_fields_ok) {
@@ -1283,7 +1283,7 @@ TEST(dup_propagates_type_from_connection) {
     auto* n = gb.find("d");
     ASSERT(n != nullptr);
     ASSERT(n->error.empty());
-    ASSERT_TYPE(&n->outputs[0], "f32");
+    ASSERT_TYPE(n->outputs[0].get(), "f32");
 }
 
 TEST(dup_propagates_type_from_inline) {
@@ -1294,7 +1294,7 @@ TEST(dup_propagates_type_from_inline) {
     auto* n = gb.find("d");
     ASSERT(n != nullptr);
     ASSERT(n->error.empty());
-    ASSERT_TYPE(&n->outputs[0], "f32");
+    ASSERT_TYPE(n->outputs[0].get(), "f32");
 }
 
 TEST(dup_propagates_generic) {
@@ -1304,8 +1304,8 @@ TEST(dup_propagates_generic) {
     auto* n = gb.find("d");
     ASSERT(n != nullptr);
     // 42 is int? (generic), output should also be int?
-    ASSERT(n->outputs[0].resolved_type != nullptr);
-    ASSERT(n->outputs[0].resolved_type->is_generic);
+    ASSERT(n->outputs[0]->resolved_type != nullptr);
+    ASSERT(n->outputs[0]->resolved_type->is_generic);
 }
 
 TEST(dup_chain_propagation) {
@@ -1317,7 +1317,7 @@ TEST(dup_chain_propagation) {
     gb.link("src.out0", "d1.value");
     gb.link("d1.out0", "d2.value");
     gb.run_inference();
-    ASSERT_TYPE(&gb.find("d2")->outputs[0], "f32");
+    ASSERT_TYPE(gb.find("d2")->outputs[0].get(), "f32");
 }
 
 // --- select! validation tests ---
@@ -1369,7 +1369,7 @@ TEST(expr_bang_type_inference) {
     gb.add("e", "expr!", "$0*2.0f", 1, 1);
     gb.link("src.out0", "e.0");
     gb.run_inference();
-    ASSERT_TYPE(&gb.find("e")->outputs[0], "f32");
+    ASSERT_TYPE(gb.find("e")->outputs[0].get(), "f32");
 }
 
 // --- output_mix! validation tests ---
@@ -1440,7 +1440,7 @@ TEST(map_iterator_key_field) {
     gb.run_inference();
     auto* n = gb.find("e");
     ASSERT(n->error.empty());
-    ASSERT_TYPE(&n->outputs[0], "u32");
+    ASSERT_TYPE(n->outputs[0].get(), "u32");
 }
 
 TEST(map_iterator_value_field) {
@@ -1450,7 +1450,7 @@ TEST(map_iterator_value_field) {
     gb.run_inference();
     auto* n = gb.find("e");
     ASSERT(n->error.empty());
-    ASSERT_TYPE(&n->outputs[0], "f32");
+    ASSERT_TYPE(n->outputs[0].get(), "f32");
 }
 
 TEST(ordered_map_iterator_key_field) {
@@ -1459,7 +1459,7 @@ TEST(ordered_map_iterator_key_field) {
     gb.add("e", "expr", "$it.key");
     gb.run_inference();
     ASSERT(gb.find("e")->error.empty());
-    ASSERT_TYPE(&gb.find("e")->outputs[0], "string");
+    ASSERT_TYPE(gb.find("e")->outputs[0].get(), "string");
 }
 
 TEST(list_iterator_auto_deref) {
@@ -1470,7 +1470,7 @@ TEST(list_iterator_auto_deref) {
     gb.add("e", "expr", "$it.p");
     gb.run_inference();
     ASSERT(gb.find("e")->error.empty());
-    ASSERT_TYPE(&gb.find("e")->outputs[0], "f32");
+    ASSERT_TYPE(gb.find("e")->outputs[0].get(), "f32");
 }
 
 TEST(iterator_auto_deref_field) {
@@ -1483,7 +1483,7 @@ TEST(iterator_auto_deref_field) {
     gb.run_inference();
     auto* n = gb.find("e");
     ASSERT(n->error.empty());
-    ASSERT_TYPE(&n->outputs[0], "f32");
+    ASSERT_TYPE(n->outputs[0].get(), "f32");
 }
 
 TEST(iterator_auto_deref_field_named) {
@@ -1496,7 +1496,7 @@ TEST(iterator_auto_deref_field_named) {
     gb.run_inference();
     auto* n = gb.find("e");
     ASSERT(n->error.empty());
-    ASSERT_TYPE(&n->outputs[0], "f32");
+    ASSERT_TYPE(n->outputs[0].get(), "f32");
 }
 
 TEST(iterator_auto_deref_element_field_named_value) {
@@ -1509,7 +1509,7 @@ TEST(iterator_auto_deref_element_field_named_value) {
     auto* n = gb.find("e");
     ASSERT(n->error.empty());
     // .value on non-map iterator auto-derefs to thing.value → u32
-    ASSERT_TYPE(&n->outputs[0], "u32");
+    ASSERT_TYPE(n->outputs[0].get(), "u32");
 }
 
 TEST(vector_iterator_no_key_error) {
@@ -1602,7 +1602,7 @@ TEST(iterate_vector_lambda_param_type) {
     // Find the lambda pin and check its resolved type is a function
     FlowPin* lam_pin = nullptr;
     for (auto& p : n->inputs)
-        if (p.direction == FlowPin::Lambda) { lam_pin = &p; break; }
+        if (p->direction == FlowPin::Lambda) { lam_pin = p.get(); break; }
     ASSERT(lam_pin != nullptr);
     ASSERT(lam_pin->resolved_type != nullptr);
     ASSERT_EQ(lam_pin->resolved_type->kind, TypeKind::Function);
@@ -1622,7 +1622,7 @@ TEST(iterate_array_lambda_param_type) {
     ASSERT(n->error.empty());
     FlowPin* lam_pin = nullptr;
     for (auto& p : n->inputs)
-        if (p.direction == FlowPin::Lambda) { lam_pin = &p; break; }
+        if (p->direction == FlowPin::Lambda) { lam_pin = p.get(); break; }
     ASSERT(lam_pin != nullptr);
     ASSERT(lam_pin->resolved_type != nullptr);
     ASSERT_EQ(lam_pin->resolved_type->kind, TypeKind::Function);
@@ -1642,7 +1642,7 @@ TEST(iterate_scalar_lambda_param_type) {
     ASSERT(n->error.empty());
     FlowPin* lam_pin = nullptr;
     for (auto& p : n->inputs)
-        if (p.direction == FlowPin::Lambda) { lam_pin = &p; break; }
+        if (p->direction == FlowPin::Lambda) { lam_pin = p.get(); break; }
     ASSERT(lam_pin != nullptr);
     ASSERT(lam_pin->resolved_type != nullptr);
     ASSERT_EQ(lam_pin->resolved_type->func_args[0].type->category, TypeCategory::Reference);
@@ -1658,7 +1658,7 @@ TEST(iterate_map_lambda_param_type) {
     ASSERT(n->error.empty());
     FlowPin* lam_pin = nullptr;
     for (auto& p : n->inputs)
-        if (p.direction == FlowPin::Lambda) { lam_pin = &p; break; }
+        if (p->direction == FlowPin::Lambda) { lam_pin = p.get(); break; }
     ASSERT(lam_pin != nullptr);
     ASSERT(lam_pin->resolved_type != nullptr);
     ASSERT_EQ(lam_pin->resolved_type->func_args[0].type->kind, TypeKind::ContainerIterator);
@@ -1674,7 +1674,7 @@ TEST(iterate_vector_lambda_returns_iterator) {
     auto* n = gb.find("it");
     FlowPin* lam_pin = nullptr;
     for (auto& p : n->inputs)
-        if (p.direction == FlowPin::Lambda) { lam_pin = &p; break; }
+        if (p->direction == FlowPin::Lambda) { lam_pin = p.get(); break; }
     ASSERT(lam_pin != nullptr);
     ASSERT(lam_pin->resolved_type != nullptr);
     ASSERT_EQ(lam_pin->resolved_type->kind, TypeKind::Function);
@@ -1692,7 +1692,7 @@ TEST(iterate_array_lambda_returns_void) {
     auto* n = gb.find("it");
     FlowPin* lam_pin = nullptr;
     for (auto& p : n->inputs)
-        if (p.direction == FlowPin::Lambda) { lam_pin = &p; break; }
+        if (p->direction == FlowPin::Lambda) { lam_pin = p.get(); break; }
     ASSERT(lam_pin != nullptr);
     ASSERT(lam_pin->resolved_type != nullptr);
     ASSERT_EQ(lam_pin->resolved_type->return_type->kind, TypeKind::Void);
@@ -1706,7 +1706,7 @@ TEST(iterate_scalar_lambda_returns_void) {
     auto* n = gb.find("it");
     FlowPin* lam_pin = nullptr;
     for (auto& p : n->inputs)
-        if (p.direction == FlowPin::Lambda) { lam_pin = &p; break; }
+        if (p->direction == FlowPin::Lambda) { lam_pin = p.get(); break; }
     ASSERT(lam_pin != nullptr);
     ASSERT(lam_pin->resolved_type != nullptr);
     ASSERT_EQ(lam_pin->resolved_type->return_type->kind, TypeKind::Void);
@@ -1721,9 +1721,9 @@ TEST(append_returns_iterator) {
     gb.run_inference();
     auto* n = gb.find("a");
     ASSERT(n->error.empty());
-    ASSERT(n->outputs[0].resolved_type != nullptr);
-    ASSERT_EQ(n->outputs[0].resolved_type->kind, TypeKind::ContainerIterator);
-    ASSERT_EQ(n->outputs[0].resolved_type->iterator, IteratorKind::Vector);
+    ASSERT(n->outputs[0]->resolved_type != nullptr);
+    ASSERT_EQ(n->outputs[0]->resolved_type->kind, TypeKind::ContainerIterator);
+    ASSERT_EQ(n->outputs[0]->resolved_type->iterator, IteratorKind::Vector);
 }
 
 TEST(append_list_returns_list_iterator) {
@@ -1733,9 +1733,9 @@ TEST(append_list_returns_list_iterator) {
     gb.run_inference();
     auto* n = gb.find("a");
     ASSERT(n->error.empty());
-    ASSERT(n->outputs[0].resolved_type != nullptr);
-    ASSERT_EQ(n->outputs[0].resolved_type->kind, TypeKind::ContainerIterator);
-    ASSERT_EQ(n->outputs[0].resolved_type->iterator, IteratorKind::List);
+    ASSERT(n->outputs[0]->resolved_type != nullptr);
+    ASSERT_EQ(n->outputs[0]->resolved_type->kind, TypeKind::ContainerIterator);
+    ASSERT_EQ(n->outputs[0]->resolved_type->iterator, IteratorKind::List);
 }
 
 TEST(erase_returns_iterator) {
@@ -1746,9 +1746,9 @@ TEST(erase_returns_iterator) {
     gb.run_inference();
     auto* n = gb.find("e");
     ASSERT(n->error.empty());
-    ASSERT(n->outputs[0].resolved_type != nullptr);
-    ASSERT_EQ(n->outputs[0].resolved_type->kind, TypeKind::ContainerIterator);
-    ASSERT_EQ(n->outputs[0].resolved_type->iterator, IteratorKind::Vector);
+    ASSERT(n->outputs[0]->resolved_type != nullptr);
+    ASSERT_EQ(n->outputs[0]->resolved_type->kind, TypeKind::ContainerIterator);
+    ASSERT_EQ(n->outputs[0]->resolved_type->iterator, IteratorKind::Vector);
 }
 
 TEST(erase_map_returns_map_iterator) {
@@ -1759,9 +1759,9 @@ TEST(erase_map_returns_map_iterator) {
     gb.run_inference();
     auto* n = gb.find("e");
     ASSERT(n->error.empty());
-    ASSERT(n->outputs[0].resolved_type != nullptr);
-    ASSERT_EQ(n->outputs[0].resolved_type->kind, TypeKind::ContainerIterator);
-    ASSERT_EQ(n->outputs[0].resolved_type->iterator, IteratorKind::Map);
+    ASSERT(n->outputs[0]->resolved_type != nullptr);
+    ASSERT_EQ(n->outputs[0]->resolved_type->kind, TypeKind::ContainerIterator);
+    ASSERT_EQ(n->outputs[0]->resolved_type->iterator, IteratorKind::Map);
 }
 
 TEST(iterate_bool_error) {
@@ -1797,7 +1797,7 @@ TEST(select_compatible_types_ok) {
     gb.run_inference();
     auto* n = gb.find("s");
     ASSERT(n->error.empty());
-    ASSERT_TYPE(&n->outputs[0], "f32");
+    ASSERT_TYPE(n->outputs[0].get(), "f32");
 }
 
 TEST(select_incompatible_types_error) {
@@ -1837,7 +1837,7 @@ TEST(select_with_connections_ok) {
     gb.run_inference();
     auto* n = gb.find("s");
     ASSERT(n->error.empty());
-    ASSERT_TYPE(&n->outputs[0], "f32");
+    ASSERT_TYPE(n->outputs[0].get(), "f32");
 }
 
 TEST(select_mixed_inline_and_connection) {
@@ -1849,7 +1849,7 @@ TEST(select_mixed_inline_and_connection) {
     gb.run_inference();
     auto* n = gb.find("s");
     ASSERT(n->error.empty());
-    ASSERT_TYPE(&n->outputs[0], "f32");
+    ASSERT_TYPE(n->outputs[0].get(), "f32");
 }
 
 TEST(select_int_coercion) {
@@ -2086,7 +2086,7 @@ TEST(spaceship_returns_s32) {
     gb.run_inference();
     auto* n = gb.find("e");
     ASSERT(n->error.empty());
-    ASSERT_TYPE(&n->outputs[0], "s32");
+    ASSERT_TYPE(n->outputs[0].get(), "s32");
 }
 
 TEST(spaceship_type_mismatch_error) {
@@ -2108,7 +2108,7 @@ TEST(spaceship_broadcast) {
     gb.run_inference();
     auto* n = gb.find("e");
     ASSERT(n->error.empty());
-    ASSERT_TYPE(&n->outputs[0], "vector<s32>");
+    ASSERT_TYPE(n->outputs[0].get(), "vector<s32>");
 }
 
 TEST(spaceship_not_confused_with_le) {
@@ -2156,7 +2156,7 @@ TEST(lambda_bang_chain_params) {
     ASSERT(h != nullptr);
     FlowPin* cb_pin = nullptr;
     for (auto& p : h->inputs)
-        if (p.name == "cb") { cb_pin = &p; break; }
+        if (p->name == "cb") { cb_pin = p.get(); break; }
     ASSERT(cb_pin != nullptr);
 
     // Connect lam.post_bang -> st.bang_in0
@@ -2181,14 +2181,14 @@ TEST(lambda_bang_chain_params) {
     ASSERT(!link_has_error);
 
     // lam.$0 should get type u32 (first callback param)
-    if (!lam->inputs.empty() && lam->inputs[0].resolved_type)
-        ASSERT_TYPE(&lam->inputs[0], "u32");
+    if (!lam->inputs.empty() && lam->inputs[0]->resolved_type)
+        ASSERT_TYPE(lam->inputs[0].get(), "u32");
 
     // st.$0 should get type f32 (second callback param)
     auto* st = gb.find("st");
     ASSERT(st != nullptr);
-    if (!st->inputs.empty() && st->inputs[0].resolved_type)
-        ASSERT_TYPE(&st->inputs[0], "f32");
+    if (!st->inputs.empty() && st->inputs[0]->resolved_type)
+        ASSERT_TYPE(st->inputs[0].get(), "f32");
 }
 
 TEST(lambda_output_bang_chain_params) {
@@ -2216,7 +2216,7 @@ TEST(lambda_output_bang_chain_params) {
     auto* h = gb.find("holder");
     FlowPin* cb_pin = nullptr;
     for (auto& p : h->inputs)
-        if (p.name == "cb") { cb_pin = &p; break; }
+        if (p->name == "cb") { cb_pin = p.get(); break; }
     ASSERT(cb_pin != nullptr);
 
     // Connect bang outputs to stores
@@ -2314,7 +2314,7 @@ TEST(index_array_manip_vector_of_indices) {
     gb.run_inference();
     auto* n = gb.find("e");
     ASSERT(n->error.empty());
-    ASSERT_TYPE(&n->outputs[0], "vector<f32>");
+    ASSERT_TYPE(n->outputs[0].get(), "vector<f32>");
 }
 
 TEST(index_array_manip_vector_of_bad_indices_error) {
@@ -2348,7 +2348,7 @@ TEST(index_map_with_matching_key_ok) {
     gb.run_inference();
     auto* n = gb.find("e");
     ASSERT(n->error.empty());
-    ASSERT_TYPE(&n->outputs[0], "f32");
+    ASSERT_TYPE(n->outputs[0].get(), "f32");
 }
 
 // --- Reference operator & tests ---
@@ -2376,11 +2376,11 @@ TEST(ref_varref_type) {
     gb.run_inference();
     auto* n = gb.find("e");
     ASSERT(n->error.empty());
-    ASSERT(n->outputs[0].resolved_type != nullptr);
+    ASSERT(n->outputs[0]->resolved_type != nullptr);
     // Should be &f32 (reference category)
-    ASSERT_EQ(n->outputs[0].resolved_type->category, TypeCategory::Reference);
-    ASSERT_EQ(n->outputs[0].resolved_type->kind, TypeKind::Scalar);
-    ASSERT_EQ(n->outputs[0].resolved_type->scalar, ScalarType::F32);
+    ASSERT_EQ(n->outputs[0]->resolved_type->category, TypeCategory::Reference);
+    ASSERT_EQ(n->outputs[0]->resolved_type->kind, TypeKind::Scalar);
+    ASSERT_EQ(n->outputs[0]->resolved_type->scalar, ScalarType::F32);
 }
 
 TEST(ref_vector_index_iterator) {
@@ -2390,9 +2390,9 @@ TEST(ref_vector_index_iterator) {
     gb.run_inference();
     auto* n = gb.find("e");
     ASSERT(n->error.empty());
-    ASSERT(n->outputs[0].resolved_type != nullptr);
-    ASSERT_EQ(n->outputs[0].resolved_type->kind, TypeKind::ContainerIterator);
-    ASSERT_EQ(n->outputs[0].resolved_type->iterator, IteratorKind::Vector);
+    ASSERT(n->outputs[0]->resolved_type != nullptr);
+    ASSERT_EQ(n->outputs[0]->resolved_type->kind, TypeKind::ContainerIterator);
+    ASSERT_EQ(n->outputs[0]->resolved_type->iterator, IteratorKind::Vector);
 }
 
 TEST(ref_map_index_iterator) {
@@ -2402,9 +2402,9 @@ TEST(ref_map_index_iterator) {
     gb.run_inference();
     auto* n = gb.find("e");
     ASSERT(n->error.empty());
-    ASSERT(n->outputs[0].resolved_type != nullptr);
-    ASSERT_EQ(n->outputs[0].resolved_type->kind, TypeKind::ContainerIterator);
-    ASSERT_EQ(n->outputs[0].resolved_type->iterator, IteratorKind::Map);
+    ASSERT(n->outputs[0]->resolved_type != nullptr);
+    ASSERT_EQ(n->outputs[0]->resolved_type->kind, TypeKind::ContainerIterator);
+    ASSERT_EQ(n->outputs[0]->resolved_type->iterator, IteratorKind::Map);
 }
 
 TEST(ref_ordered_map_index_iterator) {
@@ -2414,8 +2414,8 @@ TEST(ref_ordered_map_index_iterator) {
     gb.run_inference();
     auto* n = gb.find("e");
     ASSERT(n->error.empty());
-    ASSERT_EQ(n->outputs[0].resolved_type->kind, TypeKind::ContainerIterator);
-    ASSERT_EQ(n->outputs[0].resolved_type->iterator, IteratorKind::OrderedMap);
+    ASSERT_EQ(n->outputs[0]->resolved_type->kind, TypeKind::ContainerIterator);
+    ASSERT_EQ(n->outputs[0]->resolved_type->iterator, IteratorKind::OrderedMap);
 }
 
 TEST(ref_array_index_error) {
@@ -2494,8 +2494,8 @@ TEST(ref_pinref) {
     gb.run_inference();
     auto* n = gb.find("e");
     ASSERT(n->error.empty());
-    ASSERT(n->outputs[0].resolved_type != nullptr);
-    ASSERT_EQ(n->outputs[0].resolved_type->category, TypeCategory::Reference);
+    ASSERT(n->outputs[0]->resolved_type != nullptr);
+    ASSERT_EQ(n->outputs[0]->resolved_type->category, TypeCategory::Reference);
 }
 
 // --- Function call validation tests ---
@@ -2561,7 +2561,7 @@ TEST(func_call_return_type) {
     gb.add("dv", "decl_var", "fn myfn");
     gb.add("e", "expr", "$fn(1.0f)");
     gb.run_inference();
-    ASSERT_TYPE(&gb.find("e")->outputs[0], "bool");
+    ASSERT_TYPE(gb.find("e")->outputs[0].get(), "bool");
 }
 
 TEST(method_call_on_struct_field) {
@@ -2708,10 +2708,10 @@ TEST(decl_local_basic) {
     ASSERT(n != nullptr);
     ASSERT(n->error.empty());
     // Output should be a reference to f32
-    ASSERT(n->outputs[0].resolved_type != nullptr);
-    ASSERT_EQ(n->outputs[0].resolved_type->category, TypeCategory::Reference);
-    ASSERT_EQ(n->outputs[0].resolved_type->kind, TypeKind::Scalar);
-    ASSERT_EQ(n->outputs[0].resolved_type->scalar, ScalarType::F32);
+    ASSERT(n->outputs[0]->resolved_type != nullptr);
+    ASSERT_EQ(n->outputs[0]->resolved_type->category, TypeCategory::Reference);
+    ASSERT_EQ(n->outputs[0]->resolved_type->kind, TypeKind::Scalar);
+    ASSERT_EQ(n->outputs[0]->resolved_type->scalar, ScalarType::F32);
 }
 
 TEST(decl_local_u32) {
@@ -2719,7 +2719,7 @@ TEST(decl_local_u32) {
     gb.add("dl", "decl_local", "counter u32");
     gb.run_inference();
     ASSERT(gb.find("dl")->error.empty());
-    ASSERT_EQ(gb.find("dl")->outputs[0].resolved_type->category, TypeCategory::Reference);
+    ASSERT_EQ(gb.find("dl")->outputs[0]->resolved_type->category, TypeCategory::Reference);
 }
 
 TEST(decl_local_string) {
@@ -2727,8 +2727,8 @@ TEST(decl_local_string) {
     gb.add("dl", "decl_local", "name string");
     gb.run_inference();
     ASSERT(gb.find("dl")->error.empty());
-    ASSERT_EQ(gb.find("dl")->outputs[0].resolved_type->category, TypeCategory::Reference);
-    ASSERT_EQ(gb.find("dl")->outputs[0].resolved_type->kind, TypeKind::String);
+    ASSERT_EQ(gb.find("dl")->outputs[0]->resolved_type->category, TypeCategory::Reference);
+    ASSERT_EQ(gb.find("dl")->outputs[0]->resolved_type->kind, TypeKind::String);
 }
 
 TEST(decl_local_missing_args) {
@@ -2752,7 +2752,7 @@ TEST(decl_local_registers_var_type) {
     gb.add("e", "expr", "$myvar");
     gb.run_inference();
     ASSERT(gb.find("e")->error.empty());
-    ASSERT_TYPE(&gb.find("e")->outputs[0], "f32");
+    ASSERT_TYPE(gb.find("e")->outputs[0].get(), "f32");
 }
 
 TEST(decl_local_named_type) {
@@ -2762,8 +2762,8 @@ TEST(decl_local_named_type) {
     gb.run_inference();
     auto* n = gb.find("dl");
     ASSERT(n->error.empty());
-    ASSERT_EQ(n->outputs[0].resolved_type->category, TypeCategory::Reference);
-    ASSERT_EQ(n->outputs[0].resolved_type->kind, TypeKind::Named);
+    ASSERT_EQ(n->outputs[0]->resolved_type->category, TypeCategory::Reference);
+    ASSERT_EQ(n->outputs[0]->resolved_type->kind, TypeKind::Named);
 }
 
 // --- next node tests ---
@@ -2775,9 +2775,9 @@ TEST(next_vector_iterator) {
     gb.run_inference();
     auto* node = gb.find("n");
     ASSERT(node->error.empty());
-    ASSERT(node->outputs[0].resolved_type != nullptr);
-    ASSERT_EQ(node->outputs[0].resolved_type->kind, TypeKind::ContainerIterator);
-    ASSERT_EQ(node->outputs[0].resolved_type->iterator, IteratorKind::Vector);
+    ASSERT(node->outputs[0]->resolved_type != nullptr);
+    ASSERT_EQ(node->outputs[0]->resolved_type->kind, TypeKind::ContainerIterator);
+    ASSERT_EQ(node->outputs[0]->resolved_type->iterator, IteratorKind::Vector);
 }
 
 TEST(next_list_iterator) {
@@ -2786,8 +2786,8 @@ TEST(next_list_iterator) {
     gb.add("n", "next", "$it");
     gb.run_inference();
     ASSERT(gb.find("n")->error.empty());
-    ASSERT_EQ(gb.find("n")->outputs[0].resolved_type->kind, TypeKind::ContainerIterator);
-    ASSERT_EQ(gb.find("n")->outputs[0].resolved_type->iterator, IteratorKind::List);
+    ASSERT_EQ(gb.find("n")->outputs[0]->resolved_type->kind, TypeKind::ContainerIterator);
+    ASSERT_EQ(gb.find("n")->outputs[0]->resolved_type->iterator, IteratorKind::List);
 }
 
 TEST(next_map_iterator) {
@@ -2796,7 +2796,7 @@ TEST(next_map_iterator) {
     gb.add("n", "next", "$it");
     gb.run_inference();
     ASSERT(gb.find("n")->error.empty());
-    ASSERT_EQ(gb.find("n")->outputs[0].resolved_type->kind, TypeKind::ContainerIterator);
+    ASSERT_EQ(gb.find("n")->outputs[0]->resolved_type->kind, TypeKind::ContainerIterator);
 }
 
 TEST(next_non_iterator_error) {
@@ -2826,7 +2826,7 @@ TEST(next_chain) {
     gb.link("n1.out0", "n2.value");
     gb.run_inference();
     ASSERT(gb.find("n2")->error.empty());
-    ASSERT_EQ(gb.find("n2")->outputs[0].resolved_type->kind, TypeKind::ContainerIterator);
+    ASSERT_EQ(gb.find("n2")->outputs[0]->resolved_type->kind, TypeKind::ContainerIterator);
 }
 
 // ============================================================
@@ -2891,9 +2891,9 @@ TEST(lock_return_type_propagation) {
     auto* lk = gb.find("lk");
     ASSERT(lk->error.empty());
     ASSERT(!lk->outputs.empty());
-    ASSERT(lk->outputs[0].resolved_type);
-    ASSERT_EQ(lk->outputs[0].resolved_type->kind, TypeKind::Scalar);
-    ASSERT_EQ(lk->outputs[0].resolved_type->scalar, ScalarType::F32);
+    ASSERT(lk->outputs[0]->resolved_type);
+    ASSERT_EQ(lk->outputs[0]->resolved_type->kind, TypeKind::Scalar);
+    ASSERT_EQ(lk->outputs[0]->resolved_type->scalar, ScalarType::F32);
 }
 
 TEST(lock_void_return) {
@@ -2921,8 +2921,8 @@ TEST(lock_bang_return_type) {
     auto* lk = gb.find("lk");
     ASSERT(lk->error.empty());
     ASSERT(!lk->outputs.empty());
-    ASSERT(lk->outputs[0].resolved_type);
-    ASSERT_EQ(lk->outputs[0].resolved_type->kind, TypeKind::Scalar);
+    ASSERT(lk->outputs[0]->resolved_type);
+    ASSERT_EQ(lk->outputs[0]->resolved_type->kind, TypeKind::Scalar);
 }
 
 TEST(lock_lambda_with_inner_lambda_no_leak) {
@@ -3067,8 +3067,8 @@ TEST(void_node_output_type) {
     gb.run_inference();
     auto* n = gb.find("v");
     ASSERT(!n->outputs.empty());
-    ASSERT(n->outputs[0].resolved_type);
-    ASSERT_EQ(n->outputs[0].resolved_type->kind, TypeKind::Void);
+    ASSERT(n->outputs[0]->resolved_type);
+    ASSERT_EQ(n->outputs[0]->resolved_type->kind, TypeKind::Void);
 }
 
 TEST(void_node_no_inputs) {
@@ -3124,7 +3124,7 @@ TEST(lock_forwards_lambda_params) {
     // Check for an extra data input beyond mutex and fn
     int data_inputs = 0;
     for (auto& inp : lk->inputs)
-        if (inp.direction == FlowPin::Input) data_inputs++;
+        if (inp->direction == FlowPin::Input) data_inputs++;
     ASSERT_EQ(data_inputs, 1); // 1 forwarded arg (mutex is inline)
 }
 
@@ -3138,7 +3138,7 @@ TEST(lock_forwards_two_params) {
     auto* lk = gb.find("lk");
     int data_inputs = 0;
     for (auto& inp : lk->inputs)
-        if (inp.direction == FlowPin::Input) data_inputs++;
+        if (inp->direction == FlowPin::Input) data_inputs++;
     ASSERT_EQ(data_inputs, 2); // 2 forwarded args
 }
 
@@ -3152,7 +3152,7 @@ TEST(lock_zero_params_no_extra_inputs) {
     auto* lk = gb.find("lk");
     int data_inputs = 0;
     for (auto& inp : lk->inputs)
-        if (inp.direction == FlowPin::Input) data_inputs++;
+        if (inp->direction == FlowPin::Input) data_inputs++;
     ASSERT_EQ(data_inputs, 0); // no forwarded args
 }
 
@@ -3167,9 +3167,9 @@ TEST(lock_forwarded_param_types) {
     auto* lk = gb.find("lk");
     bool found_arg = false;
     for (auto& inp : lk->inputs) {
-        if (inp.name == "arg0") {
+        if (inp->name == "arg0") {
             found_arg = true;
-            ASSERT(inp.resolved_type);
+            ASSERT(inp->resolved_type);
         }
     }
     ASSERT(found_arg);
@@ -3186,7 +3186,7 @@ TEST(lock_bang_forwards_params) {
     auto* lk = gb.find("lk");
     int data_inputs = 0;
     for (auto& inp : lk->inputs)
-        if (inp.direction == FlowPin::Input) data_inputs++;
+        if (inp->direction == FlowPin::Input) data_inputs++;
     ASSERT_EQ(data_inputs, 2);
 }
 
@@ -3310,9 +3310,9 @@ TEST(ffi_registers_var_type) {
     ASSERT(gb.find("e")->error.empty());
     // Output should be f32
     ASSERT(!gb.find("e")->outputs.empty());
-    ASSERT(gb.find("e")->outputs[0].resolved_type);
-    ASSERT_EQ(gb.find("e")->outputs[0].resolved_type->kind, TypeKind::Scalar);
-    ASSERT_EQ(gb.find("e")->outputs[0].resolved_type->scalar, ScalarType::F32);
+    ASSERT(gb.find("e")->outputs[0]->resolved_type);
+    ASSERT_EQ(gb.find("e")->outputs[0]->resolved_type->kind, TypeKind::Scalar);
+    ASSERT_EQ(gb.find("e")->outputs[0]->resolved_type->scalar, ScalarType::F32);
 }
 
 TEST(call_resolves_inputs_from_ffi) {
@@ -3324,8 +3324,8 @@ TEST(call_resolves_inputs_from_ffi) {
     ASSERT(c->error.empty());
     // Should have 2 input pins (a, b) and 1 output (result)
     ASSERT_EQ((int)c->inputs.size(), 2);
-    ASSERT_EQ(c->inputs[0].name, "a");
-    ASSERT_EQ(c->inputs[1].name, "b");
+    ASSERT_EQ(c->inputs[0]->name, "a");
+    ASSERT_EQ(c->inputs[1]->name, "b");
     ASSERT_EQ((int)c->outputs.size(), 1);
 }
 
@@ -3414,8 +3414,8 @@ TEST(call_partial_inline_creates_remaining_pins) {
     gb.add("c", "call", "$my_fn 1.0f");
     gb.run_inference();
     ASSERT(gb.find("c")->inputs.size() == 2);
-    ASSERT(gb.find("c")->inputs[0].name == "y");
-    ASSERT(gb.find("c")->inputs[1].name == "z");
+    ASSERT(gb.find("c")->inputs[0]->name == "y");
+    ASSERT(gb.find("c")->inputs[1]->name == "z");
 }
 
 TEST(decl_import_std_ok) {
@@ -3510,16 +3510,16 @@ TEST(call_bang_generates_input_pin_for_dollar_ref) {
     // call! with $0 should generate 1 input pin
     auto& node = gb.add("c1", "call!", R"($imgui_plot_lines "Delay Line" $0 "")");
     ASSERT_EQ((int)node.inputs.size(), 1);
-    ASSERT_EQ(node.inputs[0].name, "0");
-    ASSERT_EQ(node.inputs[0].direction, FlowPin::Input);
+    ASSERT_EQ(node.inputs[0]->name, "0");
+    ASSERT_EQ(node.inputs[0]->direction, FlowPin::Input);
 }
 
 TEST(call_bang_generates_multiple_input_pins) {
     GraphBuilder gb;
     auto& node = gb.add("c2", "call!", R"($some_func $0 $1 "hello")");
     ASSERT_EQ((int)node.inputs.size(), 2);
-    ASSERT_EQ(node.inputs[0].name, "0");
-    ASSERT_EQ(node.inputs[1].name, "1");
+    ASSERT_EQ(node.inputs[0]->name, "0");
+    ASSERT_EQ(node.inputs[1]->name, "1");
 }
 
 TEST(call_bang_no_dollar_refs_no_input_pins) {
@@ -3532,10 +3532,10 @@ TEST(call_bang_lambda_ref_creates_lambda_pin) {
     GraphBuilder gb;
     auto& node = gb.add("c4", "call!", R"($some_func @0 $1)");
     ASSERT_EQ((int)node.inputs.size(), 2);
-    ASSERT_EQ(node.inputs[0].name, "@0");
-    ASSERT_EQ(node.inputs[0].direction, FlowPin::Lambda);
-    ASSERT_EQ(node.inputs[1].name, "1");
-    ASSERT_EQ(node.inputs[1].direction, FlowPin::Input);
+    ASSERT_EQ(node.inputs[0]->name, "@0");
+    ASSERT_EQ(node.inputs[0]->direction, FlowPin::Lambda);
+    ASSERT_EQ(node.inputs[1]->name, "1");
+    ASSERT_EQ(node.inputs[1]->direction, FlowPin::Input);
 }
 
 TEST(call_bang_pin_from_nano_file_roundtrip) {
@@ -3550,8 +3550,8 @@ TEST(call_bang_pin_from_nano_file_roundtrip) {
     GraphBuilder gb;
     auto& node = gb.add("c5", "call!", args_str);
     ASSERT_EQ((int)node.inputs.size(), 1);
-    ASSERT_EQ(node.inputs[0].name, "0");
-    ASSERT_EQ(node.inputs[0].direction, FlowPin::Input);
+    ASSERT_EQ(node.inputs[0]->name, "0");
+    ASSERT_EQ(node.inputs[0]->direction, FlowPin::Input);
 }
 
 TEST(call_bang_dollar_ref_pin_survives_resolve_type_based_pins) {
@@ -3566,7 +3566,7 @@ TEST(call_bang_dollar_ref_pin_survives_resolve_type_based_pins) {
 
     // Before resolve: should have 1 input pin for $0
     ASSERT_EQ((int)call_node.inputs.size(), 1);
-    ASSERT_EQ(call_node.inputs[0].name, "0");
+    ASSERT_EQ(call_node.inputs[0]->name, "0");
 
     // Now run resolve_type_based_pins (this is what the loader does after flush_node)
     resolve_type_based_pins(gb.graph);
@@ -3575,8 +3575,8 @@ TEST(call_bang_dollar_ref_pin_survives_resolve_type_based_pins) {
     auto* n = gb.find("call1");
     ASSERT(n != nullptr);
     ASSERT_EQ((int)n->inputs.size(), 1);
-    ASSERT_EQ(n->inputs[0].name, "0");
-    ASSERT_EQ(n->inputs[0].direction, FlowPin::Input);
+    ASSERT_EQ(n->inputs[0]->name, "0");
+    ASSERT_EQ(n->inputs[0]->direction, FlowPin::Input);
 }
 
 TEST(call_bang_dollar_ref_pin_gets_type_from_resolve) {
@@ -3595,7 +3595,7 @@ TEST(call_bang_dollar_ref_pin_gets_type_from_resolve) {
     ASSERT(n != nullptr);
     ASSERT_EQ((int)n->inputs.size(), 1);
     // $0 is at inline arg position 1 → fn_arg[1] = b:&vector<f32>
-    ASSERT_EQ(n->inputs[0].type_name, "&vector<f32>");
+    ASSERT_EQ(n->inputs[0]->type_name, "&vector<f32>");
 }
 
 TEST(call_dollar_ref_with_field_access_no_type_on_pin) {
@@ -3611,9 +3611,9 @@ TEST(call_dollar_ref_with_field_access_no_type_on_pin) {
     auto* n = gb.find("call1");
     ASSERT(n != nullptr);
     ASSERT_EQ((int)n->inputs.size(), 1);
-    ASSERT_EQ(n->inputs[0].name, "0");
+    ASSERT_EQ(n->inputs[0]->name, "0");
     // Pin type should NOT be &f32 — the pin carries the struct, not the field
-    ASSERT(n->inputs[0].type_name != "&f32");
+    ASSERT(n->inputs[0]->type_name != "&f32");
 
     // After inference, pin 0 should not be typed as string (the first fn arg).
     // Without a connected struct, the field access can't fully resolve, but
@@ -3623,8 +3623,8 @@ TEST(call_dollar_ref_with_field_access_no_type_on_pin) {
     n = gb.find("call1");
     ASSERT(n != nullptr);
     // Pin 0 should not be string — it carries a struct, not the label arg
-    if (n->inputs[0].resolved_type) {
-        ASSERT(type_to_string(n->inputs[0].resolved_type) != "string");
+    if (n->inputs[0]->resolved_type) {
+        ASSERT(type_to_string(n->inputs[0]->resolved_type) != "string");
     }
 }
 
@@ -3639,7 +3639,7 @@ TEST(call_bare_dollar_ref_gets_type) {
     auto* n = gb.find("call1");
     ASSERT(n != nullptr);
     ASSERT_EQ((int)n->inputs.size(), 1);
-    ASSERT_EQ(n->inputs[0].type_name, "&f32");
+    ASSERT_EQ(n->inputs[0]->type_name, "&f32");
 }
 
 // ============================================================
@@ -3650,8 +3650,8 @@ TEST(cast_has_input_pin) {
     GraphBuilder gb;
     auto& node = gb.add("c1", "cast", "vector<f32>");
     ASSERT_EQ((int)node.inputs.size(), 1);
-    ASSERT_EQ(node.inputs[0].name, "value");
-    ASSERT_EQ(node.inputs[0].direction, FlowPin::Input);
+    ASSERT_EQ(node.inputs[0]->name, "value");
+    ASSERT_EQ(node.inputs[0]->direction, FlowPin::Input);
 }
 
 TEST(cast_has_output_pin) {
@@ -3667,8 +3667,8 @@ TEST(cast_output_type_is_dest_type) {
     gi.run(gb.graph);
     auto* n = gb.find("c1");
     ASSERT(n != nullptr);
-    ASSERT(n->outputs[0].resolved_type != nullptr);
-    ASSERT_EQ(type_to_string(n->outputs[0].resolved_type), "vector<f32>");
+    ASSERT(n->outputs[0]->resolved_type != nullptr);
+    ASSERT_EQ(type_to_string(n->outputs[0]->resolved_type), "vector<f32>");
 }
 
 TEST(call_bang_no_false_too_many_args_with_dollar_ref) {
@@ -3702,8 +3702,8 @@ TEST(cast_different_dest_type) {
     gi.run(gb.graph);
     auto* n = gb.find("c1");
     ASSERT(n != nullptr);
-    ASSERT(n->outputs[0].resolved_type != nullptr);
-    ASSERT_EQ(type_to_string(n->outputs[0].resolved_type), "vector<s32>");
+    ASSERT(n->outputs[0]->resolved_type != nullptr);
+    ASSERT_EQ(type_to_string(n->outputs[0]->resolved_type), "vector<s32>");
 }
 
 TEST(cast_preserves_input_pin_after_resolve) {
@@ -3714,7 +3714,7 @@ TEST(cast_preserves_input_pin_after_resolve) {
     auto* n = gb.find("c1");
     ASSERT(n != nullptr);
     ASSERT_EQ((int)n->inputs.size(), 1);
-    ASSERT_EQ(n->inputs[0].name, "value");
+    ASSERT_EQ(n->inputs[0]->name, "value");
 }
 
 TEST(cast_no_error) {
@@ -3740,8 +3740,8 @@ TEST(cast_output_type_independent_of_input) {
     auto* n = gb.find("c1");
     ASSERT(n != nullptr);
     // Output should always be the dest type
-    ASSERT(n->outputs[0].resolved_type != nullptr);
-    ASSERT_EQ(type_to_string(n->outputs[0].resolved_type), "vector<f32>");
+    ASSERT(n->outputs[0]->resolved_type != nullptr);
+    ASSERT_EQ(type_to_string(n->outputs[0]->resolved_type), "vector<f32>");
 }
 
 // ============================================================
@@ -3791,7 +3791,7 @@ TEST(str_has_input_pin) {
     GraphBuilder gb;
     auto& node = gb.add("s1", "str", "");
     ASSERT_EQ((int)node.inputs.size(), 1);
-    ASSERT_EQ(node.inputs[0].name, "value");
+    ASSERT_EQ(node.inputs[0]->name, "value");
 }
 
 TEST(str_has_output_pin) {
@@ -3807,8 +3807,8 @@ TEST(str_output_type_is_string) {
     gi.run(gb.graph);
     auto* n = gb.find("s1");
     ASSERT(n != nullptr);
-    ASSERT(n->outputs[0].resolved_type != nullptr);
-    ASSERT_EQ(type_to_string(n->outputs[0].resolved_type), "string");
+    ASSERT(n->outputs[0]->resolved_type != nullptr);
+    ASSERT_EQ(type_to_string(n->outputs[0]->resolved_type), "string");
 }
 
 TEST(str_output_is_string_regardless_of_input) {
@@ -3821,8 +3821,8 @@ TEST(str_output_is_string_regardless_of_input) {
     gi.run(gb.graph);
     auto* n = gb.find("s1");
     ASSERT(n != nullptr);
-    ASSERT(n->outputs[0].resolved_type != nullptr);
-    ASSERT_EQ(type_to_string(n->outputs[0].resolved_type), "string");
+    ASSERT(n->outputs[0]->resolved_type != nullptr);
+    ASSERT_EQ(type_to_string(n->outputs[0]->resolved_type), "string");
 }
 
 // ============================================================
@@ -3837,8 +3837,8 @@ TEST(string_plus_string_resolves) {
     gi.run(gb.graph);
     auto* n = gb.find("e1");
     ASSERT(n != nullptr);
-    ASSERT(n->outputs[0].resolved_type != nullptr);
-    ASSERT_EQ(type_to_string(n->outputs[0].resolved_type), "string");
+    ASSERT(n->outputs[0]->resolved_type != nullptr);
+    ASSERT_EQ(type_to_string(n->outputs[0]->resolved_type), "string");
 }
 
 TEST(string_plus_unknown_defers_no_error) {
@@ -3854,8 +3854,8 @@ TEST(string_plus_unknown_defers_no_error) {
     ASSERT(n != nullptr);
     // Should have no error — str outputs string, so "##amp"+string is valid
     ASSERT(n->error.empty());
-    ASSERT(n->outputs[0].resolved_type != nullptr);
-    ASSERT_EQ(type_to_string(n->outputs[0].resolved_type), "string");
+    ASSERT(n->outputs[0]->resolved_type != nullptr);
+    ASSERT_EQ(type_to_string(n->outputs[0]->resolved_type), "string");
 }
 
 TEST(string_plus_int_still_errors) {
@@ -3910,7 +3910,7 @@ TEST(call_dollar_ref_field_access_pin_count) {
     auto* n = gb.find("call1");
     ASSERT(n != nullptr);
     ASSERT_EQ((int)n->inputs.size(), 1);
-    ASSERT_EQ(n->inputs[0].name, "0");
+    ASSERT_EQ(n->inputs[0]->name, "0");
 }
 
 TEST(call_multiple_dollar_refs_with_field_access) {
@@ -3922,8 +3922,8 @@ TEST(call_multiple_dollar_refs_with_field_access) {
     auto* n = gb.find("call1");
     ASSERT(n != nullptr);
     ASSERT_EQ((int)n->inputs.size(), 2);
-    ASSERT_EQ(n->inputs[0].name, "0");
-    ASSERT_EQ(n->inputs[1].name, "1");
+    ASSERT_EQ(n->inputs[0]->name, "0");
+    ASSERT_EQ(n->inputs[1]->name, "1");
 }
 
 TEST(call_string_concat_with_dollar_ref) {
@@ -3957,9 +3957,9 @@ TEST(rand_int_returns_int) {
     gi.run(gb.graph);
     auto* n = gb.find("e1");
     ASSERT(n != nullptr);
-    ASSERT(n->outputs[0].resolved_type != nullptr);
+    ASSERT(n->outputs[0]->resolved_type != nullptr);
     // Both args are int literals, result should be int-like
-    ASSERT(n->outputs[0].resolved_type->kind == TypeKind::Scalar);
+    ASSERT(n->outputs[0]->resolved_type->kind == TypeKind::Scalar);
 }
 
 TEST(rand_float_returns_float) {
@@ -3969,8 +3969,8 @@ TEST(rand_float_returns_float) {
     gi.run(gb.graph);
     auto* n = gb.find("e1");
     ASSERT(n != nullptr);
-    ASSERT(n->outputs[0].resolved_type != nullptr);
-    ASSERT_EQ(type_to_string(n->outputs[0].resolved_type), "f32");
+    ASSERT(n->outputs[0]->resolved_type != nullptr);
+    ASSERT_EQ(type_to_string(n->outputs[0]->resolved_type), "f32");
 }
 
 TEST(rand_with_pin_refs) {
