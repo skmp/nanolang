@@ -105,6 +105,7 @@ private:
     int dragging_node_ = -1;
     bool dragging_selection_ = false;
     std::string dragging_link_from_pin_;
+    bool dragging_link_from_output_ = true; // true if drag started from output-like pin
     ImVec2 dragging_link_start_;
     bool canvas_dragging_ = false;
     ImVec2 canvas_drag_start_;

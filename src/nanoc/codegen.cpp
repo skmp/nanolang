@@ -194,6 +194,29 @@ std::string CodeGenerator::fresh_var(const std::string& prefix) {
     return prefix + "_" + std::to_string(temp_counter++);
 }
 
+// Emit bang output: follow bang chain AND call any () -> void values wired to the pin
+void CodeGenerator::emit_bang_output(FlowPin& bout, std::ostringstream& out, int indent) {
+    // Standard bang chain
+    for (auto* t : follow_bang_from(bout.id))
+        emit_node(*t, out, indent);
+
+    // Check for incoming () -> void values connected to this bang output
+    auto* src_pin = idx.source_pin(&bout);
+    if (src_pin && src_pin->resolved_type &&
+        src_pin->resolved_type->kind == TypeKind::Function &&
+        src_pin->resolved_type->func_args.empty()) {
+        // Materialize the source and call it
+        auto* src_node = idx.source_node(&bout);
+        if (src_node && !materialized.count(src_node->guid)) {
+            materialize_node(*src_node, out, indent);
+        }
+        auto it = pin_to_value.find(src_pin->id);
+        if (it != pin_to_value.end()) {
+            out << indent_str(indent) << it->second << "();\n";
+        }
+    }
+}
+
 // --- Type conversion ---
 
 std::string CodeGenerator::type_to_cpp(const TypePtr& t) {

@@ -78,6 +78,9 @@ struct CodeGenerator {
     // Emit a bang-triggered node and its chain
     void emit_node(FlowNode& node, std::ostringstream& out, int indent);
 
+    // Emit bang output: follow chain + call any () -> void values wired to the pin
+    void emit_bang_output(FlowPin& bout, std::ostringstream& out, int indent);
+
     // Node helpers
     std::vector<FlowNode*> find_nodes(NodeTypeID type_id);
     FlowNode* find_node_by_guid(const std::string& guid);
