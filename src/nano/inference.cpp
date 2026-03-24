@@ -237,24 +237,8 @@ bool GraphInference::infer_expr_nodes(FlowGraph& graph) {
         }
 
         // Skip expression parsing for nodes whose args aren't expressions
-        bool skip_expr_parse = is_any_of(node.type_id, NodeTypeID::DeclLocal, NodeTypeID::Void, NodeTypeID::Cast);
-
-        // Expressions should be pre-parsed at load time. Only parse here as a
-        // fallback for nodes created at runtime (e.g. tests, editor) that don't
-        // go through the serial load pipeline.
-        if (!skip_expr_parse && node.parsed_exprs.empty() && !node.args.empty()) {
-            auto tokens = tokenize_args(node.args, false);
-            for (auto& tok : tokens) {
-                auto result = parse_expression(tok);
-                if (result.root && result.error.empty())
-                    node.parsed_exprs.push_back(result.root);
-                else {
-                    if (!result.error.empty() && node.error.empty())
-                        node.error = "In '" + tok + "': " + result.error;
-                    node.parsed_exprs.push_back(nullptr);
-                }
-            }
-        }
+        // Expressions are pre-parsed at load time via FlowNode::parse_args().
+        // No runtime parsing needed here.
 
         if (node.parsed_exprs.empty() && !needs_type_propagation && !has_custom_output) continue;
 
@@ -433,13 +417,10 @@ bool GraphInference::infer_expr_nodes(FlowGraph& graph) {
                 // Register in var_types for downstream inference
                 ctx.var_types[tokens[0]] = local_type;
 
-                // Validate initial value type compatibility
-                // Parse the last token as an expression to get its type
-                std::string init_str = tokens.back();
-                auto init_parsed = parse_expression(init_str);
-                if (init_parsed.root && init_parsed.error.empty()) {
+                // Validate initial value type compatibility using pre-parsed expression
+                if (!node.parsed_exprs.empty() && node.parsed_exprs[0]) {
                     ctx.errors.clear();
-                    auto init_type = ctx.infer(init_parsed.root);
+                    auto init_type = ctx.infer(node.parsed_exprs[0]);
                     if (init_type && local_type &&
                         !init_type->is_generic && !local_type->is_generic &&
                         !types_compatible(init_type, local_type)) {

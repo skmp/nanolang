@@ -1437,6 +1437,7 @@ void FlowEditorWindow::draw() {
                     node.guid = generate_guid();
                 node.type_id = node_type_id_from_string(node_type.c_str());
                 node.args = rest_args;
+                node.parse_args();
                 active().graph.dirty = true;
                 creating_new_node_ = false;
 
@@ -2026,6 +2027,7 @@ void FlowEditorWindow::paste_at(ImVec2 canvas_pos) {
             if (node.id != id) continue;
             node.type_id = cn.type_id;
             node.args = cn.args;
+            node.parse_args();
 
             // Rebuild pins from type descriptor
             auto* nt = find_node_type(cn.type_id);

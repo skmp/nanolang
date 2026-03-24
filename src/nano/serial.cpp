@@ -194,33 +194,7 @@ bool load_nano(const std::string& path, FlowGraph& graph) {
 
         node.rebuild_pin_ids();
 
-        // Pre-parse expressions at load time
-        bool skip_expr_parse = is_any_of(cur_type_id,
-            NodeTypeID::DeclLocal, NodeTypeID::Void, NodeTypeID::Cast,
-            NodeTypeID::DeclType, NodeTypeID::DeclVar, NodeTypeID::DeclEvent,
-            NodeTypeID::DeclImport, NodeTypeID::Ffi, NodeTypeID::New,
-            NodeTypeID::EventBang, NodeTypeID::Label);
-        if (!skip_expr_parse && !args_str.empty()) {
-            auto tokens = tokenize_args(args_str, false);
-            for (auto& tok : tokens) {
-                auto result = parse_expression(tok);
-                if (result.root && result.error.empty())
-                    node.parsed_exprs.push_back(result.root);
-                else {
-                    if (!result.error.empty() && node.error.empty())
-                        node.error = "In '" + tok + "': " + result.error;
-                    node.parsed_exprs.push_back(nullptr);
-                }
-            }
-        }
-
-        // Store inline arg metadata
-        if (!args_str.empty() && !is_expr && !args_are_type) {
-            auto info = compute_inline_args(args_str, default_inputs);
-            node.inline_meta.num_inline_args = info.num_inline_args;
-            node.inline_meta.ref_pin_count = (info.pin_slots.max_slot >= 0) ? (info.pin_slots.max_slot + 1) : 0;
-        }
-
+        node.parse_args();
         graph.nodes.push_back(std::move(node));
 
         cur_guid.clear(); cur_type.clear(); cur_args.clear();
@@ -589,31 +563,7 @@ bool load_nano_string(const std::string& data, FlowGraph& graph) {
         for (int i = 0; i < no; i++) node.outputs.push_back(make_pin("","out"+std::to_string(i), "", nullptr, FlowPin::Output));
         node.rebuild_pin_ids();
 
-        // Pre-parse expressions at load time
-        bool skip_expr_parse = is_any_of(cur_type_id,
-            NodeTypeID::DeclLocal, NodeTypeID::Void, NodeTypeID::Cast,
-            NodeTypeID::DeclType, NodeTypeID::DeclVar, NodeTypeID::DeclEvent,
-            NodeTypeID::DeclImport, NodeTypeID::Ffi, NodeTypeID::New,
-            NodeTypeID::EventBang, NodeTypeID::Label);
-        if (!skip_expr_parse && !args_str.empty()) {
-            auto tokens = tokenize_args(args_str, false);
-            for (auto& tok : tokens) {
-                auto result = parse_expression(tok);
-                if (result.root && result.error.empty())
-                    node.parsed_exprs.push_back(result.root);
-                else {
-                    if (!result.error.empty() && node.error.empty())
-                        node.error = "In '" + tok + "': " + result.error;
-                    node.parsed_exprs.push_back(nullptr);
-                }
-            }
-        }
-        if (!args_str.empty() && !is_expr && !args_are_type) {
-            auto info = compute_inline_args(args_str, di);
-            node.inline_meta.num_inline_args = info.num_inline_args;
-            node.inline_meta.ref_pin_count = (info.pin_slots.max_slot >= 0) ? (info.pin_slots.max_slot + 1) : 0;
-        }
-
+        node.parse_args();
         graph.nodes.push_back(std::move(node));
         cur_guid.clear(); cur_type.clear(); cur_args.clear(); cur_x=0; cur_y=0;
     };

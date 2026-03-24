@@ -77,6 +77,10 @@ struct FlowNode {
     };
     InlineArgMeta inline_meta;
 
+    // Parse expressions from args string and populate parsed_exprs + inline_meta.
+    // Call after type_id and args are set.
+    void parse_args();
+
     // Pre-computed by inference — consumed by codegen
     struct ResolvedLambda {
         FlowNode* root = nullptr;              // lambda root node (connected via Lambda pin)

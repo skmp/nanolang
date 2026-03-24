@@ -1,4 +1,7 @@
 #include "args.h"
+#include "model.h"
+#include "expr.h"
+#include "node_types.h"
 
 std::vector<std::string> tokenize_args(const std::string& input, bool implicit_parens) {
     std::string src = implicit_parens ? ("(" + input + ")") : input;
@@ -214,4 +217,46 @@ ParsedArgs parse_args(const std::string& args_str, bool is_expr) {
     }
     result.has_any_args = !tokens.empty();
     return result;
+}
+
+void FlowNode::parse_args() {
+    parsed_exprs.clear();
+    inline_meta = {};
+
+    if (args.empty()) return;
+
+    auto* nt = find_node_type(type_id);
+    bool is_expr = is_any_of(type_id, NodeTypeID::Expr, NodeTypeID::ExprBang);
+    bool args_are_type = is_any_of(type_id, NodeTypeID::Cast, NodeTypeID::New);
+    bool skip = is_any_of(type_id,
+        NodeTypeID::Void,
+        NodeTypeID::DeclType, NodeTypeID::DeclVar, NodeTypeID::DeclEvent,
+        NodeTypeID::DeclImport, NodeTypeID::Ffi, NodeTypeID::New,
+        NodeTypeID::EventBang, NodeTypeID::Label);
+
+    // Parse expression tokens
+    if (!skip) {
+        if (type_id == NodeTypeID::DeclLocal) {
+            // decl_local: only the 3rd+ token (initial value) is an expression
+            auto tokens = tokenize_args(args, false);
+            if (tokens.size() >= 3) {
+                auto result = parse_expression(tokens.back());
+                if (result.root) parsed_exprs.push_back(result.root);
+            }
+        } else {
+            auto tokens = tokenize_args(args, false);
+            for (auto& tok : tokens) {
+                auto result = parse_expression(tok);
+                parsed_exprs.push_back(result.root); // may be nullptr
+            }
+        }
+    }
+
+    // Compute inline metadata for non-expr, non-type-arg nodes
+    if (!is_expr && !args_are_type) {
+        int di = nt ? nt->inputs : 0;
+        auto info = compute_inline_args(args, di);
+        inline_meta.num_inline_args = info.num_inline_args;
+        inline_meta.ref_pin_count = (info.pin_slots.max_slot >= 0) ? (info.pin_slots.max_slot + 1) : 0;
+    }
 }

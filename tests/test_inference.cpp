@@ -130,6 +130,7 @@ struct GraphBuilder {
         }
 
         node.rebuild_pin_ids();
+        node.parse_args();
         graph.nodes.push_back(std::move(node));
         return graph.nodes.back();
     }
