@@ -61,6 +61,74 @@ std::vector<std::string> GraphInference::run(FlowGraph& graph) {
         }
     }
 
+    // Validate multi-connection pins (BangTrigger and Lambda)
+    {
+        // Count incoming links per to_pin
+        std::unordered_map<std::string, int> to_pin_count;
+        for (auto& link : graph.links)
+            to_pin_count[link.to_pin]++;
+
+        for (auto& link : graph.links) {
+            if (!link.error.empty()) continue;
+            if (to_pin_count[link.to_pin] <= 1) continue;
+
+            // Multiple connections to this pin — check if allowed
+            if (link.to && link.to->direction == FlowPin::BangTrigger) {
+                // BangTrigger: allowed if owning node has no connected data inputs
+                if (link.to_node) {
+                    bool has_captures = false;
+                    for (auto& inp : link.to_node->inputs) {
+                        if (idx.source_pin(inp.get())) {
+                            has_captures = true;
+                            break;
+                        }
+                    }
+                    if (has_captures)
+                        link.error = "Cannot share trigger: node has captured inputs";
+                }
+            } else if (link.to && link.to->direction == FlowPin::Lambda) {
+                // Lambda: allowed if lambda root has no captures
+                if (link.to_node) {
+                    // Find the lambda root (source node connected via as_lambda)
+                    FlowNode* lambda_root = nullptr;
+                    auto* src_pin = idx.source_pin(link.to);
+                    if (src_pin && src_pin->direction == FlowPin::LambdaGrab) {
+                        lambda_root = idx.source_node(link.to);
+                    }
+                    if (lambda_root) {
+                        // Check if any inputs in the lambda subgraph are connected (captures)
+                        std::set<std::string> visited;
+                        std::vector<FlowPin*> params;
+                        collect_lambda_params(graph, *lambda_root, params, visited);
+                        // If ALL inputs in the subgraph are lambda params (unconnected), no captures
+                        // But we need to check if there are CONNECTED inputs that aren't params
+                        bool has_captures = false;
+                        for (auto& n_guid : visited) {
+                            for (auto& node : graph.nodes) {
+                                if (node.guid != n_guid) continue;
+                                for (auto& inp : node.inputs) {
+                                    if (inp->direction == FlowPin::Lambda) continue;
+                                    if (idx.source_pin(inp.get())) {
+                                        // Connected input — check if it's from outside the lambda subgraph
+                                        auto* src_node = idx.source_node(inp.get());
+                                        if (src_node && !visited.count(src_node->guid)) {
+                                            has_captures = true;
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                        if (has_captures)
+                            link.error = "Cannot share lambda: has captured inputs";
+                    }
+                }
+            } else if (link.to && link.to->direction != FlowPin::BangTrigger && link.to->direction != FlowPin::Lambda) {
+                // Other pin types: single connection only
+                link.error = "Pin accepts only one connection";
+            }
+        }
+    }
+
     // Collect all errors
     for (auto& node : graph.nodes) {
         if (!node.error.empty())

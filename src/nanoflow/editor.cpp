@@ -995,7 +995,16 @@ void FlowEditorWindow::draw() {
                 }
 
                 if (valid) {
-                    std::erase_if(active().graph.links, [&](auto& l) { return l.to_pin == to_pin; });
+                    // BangTrigger and Lambda allow multiple incoming connections
+                    // (validation happens in inference, not here)
+                    FlowPin::Direction to_dir = FlowPin::Input;
+                    for (auto& node : active().graph.nodes) {
+                        for (auto& p : node.triggers) if (p->id == to_pin) to_dir = FlowPin::BangTrigger;
+                        for (auto& p : node.inputs) if (p->id == to_pin) to_dir = p->direction;
+                    }
+                    bool allow_multi = (to_dir == FlowPin::BangTrigger || to_dir == FlowPin::Lambda);
+                    if (!allow_multi)
+                        std::erase_if(active().graph.links, [&](auto& l) { return l.to_pin == to_pin; });
                     active().graph.add_link(from_pin, to_pin);
                     mark_dirty();
                 }
@@ -1076,7 +1085,8 @@ void FlowEditorWindow::draw() {
                 } else {
                     // Was dragging dest side: drop on another dest pin
                     if (pin_hit.dir == FlowPin::Input || pin_hit.dir == FlowPin::BangTrigger || pin_hit.dir == FlowPin::Lambda) {
-                        if (pin_hit.dir != FlowPin::BangTrigger)
+                        // BangTrigger and Lambda allow multiple — don't erase
+                        if (pin_hit.dir != FlowPin::BangTrigger && pin_hit.dir != FlowPin::Lambda)
                             std::erase_if(active().graph.links, [&](auto& l) { return l.to_pin == pin_hit.pin_id; });
                         for (auto& gl : grabbed_links_)
                             active().graph.add_link(gl.from_pin, pin_hit.pin_id);

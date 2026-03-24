@@ -4539,6 +4539,84 @@ TEST(connect_bang_trigger_as_value_source) {
 }
 
 // ============================================================
+// Multi-connection validation tests
+// ============================================================
+
+TEST(multi_bang_trigger_no_captures_ok) {
+    // BangTrigger with no data inputs → multiple connections allowed
+    GraphBuilder gb;
+    gb.add("s1", "store!", "$x 1");
+    gb.add("s2", "store!", "$y 2");
+    gb.add("dv_x", "decl_var", "x f32");
+    gb.add("dv_y", "decl_var", "y f32");
+    gb.add("dl", "decl_local", "z f32");
+
+    // Two BangNext pins connect to the same BangTrigger
+    std::string trigger = gb.find("dl")->triggers[0]->id;
+    std::string next1 = gb.find("s1")->nexts[0]->id;
+    std::string next2 = gb.find("s2")->nexts[0]->id;
+    gb.link(next1, trigger);
+    gb.link(next2, trigger);
+
+    auto errors = gb.run_inference();
+
+    // No "Cannot share trigger" errors expected — decl_local has no data captures
+    bool has_share_error = false;
+    for (auto& l : gb.graph.links)
+        if (l.error.find("Cannot share") != std::string::npos) has_share_error = true;
+    ASSERT(!has_share_error);
+}
+
+TEST(multi_bang_trigger_with_captures_error) {
+    // BangTrigger with a connected data input → multiple connections should error
+    GraphBuilder gb;
+    gb.add("dv_x", "decl_var", "x f32");
+    gb.add("e1", "expr", "42");
+    gb.add("st1", "store!", "$x $0");
+    gb.add("st2", "store!", "$x 1");
+    gb.link("e1.out0", "st1.0"); // st1 has a data input connected
+
+    // Two BangNext pins connect to st1's trigger
+    std::string trigger = gb.find("st1")->triggers[0]->id;
+    std::string next1 = gb.find("st2")->nexts[0]->id;
+    // Also connect from a second source — create another store
+    gb.add("st3", "store!", "$x 3");
+    std::string next2 = gb.find("st3")->nexts[0]->id;
+    gb.link(next1, trigger);
+    gb.link(next2, trigger);
+
+    auto errors = gb.run_inference();
+
+    // Should have "Cannot share trigger" error
+    bool has_share_error = false;
+    for (auto& l : gb.graph.links)
+        if (!l.error.empty() && l.error.find("Cannot share") != std::string::npos) has_share_error = true;
+    ASSERT(has_share_error);
+}
+
+TEST(single_bang_trigger_with_captures_ok) {
+    // Single connection to BangTrigger with captures → always OK
+    GraphBuilder gb;
+    gb.add("dv_x", "decl_var", "x f32");
+    gb.add("e1", "expr", "42");
+    gb.add("st1", "store!", "$x $0");
+    gb.link("e1.out0", "st1.0");
+
+    gb.add("st2", "store!", "$x 1");
+    std::string trigger = gb.find("st1")->triggers[0]->id;
+    std::string next = gb.find("st2")->nexts[0]->id;
+    gb.link(next, trigger);
+
+    auto errors = gb.run_inference();
+
+    // No share error — single connection
+    bool has_share_error = false;
+    for (auto& l : gb.graph.links)
+        if (!l.error.empty() && l.error.find("Cannot share") != std::string::npos) has_share_error = true;
+    ASSERT(!has_share_error);
+}
+
+// ============================================================
 // Main
 // ============================================================
 
