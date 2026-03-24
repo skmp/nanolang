@@ -71,9 +71,32 @@ static std::pair<std::string, std::string> get_port_desc(const FlowNode& node, c
         if (!r.first.empty()) return r;
     }
 
-    // For data input pins: use the pin's own name (set by parse_args from $N:name)
-    for (auto& p : node.inputs) {
-        if (p->id == pin.id) return {pin.name, ""};
+    // For data input pins: check if a $N:name annotation exists in parsed expressions
+    for (int i = 0; i < (int)node.inputs.size(); i++) {
+        if (node.inputs[i]->id != pin.id) continue;
+        // Look for a PinRef with this index that has a :name annotation
+        for (auto& expr : node.parsed_exprs) {
+            if (!expr) continue;
+            // Walk AST to find PinRef for this pin index
+            struct Finder {
+                int target_idx; std::string result;
+                void walk(const ExprPtr& e) {
+                    if (!e || !result.empty()) return;
+                    if (e->kind == ExprKind::PinRef && e->pin_ref.index == target_idx && !e->pin_ref.name.empty())
+                        result = e->pin_ref.name;
+                    for (auto& c : e->children) walk(c);
+                }
+            };
+            // Parse pin name as index
+            int pin_idx = -1;
+            try { pin_idx = std::stoi(pin.name); } catch (...) {}
+            if (pin_idx >= 0) {
+                Finder f{pin_idx, {}};
+                f.walk(expr);
+                if (!f.result.empty()) return {f.result, ""};
+            }
+        }
+        return {pin.name, ""};
     }
 
     return {pin.name, ""};

@@ -253,20 +253,8 @@ void FlowNode::parse_args() {
         }
     }
 
-    // Apply $N:name annotations from parsed expressions to input pin names
-    for (auto& expr : parsed_exprs) {
-        if (!expr) continue;
-        std::function<void(const ExprPtr&)> apply_names = [&](const ExprPtr& e) {
-            if (!e) return;
-            if (e->kind == ExprKind::PinRef && !e->pin_ref.name.empty()) {
-                std::string idx_name = std::to_string(e->pin_ref.index);
-                for (auto& p : inputs)
-                    if (p->name == idx_name) { p->name = e->pin_ref.name; break; }
-            }
-            for (auto& child : e->children) apply_names(child);
-        };
-        apply_names(expr);
-    }
+    // Note: $N:name annotations are NOT applied to pin.name (which is used for pin IDs).
+    // The display name comes from the parsed expression and is resolved at display time.
 
     // Compute inline metadata for non-expr, non-type-arg nodes
     if (!is_expr && !args_are_type) {

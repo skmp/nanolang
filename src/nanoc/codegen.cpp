@@ -541,7 +541,16 @@ std::string CodeGenerator::materialize_node(FlowNode& node, std::ostringstream& 
                 out << ind << expr << ";\n";
                 pin_to_value[node.outputs[i]->id] = "void()";
             } else {
-                std::string var = fresh_var("val");
+                // Use :name annotation from the expression root as variable name hint
+                std::string prefix = "val";
+                if (node.parsed_exprs[i]) {
+                    auto& root = node.parsed_exprs[i];
+                    if (root->kind == ExprKind::PinRef && !root->pin_ref.name.empty())
+                        prefix = root->pin_ref.name;
+                    else if (root->kind == ExprKind::VarRef && root->is_dollar_var)
+                        prefix = root->var_name;
+                }
+                std::string var = fresh_var(prefix);
                 std::string type_str = node.outputs[i]->resolved_type ? type_to_cpp(node.outputs[i]->resolved_type) : "auto";
                 out << ind << type_str << " " << var << " = " << expr << ";\n";
                 pin_to_value[node.outputs[i]->id] = var;
