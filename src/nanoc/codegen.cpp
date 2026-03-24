@@ -1656,6 +1656,7 @@ void CodeGenerator::emit_node(FlowNode& node, std::ostringstream& out, int inden
                 emit_node(*t, out, indent);
     }
     else if (node.type_id == NodeTypeID::SelectBang) {
+        // bang_outputs: [0]=next, [1]=true, [2]=false
         std::string cond = resolve_inline_arg(node, 0);
         out << ind << "if (" << cond << ") {\n";
 
@@ -1663,12 +1664,14 @@ void CodeGenerator::emit_node(FlowNode& node, std::ostringstream& out, int inden
         auto saved_emitted = emitted_bang_nodes_;
         auto saved_materialized = materialized;
 
-        if (!node.bang_outputs.empty())
-            for (auto* t : follow_bang_from(node.bang_outputs[0]->id))
+        // bang_outputs[1] = true branch
+        if (node.bang_outputs.size() > 1)
+            for (auto* t : follow_bang_from(node.bang_outputs[1]->id))
                 emit_node(*t, out, indent + 1);
 
-        if (node.bang_outputs.size() > 1) {
-            auto targets = follow_bang_from(node.bang_outputs[1]->id);
+        // bang_outputs[2] = false branch
+        if (node.bang_outputs.size() > 2) {
+            auto targets = follow_bang_from(node.bang_outputs[2]->id);
             if (!targets.empty()) {
                 // Restore state for false branch so shared nodes emit in both
                 emitted_bang_nodes_ = saved_emitted;
@@ -1679,6 +1682,11 @@ void CodeGenerator::emit_node(FlowNode& node, std::ostringstream& out, int inden
             }
         }
         out << ind << "}\n";
+
+        // bang_outputs[0] = next (fires after true/false completes)
+        if (!node.bang_outputs.empty())
+            for (auto* t : follow_bang_from(node.bang_outputs[0]->id))
+                emit_node(*t, out, indent);
     }
     else if (node.type_id == NodeTypeID::IterateBang) {
         std::string collection = resolve_inline_arg(node, 0);

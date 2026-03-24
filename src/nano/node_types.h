@@ -89,7 +89,7 @@ static const PortDesc P_STORE_IN[]   = {{"target", "variable/reference to store 
 static const PortDesc P_APPEND_IN[]  = {{"target", "collection to append to", PortKind::Data, "value"}, {"value", "value to append", PortKind::Data, "value"}};
 static const PortDesc P_ERASE_IN[]   = {{"target", "collection to erase from", PortKind::Data, "value"}, {"key", "key, value, or iterator to erase", PortKind::Data, "value"}};
 static const PortDesc P_COND_IN[]    = {{"condition", "boolean condition", PortKind::Data, "bool"}};
-static const PortDesc P_COND_BANG[]  = {{"true", "fires when condition is true", PortKind::Data, "bang"}, {"false", "fires when condition is false", PortKind::Data, "bang"}};
+static const PortDesc P_COND_BANG[]  = {{"next", "fires after true/false completes", PortKind::Data, "bang"}, {"true", "fires when condition is true", PortKind::Data, "bang"}, {"false", "fires when condition is false", PortKind::Data, "bang"}};
 static const PortDesc P_SELECT_IN[]  = {{"condition", "boolean selector", PortKind::Data, "bool"}, {"if_true", "value when true", PortKind::Data, "value"}, {"if_false", "value when false", PortKind::Data, "value"}};
 static const PortDesc P_LOCAL_IN[]   = {{"name", "variable name"}, {"type", "variable type"}};
 static const PortDesc P_ITERATE_IN[] = {{"collection", "collection to iterate over", PortKind::Data, "collection"}, {"fn", "it=fn(it); while it!=end", PortKind::Lambda, "lambda"}};
@@ -122,7 +122,7 @@ static const NodeType NODE_TYPES[] = {
     {NodeTypeID::EventBang,     "event!",     "Event source (args from decl_event)",  0,0, 1,0, false,true, false,false, nullptr, nullptr, P_BANG_TRIG, nullptr},
     {NodeTypeID::OnKeyDownBang, "on_key_down!","Klavier key press event",             0,0, 1,2, true, true, false,false, nullptr, nullptr, P_KEY_EVENT, P_KEY_OUTS},
     {NodeTypeID::OnKeyUpBang,   "on_key_up!", "Klavier key release event",            0,0, 1,2, true, true, false,false, nullptr, nullptr, P_KEY_UP_EVENT, P_KEY_OUTS},
-    {NodeTypeID::SelectBang,    "select!",    "Branch on condition",                   1,1, 2,0, false,true, false,false, P_BANG_IN, P_COND_IN, P_COND_BANG, nullptr},
+    {NodeTypeID::SelectBang,    "select!",    "Branch on condition",                   1,1, 3,0, false,true, false,false, P_BANG_IN, P_COND_IN, P_COND_BANG, nullptr},
     {NodeTypeID::ExprBang,      "expr!",      "Evaluate expression on bang",          1,0, 1,0, false,true, false,false, P_BANG_IN, nullptr, P_BANG_TRIG, nullptr},
     {NodeTypeID::EraseBang,     "erase!",     "Erase from collection",               1,2, 1,1, false,true, false,false, P_BANG_IN, P_ERASE_IN, P_BANG_TRIG, P_RESULT},
     {NodeTypeID::Iterate,       "iterate",    "it=first; while it!=end: it=fn(it)",   0,2, 0,0, false,false,true, false, nullptr, P_ITERATE_IN, nullptr, nullptr},

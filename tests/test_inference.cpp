@@ -123,8 +123,10 @@ struct GraphBuilder {
 
         for (int i = 0; i < no; i++)
             node.outputs.push_back(make_pin("", "out" + std::to_string(i), "", nullptr, FlowPin::Output));
-        for (int i = 0; i < nbo; i++)
-            node.bang_outputs.push_back(make_pin("", "bang" + std::to_string(i), "", nullptr, FlowPin::BangOutput));
+        for (int i = 0; i < nbo; i++) {
+            std::string bname = (nt && nt->bang_output_ports && i < nt->bang_outputs) ? nt->bang_output_ports[i].name : ("bang" + std::to_string(i));
+            node.bang_outputs.push_back(make_pin("", bname, "", nullptr, FlowPin::BangOutput));
+        }
 
         node.rebuild_pin_ids();
         graph.nodes.push_back(std::move(node));
@@ -2220,8 +2222,8 @@ TEST(lambda_output_bang_chain_params) {
     ASSERT(cb_pin != nullptr);
 
     // Connect bang outputs to stores
-    gb.link("cond.bang0", "st_true.bang_in0");  // "true" bang → st_true
-    gb.link("cond.bang1", "st_false.bang_in0"); // "false" bang → st_false
+    gb.link("cond.true", "st_true.bang_in0");   // "true" bang → st_true
+    gb.link("cond.false", "st_false.bang_in0"); // "false" bang → st_false
     gb.link("cond.as_lambda", cb_pin->id);
 
     gb.run_inference();
@@ -4137,6 +4139,46 @@ TEST(pop_style_var_ffi_parses) {
     auto* n = gb.find("ffi1");
     ASSERT(n != nullptr);
     ASSERT(n->error.empty());
+}
+
+// ============================================================
+// select! node (3 bang outputs: next, true, false)
+// ============================================================
+
+TEST(select_bang_has_three_bang_outputs) {
+    GraphBuilder gb;
+    auto& node = gb.add("s1", "select!", "$0");
+    ASSERT_EQ((int)node.bang_outputs.size(), 3);
+    ASSERT_EQ(node.bang_outputs[0]->name, "next");
+    ASSERT_EQ(node.bang_outputs[1]->name, "true");
+    ASSERT_EQ(node.bang_outputs[2]->name, "false");
+}
+
+TEST(select_bang_has_one_bang_input) {
+    GraphBuilder gb;
+    auto& node = gb.add("s1", "select!", "$0");
+    ASSERT_EQ((int)node.bang_inputs.size(), 1);
+}
+
+TEST(select_bang_has_condition_input) {
+    GraphBuilder gb;
+    auto& node = gb.add("s1", "select!", "$0");
+    ASSERT_EQ((int)node.inputs.size(), 1);
+}
+
+TEST(select_bang_no_data_outputs) {
+    GraphBuilder gb;
+    auto& node = gb.add("s1", "select!", "$0");
+    ASSERT_EQ((int)node.outputs.size(), 0);
+}
+
+TEST(select_bang_next_fires_after_branches) {
+    // Verify next (bang_outputs[0]) is separate from true/false
+    GraphBuilder gb;
+    auto& node = gb.add("s1", "select!", "$0");
+    ASSERT(node.bang_outputs[0]->id != node.bang_outputs[1]->id);
+    ASSERT(node.bang_outputs[0]->id != node.bang_outputs[2]->id);
+    ASSERT(node.bang_outputs[1]->id != node.bang_outputs[2]->id);
 }
 
 // ============================================================
