@@ -4817,6 +4817,32 @@ TEST(select_unconnected_condition_error) {
     ASSERT_CONTAINS(sel->error, "not connected");
 }
 
+TEST(select_unconnected_condition_data_dep_error) {
+    // select with condition NOT connected, feeding into a discard! in a bang chain.
+    // The select is not directly triggered — it's a data dependency of a triggered node.
+    // Its unconnected condition should still be caught because it has other connected inputs.
+    GraphBuilder gb;
+    gb.add("ev", "event!", "on_tick");
+    gb.add("sel", "select", "");
+    gb.add("t1", "expr", "42");
+    gb.add("f1", "expr", "0");
+    gb.link("t1.out0", "sel.if_true");
+    gb.link("f1.out0", "sel.if_false");
+
+    // discard! is in the bang chain, consumes select output
+    gb.add("dis", "discard!", "");
+    gb.link("ev.bang0", "dis.bang_in0");
+    gb.link("sel.out0", "dis.value");
+
+    auto errors = gb.run_inference();
+    for (auto& e : errors) printf("    ERR: %s\n", e.c_str());
+
+    auto* sel = gb.find("sel");
+    ASSERT(sel != nullptr);
+    ASSERT(!sel->error.empty());
+    ASSERT_CONTAINS(sel->error, "not connected");
+}
+
 TEST(lock_caller_scope_basic) {
     // lock! with a simple lambda body where all inputs are from caller scope.
     // decl_local provides a value → lock!'s lambda body uses it as a capture.
