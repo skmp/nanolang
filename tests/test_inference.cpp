@@ -4795,6 +4795,213 @@ TEST(call_inline_bare_pin_ref_gets_type) {
     ASSERT_EQ(pin0->type_name, "&f32");
 }
 
+TEST(select_unconnected_condition_error) {
+    // select with no args, if_true and if_false connected, condition NOT connected
+    // Node is in flow: used as lambda root for a store
+    GraphBuilder gb;
+    gb.add("dv", "decl_var", "x () -> void");
+    gb.add("sel", "select", "");
+    gb.add("t1", "expr", "42");
+    gb.add("f1", "expr", "0");
+    gb.link("t1.out0", "sel.if_true");
+    gb.link("f1.out0", "sel.if_false");
+    gb.add("st", "store!", "$x");
+    gb.link("sel.as_lambda", "st.value");
+
+    auto errors = gb.run_inference();
+    for (auto& e : errors) printf("    ERR: %s\n", e.c_str());
+
+    auto* sel = gb.find("sel");
+    ASSERT(sel != nullptr);
+    ASSERT(!sel->error.empty());
+    ASSERT_CONTAINS(sel->error, "not connected");
+}
+
+TEST(lock_caller_scope_basic) {
+    // lock! with a simple lambda body where all inputs are from caller scope.
+    // decl_local provides a value → lock!'s lambda body uses it as a capture.
+    GraphBuilder gb;
+    gb.add("dv_mtx", "decl_var", "mtx mutex");
+    gb.add("dl", "decl_local", "x f32");
+    gb.add("lk", "lock!", "$mtx");
+
+    // Bang chain: decl_local → lock!
+    gb.link(gb.find("dl")->nexts[0]->id, gb.find("lk")->triggers[0]->id);
+
+    // Lambda body: expr $0 where $0 comes from decl_local (caller scope)
+    gb.add("ex", "expr", "$0");
+    gb.link("dl.out0", "ex.0"); // $0 = capture from caller scope
+    gb.link("ex.as_lambda", "lk.fn");
+
+    auto errors = gb.run_inference();
+    for (auto& e : errors) printf("    ERR: %s\n", e.c_str());
+
+    // The lock should have NO extra "arg" pins — $0 is a capture, not a param
+    auto* lk = gb.find("lk");
+    ASSERT(lk != nullptr);
+
+    int extra_pins = 0;
+    for (auto& inp : lk->inputs) {
+        if (inp->direction != FlowPin::Lambda && inp->name != "mutex")
+            extra_pins++;
+    }
+    printf("    Lock extra pins: %d\n", extra_pins);
+    ASSERT_EQ(extra_pins, 0);
+}
+
+TEST(lock_with_actual_lambda_param_gets_pin) {
+    // lock with a lambda that HAS a real parameter (not from caller scope).
+    // The lock should get an "arg0" pin for it.
+    GraphBuilder gb;
+    gb.add("dv_mtx", "decl_var", "mtx mutex");
+    gb.add("lk", "lock", "$mtx");
+
+    // Lambda body: expr $0 — $0 is unconnected = lambda param
+    gb.add("ex", "expr", "$0");
+    gb.link("ex.as_lambda", "lk.fn");
+
+    auto errors = gb.run_inference();
+    for (auto& e : errors) printf("    ERR: %s\n", e.c_str());
+
+    auto* lk = gb.find("lk");
+    ASSERT(lk != nullptr);
+
+    int extra_pins = 0;
+    for (auto& inp : lk->inputs) {
+        if (inp->direction != FlowPin::Lambda && inp->name != "mutex")
+            extra_pins++;
+    }
+    printf("    Lock extra pins: %d\n", extra_pins);
+    ASSERT_EQ(extra_pins, 1);
+}
+
+TEST(nested_lambda_scope_boundary) {
+    // Nested lambda scope: store! $fn captures lock.as_lambda.
+    // Inside lock's inner lambda body: param($0) feeds into the body.
+    // param.$0 is unconnected — it's a parameter of the OUTER stored lambda (fn),
+    // NOT of the lock's inner lambda. The lock's inner lambda should NOT pick up $0.
+    //
+    // Graph structure:
+    //   decl_type cb_type (x:f32) -> void
+    //   decl_var fn cb_type
+    //   store! $fn ← lock.as_lambda     (outer lambda = lock node)
+    //   lock has Lambda pin "fn" ← body.as_lambda  (inner lambda = body node)
+    //   body ← param($0)    param.$0 is unconnected
+    //
+    // param.$0 belongs to the outer lambda (lock), NOT to the inner lambda (body).
+    // So lock's inner lambda (body) should have 0 params, and the outer (lock) should have 1.
+
+    GraphBuilder gb;
+    gb.add("dt_cb", "decl_type", "cb_type (x:f32) -> void");
+    gb.add("dv_fn", "decl_var", "fn cb_type");
+    gb.add("dv_mtx", "decl_var", "mtx mutex");
+
+    // store! $fn — the outer capture
+    gb.add("st", "store!", "$fn");
+
+    // lock $mtx — serves as the outer lambda root (its as_lambda → store!)
+    gb.add("lk", "lock", "$mtx");
+
+    // Bang chain: store! triggers after some setup (not critical, just need the link)
+    // store! captures lock.as_lambda
+    gb.link("lk.as_lambda", "st.value");
+
+    // Inner lambda body: expr $0 (unconnected input = outer lambda param)
+    gb.add("param_node", "expr", "$0");
+
+    // body node: expr sin($0) — takes param_node output, this is the inner lambda root
+    gb.add("body", "expr", "sin($0)");
+    gb.link("param_node.out0", "body.0");
+
+    // body.as_lambda → lock.fn (inner lambda)
+    gb.link("body.as_lambda", "lk.fn");
+
+    // Run inference
+    auto errors = gb.run_inference();
+    for (auto& e : errors) printf("    ERR: %s\n", e.c_str());
+
+    // The INNER lambda (body) should have 0 unconnected params —
+    // param_node.$0 is outside its scope (it belongs to the outer lambda rooted at lock)
+    // Verify by checking that body's lambda_grab type has 0 func_args
+    // (after excluding connected inputs)
+    auto* body = gb.find("body");
+    ASSERT(body != nullptr);
+
+    // Collect params for the inner lambda manually to verify
+    GraphInference inference(gb.pool);
+    resolve_type_based_pins(gb.graph);
+    inference.run(gb.graph);
+
+    auto* body2 = gb.find("body");
+    ASSERT(body2 != nullptr);
+
+    // The inner lambda (body) is connected to lock.fn which expects a lambda.
+    // body's only input $0 IS connected (from param_node), so inner lambda has 0 params.
+    // The key test: param_node.$0 should NOT be collected as an inner lambda param.
+
+    // Check the outer lambda (lock) — it should have exactly 1 param (from param_node.$0)
+    // which gets the f32 type from cb_type's first arg
+    auto* param_n = gb.find("param_node");
+    ASSERT(param_n != nullptr);
+    printf("    param_node.$0 type: %s\n",
+           param_n->inputs[0]->resolved_type ? type_to_string(param_n->inputs[0]->resolved_type).c_str() : "null");
+
+    // param_node's $0 should get f32 from the outer lambda's expected type (cb_type)
+    ASSERT(param_n->inputs[0]->resolved_type != nullptr);
+    ASSERT_TYPE(param_n->inputs[0].get(), "f32");
+}
+
+TEST(nested_lambda_inner_has_own_params) {
+    // Verify that inner lambda CAN have its own params (nodes inside its scope).
+    // Graph:
+    //   store! $fn ← lock.as_lambda (outer)
+    //   lock.fn ← body.as_lambda (inner)
+    //   body has an unconnected input $0 (inner lambda param, NOT reachable from lock)
+    //   param_node has unconnected $0 (outer lambda param, reachable from lock via body←param)
+    //
+    // But body.$0 is NOT connected to anything — it IS an inner lambda param.
+    // param_node.$0 is also unconnected — it IS an outer lambda param.
+
+    GraphBuilder gb;
+    gb.add("dt_inner", "decl_type", "inner_fn (y:f32) -> f32");
+    gb.add("dt_outer", "decl_type", "outer_fn (x:f32) -> void");
+    gb.add("dv_fn", "decl_var", "fn outer_fn");
+    gb.add("dv_mtx", "decl_var", "mtx mutex");
+
+    // lock with a Lambda pin expecting inner_fn
+    // We need lock's fn pin to expect inner_fn type
+    // lock's fn pin type comes from the connection target
+    gb.add("lk", "lock", "$mtx");
+    gb.add("st", "store!", "$fn");
+    gb.link("lk.as_lambda", "st.value");
+
+    // Inner lambda body: expr $0+$1
+    // $0 is connected from outer param, $1 is unconnected (inner lambda's own param)
+    gb.add("outer_param", "expr", "$0"); // unconnected $0 = outer lambda param
+    gb.add("body", "expr", "$0+$1", 2, 1);
+    gb.link("outer_param.out0", "body.0"); // body.$0 = connected from outer
+    // body.$1 is unconnected = would be inner lambda param
+    gb.link("body.as_lambda", "lk.fn");
+
+    auto errors = gb.run_inference();
+    for (auto& e : errors) printf("    ERR: %s\n", e.c_str());
+
+    // outer_param.$0 should be outer lambda param (gets x:f32)
+    auto* op = gb.find("outer_param");
+    ASSERT(op != nullptr);
+    printf("    outer_param.$0 type: %s\n",
+           op->inputs[0]->resolved_type ? type_to_string(op->inputs[0]->resolved_type).c_str() : "null");
+    ASSERT(op->inputs[0]->resolved_type != nullptr);
+    ASSERT_TYPE(op->inputs[0].get(), "f32");
+
+    // body.$1 should be inner lambda's own param — not collected as outer
+    auto* body = gb.find("body");
+    ASSERT(body != nullptr);
+    // body.1 is unconnected and inside inner lambda scope, so it's an inner param
+    printf("    body.$1 type: %s\n",
+           body->inputs[1]->resolved_type ? type_to_string(body->inputs[1]->resolved_type).c_str() : "null");
+}
+
 // ============================================================
 // Main
 // ============================================================

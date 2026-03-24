@@ -456,6 +456,25 @@ std::string CodeGenerator::resolve_pin_value(FlowNode& node, int pin_index) {
     auto dot = source_pin.find('.');
     std::string pin_name = (dot != std::string::npos) ? source_pin.substr(dot + 1) : source_pin;
 
+    // If source is a BangTrigger pin, emit a () -> void lambda that triggers the node's bang chain
+    if (pin_name.find("bang_in") == 0 || (source_node && idx.find_pin(source_pin) &&
+        idx.find_pin(source_pin)->direction == FlowPin::BangTrigger)) {
+        std::string var = fresh_var("trigger");
+        auto& out = *current_out_;
+        std::string ind = indent_str(current_indent_);
+        out << ind << "auto " << var << " = [&]() -> void {\n";
+        // Emit the node's bang chain (post_bang and nexts)
+        auto bang_targets = follow_bang_from(source_node->bang_pin.id);
+        for (auto* bt : bang_targets)
+            emit_node(*bt, out, current_indent_ + 1);
+        for (auto& bout : source_node->nexts)
+            for (auto* t : follow_bang_from(bout->id))
+                emit_node(*t, out, current_indent_ + 1);
+        out << ind << "};\n";
+        pin_to_value[source_pin] = var;
+        return var;
+    }
+
     // If source is an event output, use the parameter name directly
     if (source_node->type_id == NodeTypeID::EventBang) {
         pin_to_value[source_pin] = pin_name;
@@ -491,16 +510,7 @@ std::string CodeGenerator::resolve_inline_arg(FlowNode& node, int arg_index) {
     int pin_index = node.inline_meta.ref_pin_count + remaining_pin_offset;
 
     if (pin_index >= 0 && pin_index < (int)node.inputs.size()) {
-        std::string src = find_source_pin(node.inputs[pin_index]->id);
-        if (!src.empty()) {
-            // Try to materialize the source node if not yet done
-            auto* src_node = find_source_node(node.inputs[pin_index]->id);
-            if (src_node && !materialized.count(src_node->guid) && src_node->type_id != NodeTypeID::EventBang && current_out_) {
-                materialize_node(*src_node, *current_out_, current_indent_);
-            }
-            auto it = pin_to_value.find(src);
-            if (it != pin_to_value.end()) return it->second;
-        }
+        return resolve_pin_value(node, pin_index);
     }
 
     // Also try searching all input pins by name matching the descriptor

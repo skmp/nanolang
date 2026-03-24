@@ -162,6 +162,8 @@ private:
     std::string build_log_;
     std::mutex build_log_mutex_;
     bool show_build_log_ = false;
+    char search_buf_[128] = {};
+    float last_canvas_w_ = 800, last_canvas_h_ = 600;
     std::thread build_thread_;
 #ifdef _WIN32
     HANDLE child_process_ = nullptr;

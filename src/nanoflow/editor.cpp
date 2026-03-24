@@ -763,6 +763,8 @@ void FlowEditorWindow::draw() {
     }
 
     float canvas_w = center_w;
+    last_canvas_w_ = canvas_w;
+    last_canvas_h_ = canvas_h;
 
     // --- Canvas ---
     ImGui::BeginChild("##flow_canvas", {canvas_w, canvas_h}, false,
@@ -2228,6 +2230,27 @@ void FlowEditorWindow::draw_toolbar() {
         stop_program();
     }
     if (!can_stop) ImGui::EndDisabled();
+
+    ImGui::SameLine();
+
+    // Search by node guid
+    ImGui::SameLine();
+    ImGui::SetNextItemWidth(120);
+    if (ImGui::InputTextWithHint("##search", "Find node...", search_buf_, sizeof(search_buf_),
+                                  ImGuiInputTextFlags_EnterReturnsTrue)) {
+        std::string query(search_buf_);
+        if (!query.empty()) {
+            for (auto& node : active().graph.nodes) {
+                if (node.guid.find(query) != std::string::npos ||
+                    node.display_text().find(query) != std::string::npos) {
+                    center_on_node(node, {last_canvas_w_, last_canvas_h_});
+                    active().selected_nodes.clear();
+                    active().selected_nodes.insert(node.id);
+                    break;
+                }
+            }
+        }
+    }
 
     ImGui::SameLine();
 
