@@ -17,13 +17,18 @@ std::vector<std::string> GraphInference::run(FlowGraph& graph) {
 
     // Phase 5: Fixed-point propagation
     for (int iter = 0; iter < 10; iter++) {
+        // Rebuild index each iteration (pin vectors may change during inference)
+        idx.rebuild(graph);
         bool changed = false;
 
         // 5.1: Propagate across connections
         changed |= propagate_connections(graph);
 
-        // 5.2: Infer expression nodes
+        // 5.2: Infer expression nodes (may modify pin vectors)
         changed |= infer_expr_nodes(graph);
+
+        // Rebuild index if pins were modified
+        if (changed) idx.rebuild(graph);
 
         // 5.3: Resolve lambda types
         changed |= resolve_lambdas(graph);
@@ -34,16 +39,8 @@ std::vector<std::string> GraphInference::run(FlowGraph& graph) {
     // Phase 6: Check link type compatibility
     for (auto& link : graph.links) {
         if (!link.error.empty()) continue; // already has an error from lambda validation
-        FlowPin* from_pin = nullptr;
-        FlowPin* to_pin = nullptr;
-        for (auto& node : graph.nodes) {
-            for (auto& p : node.outputs) if (p.id == link.from_pin) from_pin = &p;
-            for (auto& p : node.bang_outputs) if (p.id == link.from_pin) from_pin = &p;
-            if (node.lambda_grab.id == link.from_pin) from_pin = &node.lambda_grab;
-            if (node.bang_pin.id == link.from_pin) from_pin = &node.bang_pin;
-            for (auto& p : node.inputs) if (p.id == link.to_pin) to_pin = &p;
-            for (auto& p : node.bang_inputs) if (p.id == link.to_pin) to_pin = &p;
-        }
+        FlowPin* from_pin = idx.find_pin(link.from_pin);
+        FlowPin* to_pin = idx.find_pin(link.to_pin);
         if (from_pin && to_pin &&
             from_pin->resolved_type && to_pin->resolved_type &&
             !from_pin->resolved_type->is_generic && !to_pin->resolved_type->is_generic &&
@@ -196,8 +193,8 @@ void GraphInference::resolve_pin_type_names(FlowGraph& graph) {
 bool GraphInference::propagate_connections(FlowGraph& graph) {
     bool changed = false;
     for (auto& link : graph.links) {
-        auto* from_pin = graph.find_pin(link.from_pin);
-        auto* to_pin = graph.find_pin(link.to_pin);
+        auto* from_pin = idx.find_pin(link.from_pin);
+        auto* to_pin = idx.find_pin(link.to_pin);
         if (from_pin && to_pin && from_pin->resolved_type) {
             if (!to_pin->resolved_type || (to_pin->resolved_type->is_generic && !from_pin->resolved_type->is_generic)) {
                 to_pin->resolved_type = from_pin->resolved_type;
@@ -1044,7 +1041,7 @@ bool GraphInference::resolve_lambdas(FlowGraph& graph) {
     for (auto& node : graph.nodes) {
         for (auto& link : graph.links) {
             if (link.from_pin != node.lambda_grab.id) continue;
-            auto* target_pin = graph.find_pin(link.to_pin);
+            auto* target_pin = idx.find_pin(link.to_pin);
             if (!target_pin || !target_pin->resolved_type) continue;
 
             // Resolve through Named type aliases
@@ -1091,12 +1088,7 @@ bool GraphInference::resolve_lambdas(FlowGraph& graph) {
 }
 
 FlowNode* GraphInference::find_node_by_pin(FlowGraph& graph, const std::string& pin_id) {
-    auto dot = pin_id.find('.');
-    if (dot == std::string::npos) return nullptr;
-    std::string guid = pin_id.substr(0, dot);
-    for (auto& n : graph.nodes)
-        if (n.guid == guid) return &n;
-    return nullptr;
+    return idx.find_node_by_pin(pin_id);
 }
 
 void GraphInference::follow_bang_chain(FlowGraph& graph, const std::string& from_pin_id,

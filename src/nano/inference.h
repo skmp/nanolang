@@ -5,6 +5,7 @@
 #include "args.h"
 #include "type_utils.h"
 #include "node_types.h"
+#include "graph_index.h"
 #include <set>
 #include <functional>
 
@@ -14,6 +15,7 @@ struct GraphInference {
     TypePool& pool;
     TypeRegistry registry;
     TypeInferenceContext ctx;
+    GraphIndex idx;
 
     GraphInference(TypePool& p) : pool(p), ctx(p, registry) {}
 

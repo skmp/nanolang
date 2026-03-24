@@ -1,5 +1,6 @@
 #pragma once
 #include "model.h"
+#include "graph_index.h"
 #include "types.h"
 #include "expr.h"
 #include "inference.h"
@@ -28,6 +29,7 @@ struct LambdaParamInfo {
 struct CodeGenerator {
     FlowGraph& graph;
     TypePool& pool;
+    GraphIndex idx;
     std::string source_name; // e.g. "klavier" from "klavier.nano"
 
     // Per-event-handler context (set during emit_event_handler)

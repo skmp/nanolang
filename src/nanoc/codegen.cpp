@@ -1356,44 +1356,26 @@ std::vector<FlowNode*> CodeGenerator::find_nodes(NodeTypeID type_id) {
 }
 
 FlowNode* CodeGenerator::find_node_by_guid(const std::string& guid) {
-    for (auto& n : graph.nodes)
-        if (n.guid == guid) return &n;
-    return nullptr;
+    return idx.find_node_by_guid(guid);
 }
 
 FlowNode* CodeGenerator::find_source_node(const std::string& to_pin_id) {
-    for (auto& l : graph.links) {
-        if (l.to_pin == to_pin_id) {
-            auto dot = l.from_pin.find('.');
-            if (dot != std::string::npos) {
-                std::string guid = l.from_pin.substr(0, dot);
-                for (auto& n : graph.nodes)
-                    if (n.guid == guid) return &n;
-            }
-        }
-    }
-    return nullptr;
+    FlowPin* pin = idx.find_pin(to_pin_id);
+    if (!pin) return nullptr;
+    return idx.source_node(pin);
 }
 
 std::string CodeGenerator::find_source_pin(const std::string& to_pin_id) {
-    for (auto& l : graph.links)
-        if (l.to_pin == to_pin_id) return l.from_pin;
-    return "";
+    FlowPin* pin = idx.find_pin(to_pin_id);
+    if (!pin) return "";
+    FlowPin* src = idx.source_pin(pin);
+    return src ? src->id : "";
 }
 
 std::vector<FlowNode*> CodeGenerator::follow_bang_from(const std::string& from_pin_id) {
-    std::vector<FlowNode*> result;
-    for (auto& l : graph.links) {
-        if (l.from_pin == from_pin_id) {
-            auto dot = l.to_pin.find('.');
-            if (dot != std::string::npos) {
-                std::string guid = l.to_pin.substr(0, dot);
-                for (auto& n : graph.nodes)
-                    if (n.guid == guid) { result.push_back(&n); break; }
-            }
-        }
-    }
-    return result;
+    FlowPin* pin = idx.find_pin(from_pin_id);
+    if (!pin) return {};
+    return idx.follow_bang(pin);
 }
 
 // --- Type codegen ---
@@ -1506,6 +1488,8 @@ std::string CodeGenerator::generate_header() {
 // --- Implementation codegen ---
 
 std::string CodeGenerator::generate_impl() {
+    idx.rebuild(graph);
+
     std::ostringstream out;
     out << "#include \"" << source_name << "_program.h\"\n\n";
 
