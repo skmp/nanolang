@@ -44,6 +44,12 @@ inline PinPtr make_pin(std::string id, std::string name, std::string type_name,
 }
 
 struct FlowNode {
+    FlowNode() = default;
+    FlowNode(FlowNode&&) = default;
+    FlowNode& operator=(FlowNode&&) = default;
+    FlowNode(const FlowNode&) = delete;
+    FlowNode& operator=(const FlowNode&) = delete;
+
     int id = 0;                   // internal numeric id (for UI operations)
     std::string guid;             // unique identifier for serialization/connections
     NodeTypeID type_id = NodeTypeID::Unknown;  // node type enum
@@ -58,6 +64,7 @@ struct FlowNode {
     FlowPin bang_pin = {"", "bang", "bang", nullptr, FlowPin::BangOutput};
     std::string error;            // non-empty if node has a validation error
     bool imported = false;        // true if this node was loaded from a nanostd import
+    bool shadow = false;          // true if this is an internal shadow expr node (not serialized/rendered)
 
     // Expression parsing cache
     std::vector<ExprPtr> parsed_exprs;   // cached AST(s) for expr nodes
@@ -108,6 +115,13 @@ struct FlowLink {
 };
 
 class FlowGraph {
+    FlowGraph(const FlowGraph&) = delete;
+    FlowGraph& operator=(const FlowGraph&) = delete;
+public:
+    FlowGraph() = default;
+    FlowGraph(FlowGraph&&) = default;
+    FlowGraph& operator=(FlowGraph&&) = default;
+
 public:
     std::vector<FlowNode> nodes;
     std::vector<FlowLink> links;

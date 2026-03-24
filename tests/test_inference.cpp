@@ -4140,6 +4140,112 @@ TEST(pop_style_var_ffi_parses) {
 }
 
 // ============================================================
+// Shadow expr node tests
+// ============================================================
+
+#include "shadow.h"
+
+TEST(shadow_store_generates_two_shadow_nodes) {
+    // store! $my_var.freq rand(200,12000) → 2 shadow expr nodes
+    GraphBuilder gb;
+    gb.add("dv", "decl_var", "my_var my_struct");
+    gb.add("s1", "store!", "$my_var.freq rand(200,12000)");
+    generate_shadow_nodes(gb.graph);
+
+    int shadow_count = 0;
+    for (auto& n : gb.graph.nodes) if (n.shadow) shadow_count++;
+    ASSERT_EQ(shadow_count, 2);
+}
+
+TEST(shadow_nodes_are_expr_type) {
+    GraphBuilder gb;
+    gb.add("s1", "store!", "$my_var 42");
+    generate_shadow_nodes(gb.graph);
+
+    for (auto& n : gb.graph.nodes) {
+        if (n.shadow) {
+            ASSERT_EQ(n.type_id, NodeTypeID::Expr);
+        }
+    }
+}
+
+TEST(shadow_nodes_have_correct_args) {
+    GraphBuilder gb;
+    gb.add("s1", "store!", "$my_var.freq rand(200,12000)");
+    generate_shadow_nodes(gb.graph);
+
+    bool found_freq = false, found_rand = false;
+    for (auto& n : gb.graph.nodes) {
+        if (!n.shadow) continue;
+        if (n.args == "$my_var.freq") found_freq = true;
+        if (n.args == "rand(200,12000)") found_rand = true;
+    }
+    ASSERT(found_freq);
+    ASSERT(found_rand);
+}
+
+TEST(shadow_parent_args_cleared) {
+    GraphBuilder gb;
+    gb.add("s1", "store!", "$my_var.freq rand(200,12000)");
+    generate_shadow_nodes(gb.graph);
+
+    auto* s1 = gb.find("s1");
+    ASSERT(s1 != nullptr);
+    ASSERT(s1->args.empty());
+}
+
+TEST(shadow_skip_expr_nodes) {
+    // expr nodes should NOT get shadow nodes
+    GraphBuilder gb;
+    gb.add("e1", "expr", "$0+$1");
+    generate_shadow_nodes(gb.graph);
+
+    int shadow_count = 0;
+    for (auto& n : gb.graph.nodes) if (n.shadow) shadow_count++;
+    ASSERT_EQ(shadow_count, 0);
+}
+
+TEST(shadow_skip_decl_nodes) {
+    // decl_var should NOT get shadow nodes
+    GraphBuilder gb;
+    gb.add("dv", "decl_var", "my_var f32");
+    generate_shadow_nodes(gb.graph);
+
+    int shadow_count = 0;
+    for (auto& n : gb.graph.nodes) if (n.shadow) shadow_count++;
+    ASSERT_EQ(shadow_count, 0);
+}
+
+TEST(shadow_call_keeps_fn_ref) {
+    // call! $my_func "hello" 42 → keeps $my_func in args, 2 shadows for "hello" and 42
+    GraphBuilder gb;
+    gb.add("ffi1", "ffi", R"(my_func (a:string b:s32) -> void)");
+    gb.add("c1", "call!", R"($my_func "hello" 42)");
+    generate_shadow_nodes(gb.graph);
+
+    auto* c1 = gb.find("c1");
+    ASSERT(c1 != nullptr);
+    ASSERT_EQ(c1->args, "$my_func");
+
+    int shadow_count = 0;
+    for (auto& n : gb.graph.nodes) if (n.shadow) shadow_count++;
+    ASSERT_EQ(shadow_count, 2);
+}
+
+TEST(shadow_remove_cleans_up) {
+    GraphBuilder gb;
+    gb.add("s1", "store!", "$my_var 42");
+    generate_shadow_nodes(gb.graph);
+    int before = (int)gb.graph.nodes.size();
+    ASSERT(before > 1); // has shadows
+
+    remove_shadow_nodes(gb.graph);
+    int shadow_count = 0;
+    for (auto& n : gb.graph.nodes) if (n.shadow) shadow_count++;
+    ASSERT_EQ(shadow_count, 0);
+}
+
+// ============================================================
 // Main
 // ============================================================
 

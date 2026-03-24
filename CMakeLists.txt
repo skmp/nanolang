@@ -23,6 +23,7 @@ add_library(nanolang STATIC
     src/nano/serial.cpp
     src/nano/inference.cpp
     src/nano/graph_index.cpp
+    src/nano/shadow.cpp
 )
 target_include_directories(nanolang PUBLIC
     ${CMAKE_CURRENT_SOURCE_DIR}/src
