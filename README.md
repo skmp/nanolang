@@ -4,6 +4,9 @@ An Operating System for Instruments, written in attolang. Instruments are multim
 
 Each instrument is a self-contained `.atto` program that defines its Functionality. The System compiles these programs runs them with hot-reload support.
 
+<img width="3840" height="2088" alt="nanolang" src="https://github.com/nilware-io/orgasm/blob/main/docs/nanolang.png" />
+
+
 See an [example instrument](scenes/klavier/main.atto) and the full [language specification](docs/attolang.md).
 
 ## Components
