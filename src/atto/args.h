@@ -78,8 +78,8 @@ using SplitResult = std::variant<std::vector<std::string>, std::string>;
 SplitResult split_args(const std::string& args_str);
 
 // Parse pre-split expressions into ParsedArgs.
-// Returns unique_ptr<ParsedArgs> on success, or error string on failure.
-using ParseResult = std::variant<std::unique_ptr<ParsedArgs>, std::string>;
+// Returns shared_ptr<ParsedArgs> on success, or error string on failure.
+using ParseResult = std::variant<std::shared_ptr<ParsedArgs>, std::string>;
 ParseResult parse_args_v2(const std::vector<std::string>& exprs, bool is_expr = false);
 
 // Reconstruct a space-separated args string from a ParsedArgs

@@ -342,7 +342,7 @@ SplitResult split_args(const std::string& args_str) {
 // ─── parse_args_v2: parse pre-split expressions ───
 
 ParseResult parse_args_v2(const std::vector<std::string>& exprs, bool is_expr) {
-    auto result = std::make_unique<ParsedArgs>();
+    auto result = std::make_shared<ParsedArgs>();
 
     auto register_slot = [&](int index, bool is_lambda) {
         result->slots[index] = is_lambda;
@@ -364,6 +364,18 @@ ParseResult parse_args_v2(const std::vector<std::string>& exprs, bool is_expr) {
                 register_slot(n, is_lambda);
             }
         }
+    }
+
+    // Validate: no gaps in slot indices
+    if (result->max_slot >= 0 && (int)result->slots.size() != result->max_slot + 1) {
+        std::string missing;
+        for (int i = 0; i <= result->max_slot; i++) {
+            if (result->slots.find(i) == result->slots.end()) {
+                if (!missing.empty()) missing += ", ";
+                missing += "$" + std::to_string(i);
+            }
+        }
+        return std::string("Missing pin reference(s): " + missing);
     }
 
     for (auto& expr : exprs) {

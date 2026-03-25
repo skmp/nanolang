@@ -115,8 +115,7 @@ BuilderResult Deserializer::parse_node(
         return BuilderError(*err);
     }
 
-    auto parsed = std::shared_ptr<ParsedArgs>(
-        std::get<std::unique_ptr<ParsedArgs>>(std::move(parse_result)).release());
+    auto parsed = std::get<std::shared_ptr<ParsedArgs>>(std::move(parse_result));
 
     auto nb = std::make_shared<FlowNodeBuilder>();
     nb->id = id;
