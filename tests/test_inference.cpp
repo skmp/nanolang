@@ -184,7 +184,8 @@ TEST(parse_simple_int) {
     auto r = parse_expression("42");
     ASSERT(r.root != nullptr);
     ASSERT(r.error.empty());
-    ASSERT_EQ(r.root->kind, ExprKind::IntLiteral);
+    ASSERT_EQ(r.root->kind, ExprKind::Literal);
+    ASSERT_EQ(r.root->literal_kind, LiteralKind::Unsigned);
     ASSERT_EQ(r.root->int_value, 42);
 }
 
@@ -192,13 +193,15 @@ TEST(parse_simple_float) {
     auto r = parse_expression("3.14");
     ASSERT(r.root != nullptr);
     ASSERT(r.error.empty());
-    ASSERT_EQ(r.root->kind, ExprKind::F64Literal);
+    ASSERT_EQ(r.root->kind, ExprKind::Literal);
+    ASSERT_EQ(r.root->literal_kind, LiteralKind::F64);
 }
 
 TEST(parse_f32_literal) {
     auto r = parse_expression("1.0f");
     ASSERT(r.root != nullptr);
-    ASSERT_EQ(r.root->kind, ExprKind::F32Literal);
+    ASSERT_EQ(r.root->kind, ExprKind::Literal);
+    ASSERT_EQ(r.root->literal_kind, LiteralKind::F32);
 }
 
 TEST(parse_bool_true) {
@@ -2497,7 +2500,7 @@ TEST(ref_pin_ref_is_not_ampersand_op) {
     auto r = parse_expression("&42");
     ASSERT(r.root != nullptr);
     ASSERT_EQ(r.root->kind, ExprKind::Ref);
-    ASSERT_EQ(r.root->children[0]->kind, ExprKind::IntLiteral);
+    ASSERT_EQ(r.root->children[0]->kind, ExprKind::Literal);
 }
 
 TEST(ref_expr_error) {

@@ -1894,7 +1894,10 @@ void FlowEditorWindow::draw() {
         if (imp_node.type_id != NodeTypeID::DeclImport) continue;
         auto tokens = tokenize_args(imp_node.args, false);
         if (tokens.empty()) continue;
-        std::string label = tokens[0]; // e.g. "std/imgui"
+        std::string label = tokens[0];
+        // Strip quotes from string literal
+        if (label.size() >= 2 && label.front() == '"' && label.back() == '"')
+            label = label.substr(1, label.size() - 2);
         if (ImGui::TreeNode(label.c_str())) {
             for (auto& node : active().graph.nodes) {
                 if (!node.imported) continue;

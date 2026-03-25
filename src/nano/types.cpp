@@ -355,9 +355,11 @@ std::string type_to_string(const TypePtr& t) {
     }
     if (t->is_generic) {
         if (t->kind == TypeKind::Scalar) {
-            if (t->scalar == ScalarType::F64 || t->scalar == ScalarType::F32)
-                return prefix + "float?";
-            return prefix + "int?";
+            std::string domain = (t->scalar == ScalarType::F64 || t->scalar == ScalarType::F32)
+                ? "float<?>" : "unsigned<?>";
+            if (!t->literal_value.empty())
+                return prefix + "literal<" + domain + ", " + t->literal_value + ">";
+            return prefix + "literal<" + domain + ">";
         }
         return prefix + "?";
     }

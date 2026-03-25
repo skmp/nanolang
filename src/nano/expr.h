@@ -43,9 +43,8 @@ enum class BinOp { Add, Sub, Mul, Div, Eq, Ne, Lt, Gt, Le, Ge, Spaceship };
 
 // Literal domain — the T in literal<T, V>
 enum class LiteralKind {
-    Integer,          // literal<integer<?>, V> — unresolved integer
-    Unsigned,         // literal<unsigned<?>, V> — non-negative integer
-    Signed,           // literal<signed<?>, V> — negative integer
+    Unsigned,         // literal<unsigned<?>, V> — non-negative integer (0, 1, 42)
+    Signed,           // literal<signed<?>, V> — negative integer (-1, -42)
     F32,              // literal<f32, V>
     F64,              // literal<f64, V>
     String,           // literal<string, V>
@@ -101,7 +100,7 @@ struct ExprNode {
     BuiltinFunc builtin = BuiltinFunc::None;
 
     // Literal (unified) — used when kind == Literal
-    LiteralKind literal_kind = LiteralKind::Integer;
+    LiteralKind literal_kind = LiteralKind::Unsigned;
 
     // SymbolRef — used when kind == SymbolRef
     std::string symbol_name;

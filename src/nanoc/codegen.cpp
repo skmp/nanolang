@@ -1993,13 +1993,19 @@ std::string CodeGenerator::generate_cmake(const std::string& nanoruntime_path,
     // Check which std modules are imported
     bool uses_imgui = false;
     bool uses_gui = false;
+    auto strip_quotes = [](const std::string& s) -> std::string {
+        if (s.size() >= 2 && s.front() == '"' && s.back() == '"')
+            return s.substr(1, s.size() - 2);
+        return s;
+    };
     for (auto& n : graph.nodes) {
         if (n.type_id == NodeTypeID::DeclImport) {
             auto tokens = tokenize_args(n.args, false);
-            if (!tokens.empty() && tokens[0] == "std/imgui")
-                uses_imgui = true;
-            if (!tokens.empty() && tokens[0] == "std/gui")
-                uses_gui = true;
+            if (!tokens.empty()) {
+                auto path = strip_quotes(tokens[0]);
+                if (path == "std/imgui") uses_imgui = true;
+                if (path == "std/gui") uses_gui = true;
+            }
         }
     }
 
@@ -2063,13 +2069,19 @@ std::string CodeGenerator::generate_cmake(const std::string& nanoruntime_path,
 std::string CodeGenerator::generate_vcpkg() {
     bool uses_imgui = false;
     bool uses_gui = false;
+    auto strip_quotes2 = [](const std::string& s) -> std::string {
+        if (s.size() >= 2 && s.front() == '"' && s.back() == '"')
+            return s.substr(1, s.size() - 2);
+        return s;
+    };
     for (auto& n : graph.nodes) {
         if (n.type_id == NodeTypeID::DeclImport) {
             auto tokens = tokenize_args(n.args, false);
-            if (!tokens.empty() && tokens[0] == "std/imgui")
-                uses_imgui = true;
-            if (!tokens.empty() && tokens[0] == "std/gui")
-                uses_gui = true;
+            if (!tokens.empty()) {
+                auto path = strip_quotes2(tokens[0]);
+                if (path == "std/imgui") uses_imgui = true;
+                if (path == "std/gui") uses_gui = true;
+            }
         }
     }
 

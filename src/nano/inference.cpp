@@ -300,9 +300,15 @@ void GraphInference::build_context(FlowGraph& graph) {
         if (node.type_id == NodeTypeID::DeclImport) {
             auto tokens = tokenize_args(node.args, false);
             if (tokens.empty()) {
-                node.error = "decl_import: requires a path (e.g. std/math)";
-            } else if (tokens[0].substr(0, 4) != "std/") {
-                node.error = "decl_import: only std/ imports are currently supported (got " + tokens[0] + ")";
+                node.error = "decl_import: requires a path string (e.g. \"std/imgui\")";
+            } else {
+                // Strip quotes from string literal
+                std::string path = tokens[0];
+                if (path.size() >= 2 && path.front() == '"' && path.back() == '"')
+                    path = path.substr(1, path.size() - 2);
+                if (path.substr(0, 4) != "std/") {
+                    node.error = "decl_import: only std/ imports are currently supported (got " + path + ")";
+                }
             }
         }
     }

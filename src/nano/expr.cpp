@@ -250,6 +250,22 @@ ExprPtr ExprParser::parse_unary() {
     if (check(ExprTokenKind::Minus)) {
         advance();
         auto operand = parse_unary();
+        // Fold -literal into a signed literal at parse time
+        if (operand && operand->kind == ExprKind::Literal) {
+            if (operand->literal_kind == LiteralKind::Unsigned || operand->literal_kind == LiteralKind::Signed) {
+                operand->int_value = -operand->int_value;
+                operand->literal_kind = LiteralKind::Signed;
+                return operand;
+            }
+            if (operand->literal_kind == LiteralKind::F32) {
+                operand->float_value = -operand->float_value;
+                return operand;
+            }
+            if (operand->literal_kind == LiteralKind::F64) {
+                operand->float_value = -operand->float_value;
+                return operand;
+            }
+        }
         auto node = make_expr(ExprKind::UnaryMinus);
         node->children = {operand};
         return node;
@@ -348,24 +364,27 @@ ExprPtr ExprParser::parse_postfix() {
 }
 
 ExprPtr ExprParser::parse_primary() {
-    // Number literals
+    // Number literals → unified Literal kind
     if (check(ExprTokenKind::Int)) {
-        auto node = make_expr(ExprKind::IntLiteral);
+        auto node = make_expr(ExprKind::Literal);
         node->int_value = current.int_val;
+        node->literal_kind = LiteralKind::Unsigned; // all parsed int literals are non-negative; negation comes from UnaryMinus
         advance();
         return node;
     }
     if (check(ExprTokenKind::Float)) {
-        auto node = make_expr(current.is_f32 ? ExprKind::F32Literal : ExprKind::F64Literal);
+        auto node = make_expr(ExprKind::Literal);
         node->float_value = current.float_val;
+        node->literal_kind = current.is_f32 ? LiteralKind::F32 : LiteralKind::F64;
         advance();
         return node;
     }
 
-    // String literal
+    // String literal → unified Literal kind
     if (check(ExprTokenKind::String)) {
-        auto node = make_expr(ExprKind::StringLiteral);
+        auto node = make_expr(ExprKind::Literal);
         node->string_value = current.text;
+        node->literal_kind = LiteralKind::String;
         advance();
         return node;
     }
@@ -649,7 +668,6 @@ std::string expr_to_string(const ExprPtr& e) {
         return "*" + expr_to_string(e->children[0]);
     case ExprKind::Literal: {
         switch (e->literal_kind) {
-        case LiteralKind::Integer:
         case LiteralKind::Unsigned:
         case LiteralKind::Signed:
             return std::to_string(e->int_value);
@@ -825,11 +843,44 @@ TypePtr TypeInferenceContext::infer(const ExprPtr& expr) {
         }();
         break;
 
-    case ExprKind::Literal:
+    case ExprKind::Literal: {
+        switch (expr->literal_kind) {
+        case LiteralKind::Unsigned:
+        case LiteralKind::Signed: {
+            auto t = std::make_shared<TypeExpr>(*pool.t_int_literal);
+            t->literal_value = std::to_string(expr->int_value);
+            result = t;
+            break;
+        }
+        case LiteralKind::F32: {
+            auto t = std::make_shared<TypeExpr>(*pool.t_f32);
+            t->literal_value = std::to_string(expr->float_value) + "f";
+            result = t;
+            break;
+        }
+        case LiteralKind::F64: {
+            auto t = std::make_shared<TypeExpr>(*pool.t_f64);
+            t->literal_value = std::to_string(expr->float_value);
+            result = t;
+            break;
+        }
+        case LiteralKind::String: {
+            auto t = std::make_shared<TypeExpr>(*pool.t_string);
+            t->literal_value = "\"" + expr->string_value + "\"";
+            result = t;
+            break;
+        }
+        case LiteralKind::Bool:
+            result = pool.t_bool;
+            break;
+        }
+        break;
+    }
+
     case ExprKind::StructLiteral:
     case ExprKind::StructType:
     case ExprKind::NamespaceAccess:
-        // These will be fully implemented in Phase 5 (inference pipeline)
+        // TODO: full inference for these
         result = pool.t_unknown;
         break;
 
@@ -1082,9 +1133,9 @@ TypePtr TypeInferenceContext::infer_scalar_binop(const TypePtr& left_t, const Ty
     // Arithmetic: +, -, *, /
     if (left_t->is_generic && right_t->is_generic) {
         // If either is a float literal, result is float literal
-        if (left_t == pool.t_float_literal || right_t == pool.t_float_literal)
-            return pool.t_float_literal;
-        return pool.t_int_literal;
+        if (is_float(left_t) || is_float(right_t))
+            return left_t; // preserve the literal type with value
+        return left_t; // preserve the literal type with value
     }
     if (left_t->is_generic) return right_t; // generic literal adopts other's type
     if (right_t->is_generic) return left_t;
@@ -1340,8 +1391,17 @@ TypePtr TypeInferenceContext::infer_builtin_call(const ExprPtr& expr) {
 
 void TypeInferenceContext::resolve_int_literals(const ExprPtr& expr, const TypePtr& expected) {
     if (!expr) return;
-    // Resolve unresolved integer literals
-    if (expr->kind == ExprKind::IntLiteral && expr->resolved_type == pool.t_int_literal) {
+    // Resolve unresolved integer literals (both legacy IntLiteral and new Literal kind)
+    auto is_generic_int = [&](const TypePtr& t) {
+        return t && t->is_generic && t->kind == TypeKind::Scalar &&
+               t->scalar != ScalarType::F32 && t->scalar != ScalarType::F64;
+    };
+    bool is_int_lit = (expr->kind == ExprKind::IntLiteral && is_generic_int(expr->resolved_type)) ||
+                      (expr->kind == ExprKind::Literal &&
+                       (expr->literal_kind == LiteralKind::Unsigned ||
+                        expr->literal_kind == LiteralKind::Signed) &&
+                       is_generic_int(expr->resolved_type));
+    if (is_int_lit) {
         if (expected && !expected->is_generic && is_numeric(expected)) {
             // If target is float, check exact representability
             if (is_float(expected)) {
@@ -1369,7 +1429,11 @@ void TypeInferenceContext::resolve_int_literals(const ExprPtr& expr, const TypeP
         // Don't default to s32 here — keep as int? so connections can still resolve it
     }
     // Resolve unresolved float literals (constants like pi, e, tau)
-    if (expr->resolved_type == pool.t_float_literal) {
+    auto is_generic_float = [&](const TypePtr& t) {
+        return t && t->is_generic && t->kind == TypeKind::Scalar &&
+               (t->scalar == ScalarType::F32 || t->scalar == ScalarType::F64);
+    };
+    if (is_generic_float(expr->resolved_type)) {
         if (expected && !expected->is_generic && is_float(expected)) {
             expr->resolved_type = expected;
         }

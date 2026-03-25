@@ -359,8 +359,9 @@ These nodes live on the compile-time bang chain rooted at `decl`. They define ty
   - Outputs: bang
 
 - **`decl_import <module>`** — Import declarations from a module.
-  - Inputs: bang, symbol (module path, e.g., `std::imgui`)
+  - Inputs: bang, string literal (module path, e.g., `"std/imgui"`)
   - Outputs: bang
+  - The module path is a string literal, not a symbol — the module doesn't exist in the symbol table before the import.
   - Populates the symbol table with all exported symbols from the module.
 
 - **`ffi <name> <fn_type>`** — Declare an external (FFI) function.
@@ -372,7 +373,7 @@ These nodes live on the compile-time bang chain rooted at `decl`. They define ty
 
 | Module | Import | Description |
 |--------|--------|-------------|
-| ImGui  | `decl_import std::imgui` | ImGui bindings — window management, text, buttons, sliders, trees, tables, popups, plotting |
+| ImGui  | `decl_import "std/imgui"` | ImGui bindings — window management, text, buttons, sliders, trees, tables, popups, plotting |
 
 ### Expression Nodes
 

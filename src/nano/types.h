@@ -116,6 +116,9 @@ struct TypeExpr {
 
     // MetaType: the wrapped type T in type<T>
     TypePtr wrapped_type;
+
+    // Literal value (for display in literal<T, V> — empty if not a literal)
+    std::string literal_value;
 };
 
 // Type parser

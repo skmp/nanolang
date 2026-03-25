@@ -301,6 +301,9 @@ bool load_nano(const std::string& path, FlowGraph& graph) {
             auto tokens = tokenize_args(node.args, false);
             if (tokens.empty()) continue;
             std::string import_path = tokens[0];
+            // Strip quotes from string literal
+            if (import_path.size() >= 2 && import_path.front() == '"' && import_path.back() == '"')
+                import_path = import_path.substr(1, import_path.size() - 2);
             if (import_path.substr(0, 4) != "std/") continue;
             import_paths.push_back(import_path);
         }
