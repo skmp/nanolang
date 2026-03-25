@@ -222,13 +222,35 @@ static void resolve_imports(FlowGraph& graph, const std::string& base_path) {
     }
 }
 
-// ─── Auto-migrate v1 to v2: assign node_ids and net_names ───
+// ─── Migrate v1 args: strip $ from variable refs, convert @N to $N ───
+
+static std::string migrate_args_v1(const std::string& args) {
+    std::string result;
+    for (size_t i = 0; i < args.size(); i++) {
+        if (args[i] == '$' && i + 1 < args.size() && !std::isdigit(args[i + 1])) {
+            continue; // strip $ from variable names (e.g., $oscs → oscs)
+        }
+        result += args[i];
+    }
+    return result;
+}
+
+// ─── Auto-migrate v1 to v2: assign node_ids, net_names, migrate args ───
 
 static void migrate_v1_to_v2(FlowGraph& graph) {
     // Assign $auto-<guid> node IDs to nodes that don't have one
     for (auto& node : graph.nodes) {
         if (node.node_id.empty()) {
             node.node_id = "$auto-" + node.guid;
+        }
+    }
+
+    // Migrate args: strip $ from variable refs, convert @N to $N
+    for (auto& node : graph.nodes) {
+        std::string migrated = migrate_args_v1(node.args);
+        if (migrated != node.args) {
+            node.args = migrated;
+            node.parse_args();
         }
     }
 
