@@ -119,6 +119,7 @@ struct TypeExpr {
 
     // Literal value (for display in literal<T, V> — empty if not a literal)
     std::string literal_value;
+    bool literal_signed = false;  // true for signed integer literals
 };
 
 // Type parser

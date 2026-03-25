@@ -845,10 +845,16 @@ TypePtr TypeInferenceContext::infer(const ExprPtr& expr) {
 
     case ExprKind::Literal: {
         switch (expr->literal_kind) {
-        case LiteralKind::Unsigned:
+        case LiteralKind::Unsigned: {
+            auto t = std::make_shared<TypeExpr>(*pool.t_int_literal);
+            t->literal_value = std::to_string(expr->int_value);
+            result = t;
+            break;
+        }
         case LiteralKind::Signed: {
             auto t = std::make_shared<TypeExpr>(*pool.t_int_literal);
             t->literal_value = std::to_string(expr->int_value);
+            t->literal_signed = true;
             result = t;
             break;
         }
@@ -870,9 +876,12 @@ TypePtr TypeInferenceContext::infer(const ExprPtr& expr) {
             result = t;
             break;
         }
-        case LiteralKind::Bool:
-            result = pool.t_bool;
+        case LiteralKind::Bool: {
+            auto t = std::make_shared<TypeExpr>(*pool.t_bool);
+            t->literal_value = expr->bool_value ? "true" : "false";
+            result = t;
             break;
+        }
         }
         break;
     }
@@ -1120,7 +1129,7 @@ TypePtr TypeInferenceContext::infer_scalar_binop(const TypePtr& left_t, const Ty
     if (op == BinOp::Add) {
         bool l_str = (left_t->kind == TypeKind::String);
         bool r_str = (right_t->kind == TypeKind::String);
-        if (l_str && r_str) return left_t;
+        if (l_str && r_str) return pool.t_string;
         if (l_str || r_str) {
             // If the other side is still unknown, defer — it may resolve to string later
             if (left_t == pool.t_unknown || right_t == pool.t_unknown) return pool.t_unknown;

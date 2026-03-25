@@ -151,6 +151,87 @@ TypePtr TypeParser::parse() {
         return result;
     }
 
+    // signed<?> / unsigned<?> — literal domain types (used inside literal<T, V>)
+    if (name == "signed") {
+        result->kind = TypeKind::Scalar;
+        result->literal_signed = true;
+        skip_ws();
+        if (peek() == '<') {
+            advance(); skip_ws();
+            if (peek() == '?') { advance(); result->is_generic = true; }
+            skip_ws();
+            if (!expect('>')) return nullptr;
+        }
+        return result;
+    }
+    if (name == "unsigned") {
+        result->kind = TypeKind::Scalar;
+        skip_ws();
+        if (peek() == '<') {
+            advance(); skip_ws();
+            if (peek() == '?') { advance(); result->is_generic = true; }
+            skip_ws();
+            if (!expect('>')) return nullptr;
+        }
+        return result;
+    }
+    if (name == "float") {
+        result->kind = TypeKind::Scalar;
+        result->scalar = ScalarType::F64;
+        skip_ws();
+        if (peek() == '<') {
+            advance(); skip_ws();
+            if (peek() == '?') { advance(); result->is_generic = true; }
+            skip_ws();
+            if (!expect('>')) return nullptr;
+        }
+        return result;
+    }
+
+    // literal<T, V> — compile-time literal value
+    if (name == "literal") {
+        skip_ws();
+        if (peek() == '<') {
+            advance();
+            auto domain = parse();
+            if (!domain) return nullptr;
+            skip_ws();
+            if (peek() == ',') {
+                advance();
+                skip_ws();
+                // Parse the value — could be a string, number, or identifier
+                std::string value_str;
+                if (peek() == '"') {
+                    // String value
+                    advance(); // consume opening "
+                    while (!eof() && peek() != '"') {
+                        if (peek() == '\\') { advance(); if (!eof()) value_str += advance(); }
+                        else value_str += advance();
+                    }
+                    if (!eof()) advance(); // consume closing "
+                    domain->literal_value = "\"" + value_str + "\"";
+                } else if (peek() == '-' || std::isdigit(peek())) {
+                    // Numeric value
+                    if (peek() == '-') { value_str += advance(); }
+                    while (!eof() && (std::isdigit(peek()) || peek() == '.' || peek() == 'f'))
+                        value_str += advance();
+                    domain->literal_value = value_str;
+                } else {
+                    // Identifier value (symbol name, bool, etc.)
+                    value_str = read_ident();
+                    domain->literal_value = value_str;
+                }
+            }
+            skip_ws();
+            if (!expect('>')) return nullptr;
+            domain->is_generic = domain->is_generic; // preserve generic flag from domain
+            return domain;
+        }
+        // bare "literal" without <> is an error
+        error = "literal requires <type, value> parameters";
+        return nullptr;
+    }
+
     // type<T> — metatype
     if (name == "type") {
         skip_ws();
@@ -355,8 +436,13 @@ std::string type_to_string(const TypePtr& t) {
     }
     if (t->is_generic) {
         if (t->kind == TypeKind::Scalar) {
-            std::string domain = (t->scalar == ScalarType::F64 || t->scalar == ScalarType::F32)
-                ? "float<?>" : "unsigned<?>";
+            std::string domain;
+            if (t->scalar == ScalarType::F64 || t->scalar == ScalarType::F32)
+                domain = "float<?>";
+            else if (t->literal_signed)
+                domain = "signed<?>";
+            else
+                domain = "unsigned<?>";
             if (!t->literal_value.empty())
                 return prefix + "literal<" + domain + ", " + t->literal_value + ">";
             return prefix + "literal<" + domain + ">";
@@ -365,8 +451,14 @@ std::string type_to_string(const TypePtr& t) {
     }
     switch (t->kind) {
     case TypeKind::Void: return prefix + "void";
-    case TypeKind::Bool: return prefix + "bool";
-    case TypeKind::String: return prefix + "string";
+    case TypeKind::Bool:
+        if (!t->literal_value.empty())
+            return prefix + "literal<bool, " + t->literal_value + ">";
+        return prefix + "bool";
+    case TypeKind::String:
+        if (!t->literal_value.empty())
+            return prefix + "literal<string, " + t->literal_value + ">";
+        return prefix + "string";
     case TypeKind::Mutex: return prefix + "mutex";
     case TypeKind::Scalar: {
         static const char* names[] = {"u8","s8","u16","s16","u32","s32","u64","s64","f32","f64"};
