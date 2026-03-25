@@ -283,6 +283,81 @@ TEST(expr_array_type_infers_to_metatype) {
     ASSERT_TYPE(n->outputs[0], "type<array<f32, 48000>>");
 }
 
+TEST(expr_builtin_scalars_are_symbols) {
+    const char* names[] = {"f32","f64","u8","u16","u32","u64","s8","s16","s32","s64"};
+    for (auto name : names) {
+        GraphBuilder gb;
+        gb.add("e", "expr", name);
+        gb.run_inference();
+        auto* n = gb.find("e");
+        ASSERT(n != nullptr);
+        auto t = n->outputs[0]->resolved_type;
+        ASSERT(t != nullptr);
+        ASSERT_EQ(t->kind, TypeKind::Symbol);
+        if (t->kind != TypeKind::Symbol) { printf("    failed for: %s\n", name); return; }
+    }
+}
+
+TEST(expr_builtin_specials_are_symbols) {
+    const char* names[] = {"bool","string","void","mutex"};
+    for (auto name : names) {
+        GraphBuilder gb;
+        gb.add("e", "expr", name);
+        gb.run_inference();
+        auto* n = gb.find("e");
+        ASSERT(n != nullptr);
+        auto t = n->outputs[0]->resolved_type;
+        ASSERT(t != nullptr);
+        ASSERT_EQ(t->kind, TypeKind::Symbol);
+        if (t->kind != TypeKind::Symbol) { printf("    failed for: %s\n", name); return; }
+    }
+}
+
+TEST(expr_builtin_containers_are_symbols) {
+    const char* names[] = {"vector","map","set","list","queue","ordered_map","ordered_set","array","tensor"};
+    for (auto name : names) {
+        GraphBuilder gb;
+        gb.add("e", "expr", name);
+        gb.run_inference();
+        auto* n = gb.find("e");
+        ASSERT(n != nullptr);
+        auto t = n->outputs[0]->resolved_type;
+        ASSERT(t != nullptr);
+        ASSERT_EQ(t->kind, TypeKind::Symbol);
+        if (t->kind != TypeKind::Symbol) { printf("    failed for: %s\n", name); return; }
+    }
+}
+
+TEST(expr_builtin_funcs_are_symbols) {
+    const char* names[] = {"sin","cos","exp","log","pow","or","xor","and","not","mod","rand"};
+    for (auto name : names) {
+        GraphBuilder gb;
+        gb.add("e", "expr", name);
+        gb.run_inference();
+        auto* n = gb.find("e");
+        ASSERT(n != nullptr);
+        auto t = n->outputs[0]->resolved_type;
+        ASSERT(t != nullptr);
+        ASSERT_EQ(t->kind, TypeKind::Symbol);
+        if (t->kind != TypeKind::Symbol) { printf("    failed for: %s\n", name); return; }
+    }
+}
+
+TEST(expr_builtin_constants_are_symbols) {
+    const char* names[] = {"pi","e","tau"};
+    for (auto name : names) {
+        GraphBuilder gb;
+        gb.add("e", "expr", name);
+        gb.run_inference();
+        auto* n = gb.find("e");
+        ASSERT(n != nullptr);
+        auto t = n->outputs[0]->resolved_type;
+        ASSERT(t != nullptr);
+        ASSERT_EQ(t->kind, TypeKind::Symbol);
+        if (t->kind != TypeKind::Symbol) { printf("    failed for: %s\n", name); return; }
+    }
+}
+
 TEST(expr_vector_type_infers_to_metatype) {
     GraphBuilder gb;
     gb.add("e1", "expr", "vector<f32>");

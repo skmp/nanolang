@@ -133,6 +133,25 @@ void SymbolTable::populate_builtins(TypePool& pool) {
     add_builtin("queue",       make_container_meta(ContainerKind::Queue, 1));
     add_builtin("ordered_map", make_container_meta(ContainerKind::OrderedMap, 2));
     add_builtin("ordered_set", make_container_meta(ContainerKind::OrderedSet, 1));
+
+    // --- Array and tensor type symbols ---
+    {
+        auto array_type = std::make_shared<TypeExpr>();
+        array_type->kind = TypeKind::Array;
+        array_type->value_type = pool.t_unknown;
+        auto array_meta = std::make_shared<TypeExpr>();
+        array_meta->kind = TypeKind::MetaType;
+        array_meta->wrapped_type = array_type;
+        add_builtin("array", array_meta);
+
+        auto tensor_type = std::make_shared<TypeExpr>();
+        tensor_type->kind = TypeKind::Tensor;
+        tensor_type->value_type = pool.t_unknown;
+        auto tensor_meta = std::make_shared<TypeExpr>();
+        tensor_meta->kind = TypeKind::MetaType;
+        tensor_meta->wrapped_type = tensor_type;
+        add_builtin("tensor", tensor_meta);
+    }
 }
 
 SymbolEntry* SymbolTable::lookup(const std::string& name) {
