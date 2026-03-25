@@ -1,10 +1,10 @@
-# nanolang Language Specification
+# attolang Language Specification
 
 ## Type System
 
 ### Value Categories
 
-A value in NanoProg has a **category**:
+A value in AttoProg has a **category**:
 
 | Category   | Description                         |
 |-----------|--------------------------------------|
@@ -346,7 +346,7 @@ Circular type references are not allowed.
 
 ## Compile-Time and Runtime Phases
 
-NanoProg has two distinct execution phases with separate bang chains:
+AttoProg has two distinct execution phases with separate bang chains:
 
 ### Compile-Time Phase
 
@@ -588,7 +588,7 @@ Example: `sin($0)` where `$0 : vector<f32>` → `vector<f32>` with sin applied t
 
 ### Type Inference
 
-NanoProg uses **bidirectional type inference**:
+AttoProg uses **bidirectional type inference**:
 
 1. **Forward inference:** Input types propagate through operators and functions to determine the output type.
 2. **Backward inference:** If a downstream consumer expects a specific type, that constraint propagates back to resolve unknown input types.
@@ -636,12 +636,12 @@ Bang pins represent `() -> void` callable connections for control flow:
 
 **Bidirectional BangTrigger:** A BangTrigger pin can be both a link destination (receiving bang chain flow from BangNext) and a link source (providing its `() -> void` value to a data Input pin).
 
-## File Format (.nano)
+## File Format (.atto)
 
 TOML-like format:
 
 ```
-version = "nanoprog@0"
+version = "attoprog@0"
 
 [viewport]
 x = -500.0

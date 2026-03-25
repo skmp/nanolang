@@ -11,7 +11,7 @@
 #include <cstdio>
 #include <filesystem>
 
-bool load_nano(const std::string& path, FlowGraph& graph) {
+bool load_atto(const std::string& path, FlowGraph& graph) {
     std::ifstream f(path);
     if (!f.is_open()) {
         fprintf(stderr, "Cannot open %s\n", path.c_str());
@@ -93,7 +93,7 @@ bool load_nano(const std::string& path, FlowGraph& graph) {
         if (cur_type.empty()) { cur_guid.clear(); cur_args.clear(); return; }
 
         if (cur_guid.empty()) {
-            // Auto-generate guid for nodes without one (e.g. imported nanostd)
+            // Auto-generate guid for nodes without one (e.g. imported attostd)
             char buf[17];
             snprintf(buf, sizeof(buf), "%08x%08x", (unsigned)rand(), (unsigned)rand());
             cur_guid = buf;
@@ -230,7 +230,7 @@ bool load_nano(const std::string& path, FlowGraph& graph) {
             if (eq != std::string::npos) {
                 std::string val = trim(line.substr(eq + 1));
                 val = unquote(val);
-                if (val == "nanoprog@1") format_version = 1;
+                if (val == "attoprog@1") format_version = 1;
             }
             continue;
         }
@@ -281,18 +281,18 @@ bool load_nano(const std::string& path, FlowGraph& graph) {
 
     size_t own_node_count = graph.nodes.size();
 
-    // Resolve imports: load nanostd modules referenced by decl_import nodes
+    // Resolve imports: load attostd modules referenced by decl_import nodes
     {
         namespace fs = std::filesystem;
-        // Find nanostd path relative to the loaded file
+        // Find attostd path relative to the loaded file
         fs::path file_dir = fs::path(path).parent_path();
-        // Look for nanostd in known locations
+        // Look for attostd in known locations
         std::vector<fs::path> search_paths;
         // 1. Relative to the source file's project root
-        search_paths.push_back(file_dir / ".." / "nanostd");
-        search_paths.push_back(file_dir / "nanostd");
+        search_paths.push_back(file_dir / ".." / "attostd");
+        search_paths.push_back(file_dir / "attostd");
         // 2. Relative to the executable (for installed setups)
-        search_paths.push_back(fs::path(__FILE__).parent_path() / ".." / ".." / "nanostd");
+        search_paths.push_back(fs::path(__FILE__).parent_path() / ".." / ".." / "attostd");
 
         // Collect all import paths first (avoid modifying graph while iterating)
         std::vector<std::string> import_paths;
@@ -314,16 +314,16 @@ bool load_nano(const std::string& path, FlowGraph& graph) {
             imported.insert(import_path);
 
             std::string module_name = import_path.substr(4); // strip "std/"
-            std::string nano_file = module_name + ".nano";
+            std::string atto_file = module_name + ".atto";
 
-            // Search for the nanostd file
+            // Search for the attostd file
             bool found = false;
             for (auto& sp : search_paths) {
-                fs::path full = sp / nano_file;
+                fs::path full = sp / atto_file;
                 if (fs::exists(full)) {
                     // Load the module's nodes into a temp graph
                     FlowGraph temp;
-                    load_nano(full.string(), temp);
+                    load_atto(full.string(), temp);
                     // Merge only ffi and decl_type nodes (declarations) into main graph
                     for (auto& n : temp.nodes) {
                         if (is_any_of(n.type_id, NodeTypeID::Ffi, NodeTypeID::DeclType)) {
@@ -370,8 +370,8 @@ bool load_nano(const std::string& path, FlowGraph& graph) {
     return true;
 }
 
-void save_nano_stream(std::ostream& f, const FlowGraph& graph) {
-    f << "version = \"nanoprog@1\"\n\n";
+void save_atto_stream(std::ostream& f, const FlowGraph& graph) {
+    f << "version = \"attoprog@1\"\n\n";
 
     f << "[viewport]\n";
     f << "x = " << graph.viewport_x << "\n";
@@ -379,7 +379,7 @@ void save_nano_stream(std::ostream& f, const FlowGraph& graph) {
     f << "zoom = " << graph.viewport_zoom << "\n\n";
 
     for (auto& node : graph.nodes) {
-        if (node.imported) continue; // Don't save imported nodes — they're loaded from nanostd
+        if (node.imported) continue; // Don't save imported nodes — they're loaded from attostd
         f << "[[node]]\n";
         f << "guid = \"" << node.guid << "\"\n";
         f << "type = \"" << node_type_str(node.type_id) << "\"\n";
@@ -431,30 +431,30 @@ void save_nano_stream(std::ostream& f, const FlowGraph& graph) {
 
 }
 
-std::string save_nano_string(const FlowGraph& graph) {
+std::string save_atto_string(const FlowGraph& graph) {
     std::ostringstream ss;
-    save_nano_stream(ss, graph);
+    save_atto_stream(ss, graph);
     return ss.str();
 }
 
-bool save_nano(const std::string& path, const FlowGraph& graph) {
+bool save_atto(const std::string& path, const FlowGraph& graph) {
     std::ofstream f(path);
     if (!f.is_open()) {
         fprintf(stderr, "Cannot write %s\n", path.c_str());
         return false;
     }
-    save_nano_stream(f, graph);
+    save_atto_stream(f, graph);
     printf("Saved %zu nodes, %zu links to %s\n", graph.nodes.size(), graph.links.size(), path.c_str());
     return true;
 }
 
-bool load_nano_string(const std::string& data, FlowGraph& graph) {
+bool load_atto_string(const std::string& data, FlowGraph& graph) {
     std::istringstream f(data);
     // Reuse the load logic but from a string stream
     // For simplicity, write to a temp and load — or inline the parser.
-    // Actually, load_nano reads from ifstream. Let's make a stream-based loader too.
-    // For now, save to temp file and reload. TODO: refactor load_nano to use istream.
-    // Quick approach: write data to a temporary string, use load_nano with a temp path.
+    // Actually, load_atto reads from ifstream. Let's make a stream-based loader too.
+    // For now, save to temp file and reload. TODO: refactor load_atto to use istream.
+    // Quick approach: write data to a temporary string, use load_atto with a temp path.
     // Better: just duplicate the essential parsing inline.
 
     // Actually let's just clear and re-parse from the string data directly.
@@ -603,7 +603,7 @@ bool load_nano_string(const std::string& data, FlowGraph& graph) {
             if (eq != std::string::npos) {
                 std::string val = trim(line.substr(eq + 1));
                 val = unquote(val);
-                if (val == "nanoprog@1") format_version = 1;
+                if (val == "attoprog@1") format_version = 1;
             }
             continue;
         }

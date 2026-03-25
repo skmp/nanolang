@@ -1116,7 +1116,7 @@ TEST(lambda_connection_not_red) {
 // --- Klavier-like lambda test ---
 
 TEST(klavier_gen_lambda) {
-    // Reproduce the klavier.nano gen lambda structure:
+    // Reproduce the klavier.atto gen lambda structure:
     // decl_type osc_res s:f32 e:bool
     // decl_type gen_fn (id:u64) -> osc_res
     // decl_type osc_def gen:gen_fn ...
@@ -3973,8 +3973,8 @@ TEST(call_bang_lambda_ref_creates_lambda_pin) {
     ASSERT_EQ(node.inputs[1]->direction, FlowPin::Input);
 }
 
-TEST(call_bang_pin_from_nano_file_roundtrip) {
-    // Simulate loading from a .nano file: args array gets joined with spaces
+TEST(call_bang_pin_from_atto_file_roundtrip) {
+    // Simulate loading from a .atto file: args array gets joined with spaces
     // args = ["imgui_plot_lines", "\"Delay Line\"", "$0", "\"\""]
     // After parse_array + unquote, cur_args = {imgui_plot_lines, "Delay Line", $0, ""}
     // After join: imgui_plot_lines "Delay Line" $0 ""

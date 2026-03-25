@@ -1,4 +1,4 @@
-# ImGui FFI bindings for nanolang
+# ImGui FFI bindings for attolang
 # Import with: decl_import std/imgui
 
 # Window management

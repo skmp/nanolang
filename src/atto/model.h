@@ -63,7 +63,7 @@ struct FlowNode {
     FlowPin lambda_grab = {"", "as_lambda", "lambda", nullptr, FlowPin::LambdaGrab};
     FlowPin bang_pin = {"", "bang", "bang", nullptr, FlowPin::BangNext};
     std::string error;            // non-empty if node has a validation error
-    bool imported = false;        // true if this node was loaded from a nanostd import
+    bool imported = false;        // true if this node was loaded from a attostd import
     bool shadow = false;          // true if this is an internal shadow expr node
     std::string inline_display;   // cached display text (always populated by rebuild_all_inline_display)
 

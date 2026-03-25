@@ -1,4 +1,4 @@
-#include "nanoruntime.h"
+#include "attoruntime.h"
 #include <SDL3/SDL.h>
 #include <cstdio>
 #include <cmath>
@@ -20,7 +20,7 @@ static void SDLCALL audio_callback(void* /*userdata*/, SDL_AudioStream* stream,
 
     for (int i = 0; i < samples; i++) {
         (*s_audio_tick)();
-        f32 sample = nano_consume_mix();
+        f32 sample = atto_consume_mix();
         if (sample > 1.0f) sample = 1.0f;
         if (sample < -1.0f) sample = -1.0f;
         for (int c = 0; c < ch; c++)

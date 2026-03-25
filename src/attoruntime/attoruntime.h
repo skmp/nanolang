@@ -1,5 +1,5 @@
 #pragma once
-// NanoLang Runtime - type aliases, containers, math, and stubs
+// AttoLang Runtime - type aliases, containers, math, and stubs
 // Generated programs #include this header.
 
 #include <cstdint>
@@ -31,37 +31,37 @@ using f32 = float;
 using f64 = double;
 
 // Math constants
-constexpr f64 nano_pi  = 3.14159265358979323846;
-constexpr f64 nano_e   = 2.71828182845904523536;
-constexpr f64 nano_tau = 6.28318530717958647692;
+constexpr f64 atto_pi  = 3.14159265358979323846;
+constexpr f64 atto_e   = 2.71828182845904523536;
+constexpr f64 atto_tau = 6.28318530717958647692;
 
 // Audio output accumulator — accumulates per-sample output during on_audio_tick
-inline f32 _nano_mix_accum = 0.0f;
+inline f32 _atto_mix_accum = 0.0f;
 
 inline void output_mix(f32 value) {
-    _nano_mix_accum += value;
+    _atto_mix_accum += value;
 }
 
-inline f32 nano_consume_mix() {
-    f32 v = _nano_mix_accum;
-    _nano_mix_accum = 0.0f;
+inline f32 atto_consume_mix() {
+    f32 v = _atto_mix_accum;
+    _atto_mix_accum = 0.0f;
     return v;
 }
 
 // Random number generation
-inline std::mt19937& nano_rng() {
+inline std::mt19937& atto_rng() {
     static std::mt19937 gen(std::random_device{}());
     return gen;
 }
 
-inline f32 nano_rand_float(f32 min, f32 max) {
+inline f32 atto_rand_float(f32 min, f32 max) {
     std::uniform_real_distribution<f32> dist(min, max);
-    return dist(nano_rng());
+    return dist(atto_rng());
 }
 
-inline s32 nano_rand_int(s32 min, s32 max) {
+inline s32 atto_rand_int(s32 min, s32 max) {
     std::uniform_int_distribution<s32> dist(min, max);
-    return dist(nano_rng());
+    return dist(atto_rng());
 }
 
 // Standard event handler declarations — implemented by generated code

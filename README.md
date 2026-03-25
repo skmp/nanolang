@@ -1,28 +1,30 @@
-# nanolang
+# Organic Assembler
 
-A visual dataflow programming language with a node-based editor, standalone compiler, and runtime. Programs are authored as flow graphs in `.nano` files and compiled to C++. See an [example program](scenes/klavier/main.nano) and the full [language specification](nanolang.md).
+An operating system for instruments, written in attolang. Instruments are visual dataflow programs — authored as node graphs in the **attoflow** editor, compiled to native code, and run in real time.
 
-![nanolang](https://github.com/skmp/nanolang/blob/main/docs/nanolang.png)
+Each instrument is a self-contained `.atto` program that defines its audio synthesis, event handling, and UI. The system compiles these programs to C++ and runs them with hot-reload support.
+
+See an [example instrument](scenes/klavier/main.atto) and the full [language specification](docs/attolang.md).
 
 ## Components
 
 | Target | Description |
 |--------|-------------|
-| **nanolang** | Core library — type system, expression parser, type inference, serialization |
-| **nanoflow** | Visual node editor (SDL3 + Dear ImGui) |
-| **nanoc** | Standalone compiler (`.nano` → C++) |
-| **nanoruntime** | Runtime with GUI and ImGui bindings |
+| **attolang** | Core language library — type system, expression parser, type inference, serialization |
+| **attoflow** | Visual node editor for authoring instruments (SDL3 + Dear ImGui) |
+| **attoc** | Standalone compiler (`.atto` → C++) |
+| **attoruntime** | Instrument runtime with GUI and audio bindings |
 
 ## Language Highlights
 
-- **Sigil-based value categories** — `%` data, `&` reference, `^` iterator, `@` lambda, `#` enum, `!` bang (trigger), `~` event
 - **Rich type system** — scalars (`u8`–`s64`, `f32`/`f64`, `bool`, `string`), containers (`vector`, `map`, `list`, `set`, `queue`), fixed-size arrays, tensors, named struct types, function types
+- **First-class literals, symbols, and types** — `literal<T,V>`, `symbol<name,type>`, `type<T>` as compile-time values
 - **Bidirectional type inference** with automatic integer upcasting and iterator-to-reference decay
 - **Bang-driven control flow** — nodes postfixed with `!` have explicit execution ordering via bang signals
 - **Inline expressions** — node arguments can embed literals, variable refs, and sub-expressions directly
 - **Lambda construction** — expression nodes can be captured as callable lambdas with automatic capture/parameter resolution
 - **FFI support** — declare external C functions and call them from the graph
-- **Standard library modules** — e.g. `decl_import std/imgui` for ImGui bindings
+- **Standard library modules** — e.g. `decl_import "std/imgui"` for ImGui bindings
 
 ## Building
 

@@ -1,4 +1,4 @@
-# GUI/AV runtime FFI bindings for nanolang
+# GUI/AV runtime FFI bindings for attolang
 # Import with: decl_import std/gui
 
 # Create a window with audio and video callbacks.

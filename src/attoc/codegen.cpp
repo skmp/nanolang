@@ -319,9 +319,9 @@ std::string CodeGenerator::expr_to_cpp(const ExprPtr& e, FlowNode* ctx_node) {
     }
     case ExprKind::SymbolRef: {
         // Resolve known constants
-        if (e->symbol_name == "pi") return "nano_pi";
-        if (e->symbol_name == "e") return "nano_e";
-        if (e->symbol_name == "tau") return "nano_tau";
+        if (e->symbol_name == "pi") return "atto_pi";
+        if (e->symbol_name == "e") return "atto_e";
+        if (e->symbol_name == "tau") return "atto_tau";
         return e->symbol_name;
     }
     case ExprKind::UnaryMinus:
@@ -373,9 +373,9 @@ std::string CodeGenerator::expr_to_cpp(const ExprPtr& e, FlowNode* ctx_node) {
                 bool is_float = e->resolved_type && e->resolved_type->kind == TypeKind::Scalar &&
                     (e->resolved_type->scalar == ScalarType::F32 || e->resolved_type->scalar == ScalarType::F64);
                 if (is_float) {
-                    return "nano_rand_float(" + a + ", " + b + ")";
+                    return "atto_rand_float(" + a + ", " + b + ")";
                 } else {
-                    return "nano_rand_int(" + a + ", " + b + ")";
+                    return "atto_rand_int(" + a + ", " + b + ")";
                 }
             }
             default: throw std::runtime_error("codegen: unknown builtin function"); break;
@@ -1420,8 +1420,8 @@ std::vector<FlowNode*> CodeGenerator::follow_bang_from(const std::string& from_p
 std::string CodeGenerator::generate_types() {
     std::ostringstream out;
     out << "#pragma once\n";
-    out << "#include \"nanoruntime.h\"\n\n";
-    out << "// Generated types from " << source_name << ".nano\n\n";
+    out << "#include \"attoruntime.h\"\n\n";
+    out << "// Generated types from " << source_name << ".atto\n\n";
 
     // Forward declarations
     for (auto* node : find_nodes(NodeTypeID::DeclType)) {
@@ -1470,7 +1470,7 @@ std::string CodeGenerator::generate_header() {
     std::ostringstream out;
     out << "#pragma once\n";
     out << "#include \"" << source_name << "_types.h\"\n\n";
-    out << "// Generated program from " << source_name << ".nano\n\n";
+    out << "// Generated program from " << source_name << ".atto\n\n";
 
     for (auto* node : find_nodes(NodeTypeID::DeclVar)) {
         auto tokens = tokenize_args(node->args, false);
@@ -1977,10 +1977,10 @@ void CodeGenerator::emit_node(FlowNode& node, std::ostringstream& out, int inden
 
 // --- Main and CMake ---
 
-std::string CodeGenerator::generate_cmake(const std::string& nanoruntime_path,
-                                           const std::string& nanoc_path,
-                                           const std::string& nano_project_path,
-                                           const std::string& nano_source_path,
+std::string CodeGenerator::generate_cmake(const std::string& attoruntime_path,
+                                           const std::string& attoc_path,
+                                           const std::string& atto_project_path,
+                                           const std::string& atto_source_path,
                                            const std::string& nanodeps_path) {
     std::string sn = source_name;
     std::ostringstream out;
@@ -2017,15 +2017,15 @@ std::string CodeGenerator::generate_cmake(const std::string& nanoruntime_path,
 
     // Fetch dependencies via NanoDeps.cmake (FetchContent on Linux/macOS, vcpkg on Windows)
     if (uses_imgui || uses_gui)
-        out << "set(NANO_NEEDS_IMGUI ON)\n";
+        out << "set(ATTO_NEEDS_IMGUI ON)\n";
     out << "include(\"" << nanodeps_path << "\")\n\n";
 
-    out << "set(NANORUNTIME_PATH \"" << nanoruntime_path << "\")\n";
+    out << "set(ATTORUNTIME_PATH \"" << attoruntime_path << "\")\n";
 
-    // Custom command: re-run nanoc when the .nano source changes
-    out << "set(NANO_PROJECT \"" << nano_project_path << "\")\n";
-    out << "set(NANO_SOURCE \"" << nano_source_path << "\")\n";
-    out << "set(NANOC \"" << nanoc_path << "\")\n";
+    // Custom command: re-run nanoc when the .atto source changes
+    out << "set(ATTO_PROJECT \"" << atto_project_path << "\")\n";
+    out << "set(ATTO_SOURCE \"" << atto_source_path << "\")\n";
+    out << "set(NANOC \"" << attoc_path << "\")\n";
     out << "set(GENERATED_FILES\n";
     out << "    ${CMAKE_CURRENT_SOURCE_DIR}/" << sn << "_types.h\n";
     out << "    ${CMAKE_CURRENT_SOURCE_DIR}/" << sn << "_program.h\n";
@@ -2034,17 +2034,17 @@ std::string CodeGenerator::generate_cmake(const std::string& nanoruntime_path,
 
     out << "add_custom_command(\n";
     out << "    OUTPUT ${GENERATED_FILES}\n";
-    out << "    COMMAND ${NANOC} ${NANO_PROJECT} -o ${CMAKE_CURRENT_SOURCE_DIR}\n";
-    out << "    DEPENDS ${NANO_SOURCE}\n";
-    out << "    COMMENT \"Compiling ${NANO_SOURCE} with nanoc\"\n";
+    out << "    COMMAND ${NANOC} ${ATTO_PROJECT} -o ${CMAKE_CURRENT_SOURCE_DIR}\n";
+    out << "    DEPENDS ${ATTO_SOURCE}\n";
+    out << "    COMMENT \"Compiling ${ATTO_SOURCE} with nanoc\"\n";
     out << ")\n\n";
 
     out << "add_executable(" << sn << "\n";
-    out << "    ${NANORUNTIME_PATH}/main.cpp\n";
+    out << "    ${ATTORUNTIME_PATH}/main.cpp\n";
     if (uses_imgui)
-        out << "    ${NANORUNTIME_PATH}/nano_imgui.cpp\n";
+        out << "    ${ATTORUNTIME_PATH}/nano_imgui.cpp\n";
     if (uses_gui)
-        out << "    ${NANORUNTIME_PATH}/nano_gui.cpp\n";
+        out << "    ${ATTORUNTIME_PATH}/atto_gui.cpp\n";
     out << "    ${GENERATED_FILES}\n";
     out << ")\n\n";
 
@@ -2052,7 +2052,7 @@ std::string CodeGenerator::generate_cmake(const std::string& nanoruntime_path,
 
     out << "target_include_directories(" << sn << " PRIVATE\n";
     out << "    ${CMAKE_CURRENT_SOURCE_DIR}\n";
-    out << "    ${NANORUNTIME_PATH}\n";
+    out << "    ${ATTORUNTIME_PATH}\n";
     out << ")\n\n";
 
     // Link libraries — platform-dependent target names

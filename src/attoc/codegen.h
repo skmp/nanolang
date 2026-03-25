@@ -30,7 +30,7 @@ struct CodeGenerator {
     FlowGraph& graph;
     TypePool& pool;
     GraphIndex idx;
-    std::string source_name; // e.g. "klavier" from "klavier.nano"
+    std::string source_name; // e.g. "klavier" from "klavier.atto"
 
     // Per-event-handler context (set during emit_event_handler)
     std::map<std::string, std::string> pin_to_value; // source_pin_id → C++ expression
@@ -47,10 +47,10 @@ struct CodeGenerator {
     std::string generate_types();
     std::string generate_header();
     std::string generate_impl();
-    std::string generate_cmake(const std::string& nanoruntime_path,
-                               const std::string& nanoc_path,
-                               const std::string& nano_project_path,
-                               const std::string& nano_source_path,
+    std::string generate_cmake(const std::string& attoruntime_path,
+                               const std::string& attoc_path,
+                               const std::string& atto_project_path,
+                               const std::string& atto_source_path,
                                const std::string& nanodeps_path);
     std::string generate_vcpkg();
 

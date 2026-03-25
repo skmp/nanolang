@@ -47,22 +47,22 @@ int main(int argc, char* argv[]) {
         }
     }
 
-    // Input must be a directory containing main.nano
+    // Input must be a directory containing main.atto
     fs::path input_p(input_arg);
     if (!fs::is_directory(input_p)) {
         fprintf(stderr, "Error: %s is not a directory\n", input_arg.c_str());
         return 1;
     }
-    std::string input_path = (input_p / "main.nano").string();
+    std::string input_path = (input_p / "main.atto").string();
     std::string source_name = input_p.filename().string();
     if (!fs::exists(input_path)) {
-        fprintf(stderr, "Error: no main.nano found in %s\n", input_arg.c_str());
+        fprintf(stderr, "Error: no main.atto found in %s\n", input_arg.c_str());
         return 1;
     }
 
     // Load the graph
     FlowGraph graph;
-    load_nano(input_path, graph);
+    load_atto(input_path, graph);
 
     // Resolve type-based pins (new, event! nodes)
     resolve_type_based_pins(graph);
@@ -91,7 +91,7 @@ int main(int argc, char* argv[]) {
     CodeGenerator codegen(graph, pool, source_name);
 
     // Compute absolute paths for CMake references
-    fs::path runtime_path = fs::absolute(fs::path(__FILE__).parent_path() / ".." / "nanoruntime");
+    fs::path runtime_path = fs::absolute(fs::path(__FILE__).parent_path() / ".." / "attoruntime");
     std::string runtime_str = runtime_path.string();
     std::replace(runtime_str.begin(), runtime_str.end(), '\\', '/');
 
@@ -100,18 +100,18 @@ int main(int argc, char* argv[]) {
     std::replace(nanodeps_str.begin(), nanodeps_str.end(), '\\', '/');
 
     fs::path nanoc_abs = fs::absolute(fs::path(argv[0]));
-    std::string nanoc_str = nanoc_abs.string();
-    std::replace(nanoc_str.begin(), nanoc_str.end(), '\\', '/');
+    std::string attoc_str = nanoc_abs.string();
+    std::replace(attoc_str.begin(), attoc_str.end(), '\\', '/');
 
-    // Pass the project directory (not the .nano file) — nanoc expects a folder
-    fs::path nano_project_abs = fs::absolute(fs::path(input_arg));
-    std::string nano_project_str = nano_project_abs.string();
-    std::replace(nano_project_str.begin(), nano_project_str.end(), '\\', '/');
+    // Pass the project directory (not the .atto file) — nanoc expects a folder
+    fs::path atto_project_abs = fs::absolute(fs::path(input_arg));
+    std::string atto_project_str = atto_project_abs.string();
+    std::replace(atto_project_str.begin(), atto_project_str.end(), '\\', '/');
 
-    // Also pass main.nano path for CMake DEPENDS
-    fs::path nano_source_abs = fs::absolute(fs::path(input_path));
-    std::string nano_source_str = nano_source_abs.string();
-    std::replace(nano_source_str.begin(), nano_source_str.end(), '\\', '/');
+    // Also pass main.atto path for CMake DEPENDS
+    fs::path atto_source_abs = fs::absolute(fs::path(input_path));
+    std::string atto_source_str = atto_source_abs.string();
+    std::replace(atto_source_str.begin(), atto_source_str.end(), '\\', '/');
 
     // Create output directory
     fs::create_directories(output_dir);
@@ -121,7 +121,7 @@ int main(int argc, char* argv[]) {
         write_file(output_dir + "/" + source_name + "_types.h", codegen.generate_types());
         write_file(output_dir + "/" + source_name + "_program.h", codegen.generate_header());
         write_file(output_dir + "/" + source_name + "_program.cpp", codegen.generate_impl());
-        write_file(output_dir + "/CMakeLists.txt", codegen.generate_cmake(runtime_str, nanoc_str, nano_project_str, nano_source_str, nanodeps_str));
+        write_file(output_dir + "/CMakeLists.txt", codegen.generate_cmake(runtime_str, attoc_str, atto_project_str, atto_source_str, nanodeps_str));
         write_file(output_dir + "/vcpkg.json", codegen.generate_vcpkg());
     } catch (const std::runtime_error& e) {
         fprintf(stderr, "Codegen error: %s\n", e.what());

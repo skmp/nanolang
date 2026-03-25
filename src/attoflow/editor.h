@@ -1,7 +1,7 @@
 #pragma once
 #include "sdl_imgui_window.h"
-#include "nano/model.h"
-#include "nano/types.h"
+#include "atto/model.h"
+#include "atto/types.h"
 #include <string>
 #include <vector>
 #include <set>
@@ -17,10 +17,10 @@
 inline ImVec2 to_imvec(Vec2 v) { return {v.x, v.y}; }
 inline Vec2 to_vec2(ImVec2 v) { return {v.x, v.y}; }
 
-// Per-tab state: each open .nano file gets its own TabState
+// Per-tab state: each open .atto file gets its own TabState
 struct TabState {
     FlowGraph graph;
-    std::string file_path;       // absolute path to this .nano file
+    std::string file_path;       // absolute path to this .atto file
     std::string tab_name;        // display name (filename without extension)
     bool dirty = false;
 
@@ -80,7 +80,7 @@ private:
 
     // Project
     std::string project_dir_;
-    std::vector<std::string> project_files_; // cached .nano filenames
+    std::vector<std::string> project_files_; // cached .atto filenames
     float file_panel_width_ = 200.0f;
 
     // Tabs

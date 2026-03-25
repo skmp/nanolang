@@ -1,10 +1,10 @@
 #include "editor.h"
-#include "nano/args.h"
-#include "nano/expr.h"
-#include "nano/inference.h"
-#include "nano/serial.h"
-#include "nano/shadow.h"
-#include "nano/types.h"
+#include "atto/args.h"
+#include "atto/expr.h"
+#include "atto/inference.h"
+#include "atto/serial.h"
+#include "atto/shadow.h"
+#include "atto/types.h"
 #include <cmath>
 #include <algorithm>
 #include <cstring>
@@ -37,7 +37,7 @@ static constexpr ImU32 COL_PIN_HOVER  = IM_COL32(255, 255, 255, 255);
 static constexpr ImU32 COL_LINK       = IM_COL32(200, 200, 100, 200);
 static constexpr ImU32 COL_LINK_DRAG  = IM_COL32(255, 255, 150, 200);
 
-#include "nano/node_types.h"
+#include "atto/node_types.h"
 
 // Look up port description for a pin on a node.
 // Returns {port_name, port_desc} or {"", ""} if not found.
@@ -114,7 +114,7 @@ static std::string pin_label(const FlowNode& node, const FlowPin& pin) {
     return node_display_name(node) + "." + port_name;
 }
 
-#include "nano/type_utils.h"
+#include "atto/type_utils.h"
 
 static float dist2(ImVec2 a, ImVec2 b) {
     float dx = a.x - b.x, dy = a.y - b.y;
@@ -214,9 +214,9 @@ bool FlowEditorWindow::init(const std::string& project_dir) {
 
     if (!project_dir_.empty()) {
         scan_project_files();
-        // Open main.nano as the first tab
+        // Open main.atto as the first tab
         namespace fs = std::filesystem;
-        std::string main_path = (fs::path(project_dir_) / "main.nano").string();
+        std::string main_path = (fs::path(project_dir_) / "main.atto").string();
         if (fs::exists(main_path)) {
             open_tab(main_path);
         } else if (!project_files_.empty()) {
@@ -238,7 +238,7 @@ void FlowEditorWindow::scan_project_files() {
     project_files_.clear();
     if (project_dir_.empty()) return;
     for (auto& entry : fs::directory_iterator(project_dir_)) {
-        if (entry.path().extension() == ".nano") {
+        if (entry.path().extension() == ".atto") {
             project_files_.push_back(entry.path().filename().string());
         }
     }
@@ -262,7 +262,7 @@ void FlowEditorWindow::open_tab(const std::string& file_path) {
     tab.file_path = abs_path;
     tab.tab_name = fs::path(file_path).stem().string();
     if (fs::exists(abs_path)) {
-        load_nano(abs_path, tab.graph);
+        load_atto(abs_path, tab.graph);
     }
     if (tab.graph.has_viewport) {
         tab.canvas_offset = {tab.graph.viewport_x, tab.graph.viewport_y};
@@ -278,7 +278,7 @@ void FlowEditorWindow::close_tab(int idx) {
     // Auto-save before closing
     if (tabs_[idx].dirty && !tabs_[idx].file_path.empty()) {
         sync_viewport(tabs_[idx]);
-        save_nano(tabs_[idx].file_path, tabs_[idx].graph);
+        save_atto(tabs_[idx].file_path, tabs_[idx].graph);
     }
     tabs_.erase(tabs_.begin() + idx);
     if (active_tab_ >= (int)tabs_.size())
@@ -298,7 +298,7 @@ void FlowEditorWindow::mark_dirty() {
 }
 
 void FlowEditorWindow::push_undo() {
-    active().undo_stack.push_back(save_nano_string(active().graph));
+    active().undo_stack.push_back(save_atto_string(active().graph));
     active().redo_stack.clear();
     // Limit undo history
     if (active().undo_stack.size() > 200) active().undo_stack.erase(active().undo_stack.begin());
@@ -307,9 +307,9 @@ void FlowEditorWindow::push_undo() {
 void FlowEditorWindow::undo() {
     if (active().undo_stack.empty()) return;
     // Save current state to redo
-    active().redo_stack.push_back(save_nano_string(active().graph));
+    active().redo_stack.push_back(save_atto_string(active().graph));
     // Restore from undo
-    load_nano_string(active().undo_stack.back(), active().graph);
+    load_atto_string(active().undo_stack.back(), active().graph);
     active().undo_stack.pop_back();
     active().dirty = true;
 }
@@ -317,9 +317,9 @@ void FlowEditorWindow::undo() {
 void FlowEditorWindow::redo() {
     if (active().redo_stack.empty()) return;
     // Save current state to undo (without clearing redo)
-    active().undo_stack.push_back(save_nano_string(active().graph));
+    active().undo_stack.push_back(save_atto_string(active().graph));
     // Restore from redo
-    load_nano_string(active().redo_stack.back(), active().graph);
+    load_atto_string(active().redo_stack.back(), active().graph);
     active().redo_stack.pop_back();
     active().dirty = true;
 }
@@ -345,7 +345,7 @@ void FlowEditorWindow::sync_viewport(TabState& tab) {
 void FlowEditorWindow::auto_save() {
     if (active().dirty && !active().file_path.empty()) {
         sync_viewport(active());
-        save_nano(active().file_path, active().graph);
+        save_atto(active().file_path, active().graph);
         active().dirty = false;
     }
 }
@@ -744,7 +744,7 @@ void FlowEditorWindow::draw() {
     ImGui::BeginGroup();
 
     // --- Tab bar ---
-    if (ImGui::BeginTabBar("##nano_tabs")) {
+    if (ImGui::BeginTabBar("##atto_tabs")) {
         for (int i = 0; i < (int)tabs_.size(); i++) {
             std::string label = tabs_[i].tab_name;
             if (tabs_[i].dirty) label += "*";
@@ -2330,9 +2330,9 @@ void FlowEditorWindow::run_program(bool release) {
 
     namespace fs = std::filesystem;
 
-    // Determine paths — nanoc expects a project folder containing main.nano
-    fs::path nano_path = fs::absolute(active().file_path);
-    fs::path project_dir = nano_path.parent_path();
+    // Determine paths — nanoc expects a project folder containing main.atto
+    fs::path atto_path = fs::absolute(active().file_path);
+    fs::path project_dir = atto_path.parent_path();
     std::string source_name = project_dir.filename().string();
     fs::path output_dir = project_dir / ".generated" / source_name;
 
@@ -2353,9 +2353,9 @@ void FlowEditorWindow::run_program(bool release) {
 #else
     exe_path = fs::canonical("/proc/self/exe").parent_path();
 #endif
-    fs::path nanoc_path = exe_path / "nanoc.exe";
-    if (!fs::exists(nanoc_path))
-        nanoc_path = exe_path / "nanoc";
+    fs::path attoc_path = exe_path / "attoc.exe";
+    if (!fs::exists(attoc_path))
+        attoc_path = exe_path / "attoc";
 
     // vcpkg toolchain (Windows only — Linux/macOS use FetchContent via NanoDeps.cmake)
     std::string tc_str;
@@ -2373,8 +2373,8 @@ void FlowEditorWindow::run_program(bool release) {
 #endif
 
     // Capture paths as strings for the thread
-    std::string nanoc_str = nanoc_path.string();
-    std::string nano_str = project_dir.string();
+    std::string attoc_str = attoc_path.string();
+    std::string atto_str = project_dir.string();
     std::string out_str = output_dir.string();
     std::string sn = source_name;
 
@@ -2384,7 +2384,7 @@ void FlowEditorWindow::run_program(bool release) {
         build_log_.clear();
     }
 
-    build_thread_ = std::thread([this, nanoc_str, nano_str, out_str, tc_str, sn, release]() {
+    build_thread_ = std::thread([this, attoc_str, atto_str, out_str, tc_str, sn, release]() {
         namespace fs = std::filesystem;
         fs::create_directories(out_str);
 
@@ -2413,9 +2413,9 @@ void FlowEditorWindow::run_program(bool release) {
         // Step 1: nanoc
         {
             std::lock_guard<std::mutex> lock(build_log_mutex_);
-            build_log_ += "=== Running nanoc ===\n";
+            build_log_ += "=== Running attoc ===\n";
         }
-        std::string cmd1 = "\"" + nanoc_str + "\" \"" + nano_str + "\" -o \"" + out_str + "\"";
+        std::string cmd1 = "\"" + attoc_str + "\" \"" + atto_str + "\" -o \"" + out_str + "\"";
         if (run_cmd(cmd1) != 0) {
             build_state_ = BuildState::BuildFailed;
             return;

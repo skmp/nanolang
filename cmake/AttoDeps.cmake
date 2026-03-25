@@ -1,13 +1,13 @@
-# NanoDeps.cmake — Fetch SDL3 + imgui via FetchContent (non-Windows) or vcpkg (Windows)
+# AttoDeps.cmake — Fetch SDL3 + imgui via FetchContent (non-Windows) or vcpkg (Windows)
 #
 # Provides:
 #   SDL3::SDL3   — SDL3 target
-#   imgui_all    — imgui core + SDL3 backends (only if NANO_NEEDS_IMGUI is set)
+#   imgui_all    — imgui core + SDL3 backends (only if ATTO_NEEDS_IMGUI is set)
 
 if(WIN32)
     # On Windows, use vcpkg (user must set CMAKE_TOOLCHAIN_FILE)
     find_package(SDL3 CONFIG REQUIRED)
-    if(NANO_NEEDS_IMGUI)
+    if(ATTO_NEEDS_IMGUI)
         find_package(imgui CONFIG REQUIRED)
     endif()
 else()
@@ -25,7 +25,7 @@ else()
     set(SDL_TESTS OFF CACHE BOOL "" FORCE)
     FetchContent_MakeAvailable(SDL3)
 
-    if(NANO_NEEDS_IMGUI)
+    if(ATTO_NEEDS_IMGUI)
         FetchContent_Declare(imgui
             GIT_REPOSITORY https://github.com/ocornut/imgui.git
             GIT_TAG        v1.92.6

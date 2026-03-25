@@ -1,10 +1,10 @@
-#include "nanoruntime.h"
+#include "attoruntime.h"
 #include "imgui.h"
 #include <string>
 #include <vector>
 
-// ImGui FFI wrappers for nanolang
-// These match the signatures declared in nanostd/imgui.nano
+// ImGui FFI wrappers for attolang
+// These match the signatures declared in attostd/imgui.atto
 
 // Window management
 bool imgui_begin(std::string title) {
