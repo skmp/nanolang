@@ -208,6 +208,65 @@ static void draw_vbezier(ImDrawList* dl, ImVec2 from, ImVec2 to, ImU32 col, floa
     dl->AddBezierCubic(from, {from.x, from.y + dy}, {to.x, to.y - dy}, to, col, thickness * zoom);
 }
 
+// Sample a cubic bezier at parameter t
+static ImVec2 bezier_sample(ImVec2 p0, ImVec2 p1, ImVec2 p2, ImVec2 p3, float t) {
+    float u = 1.0f - t;
+    float uu = u * u, uuu = uu * u;
+    float tt = t * t, ttt = tt * t;
+    return {uuu*p0.x + 3*uu*t*p1.x + 3*u*tt*p2.x + ttt*p3.x,
+            uuu*p0.y + 3*uu*t*p1.y + 3*u*tt*p2.y + ttt*p3.y};
+}
+
+static void draw_dashed_bezier(ImDrawList* dl, ImVec2 p0, ImVec2 p1, ImVec2 p2, ImVec2 p3,
+                                ImU32 col, float thickness, float dash_len, float gap_len) {
+    const int samples = 64;
+    // Build polyline with arc-length parameterization
+    ImVec2 pts[samples + 1];
+    float lengths[samples + 1];
+    pts[0] = p0;
+    lengths[0] = 0;
+    for (int i = 1; i <= samples; i++) {
+        pts[i] = bezier_sample(p0, p1, p2, p3, (float)i / samples);
+        float dx = pts[i].x - pts[i-1].x, dy = pts[i].y - pts[i-1].y;
+        lengths[i] = lengths[i-1] + sqrtf(dx*dx + dy*dy);
+    }
+    float total = lengths[samples];
+    float cycle = dash_len + gap_len;
+
+    // Walk along the curve drawing dash segments
+    int seg = 0;
+    float dist = 0;
+    while (dist < total) {
+        float dash_start = dist;
+        float dash_end = std::min(dist + dash_len, total);
+        // Find segment indices for start and end
+        // Draw line segments between sampled points in the dash range
+        bool in_dash = false;
+        ImVec2 prev = {};
+        for (int i = 0; i <= samples; i++) {
+            if (lengths[i] >= dash_start && lengths[i] <= dash_end) {
+                if (!in_dash) {
+                    // Interpolate exact start point
+                    prev = pts[i];
+                    in_dash = true;
+                } else {
+                    dl->AddLine(prev, pts[i], col, thickness);
+                    prev = pts[i];
+                }
+            } else if (in_dash) {
+                break;
+            }
+        }
+        dist += cycle;
+    }
+}
+
+static void draw_dashed_vbezier(ImDrawList* dl, ImVec2 from, ImVec2 to, ImU32 col, float thickness, float zoom) {
+    float dy = std::max(std::abs(to.y - from.y) * 0.5f, 30.0f * zoom);
+    draw_dashed_bezier(dl, from, {from.x, from.y + dy}, {to.x, to.y - dy}, to,
+                       col, thickness * zoom, 8.0f * zoom, 4.0f * zoom);
+}
+
 bool FlowEditorWindow::init(const std::string& project_dir) {
     if (!win_.init("Flow Editor", 900, 600)) return false;
     project_dir_ = project_dir;
@@ -661,6 +720,24 @@ void FlowEditorWindow::draw_link(ImDrawList* dl, const FlowLink& link, ImVec2 or
     } else {
         draw_vbezier(dl, fp, tp, type_error ? col_error : COL_LINK, 2.5f, active().canvas_zoom);
     }
+
+    // Draw net name label at midpoint if the wire has a user-assigned name
+    if (!link.net_name.empty() && !link.auto_wire) {
+        float font_size = ImGui::GetFontSize() * active().canvas_zoom * 0.8f;
+        if (font_size > 5.0f) {
+            // Compute midpoint of the bezier (approximate with lerp)
+            ImVec2 mid = {(fp.x + tp.x) * 0.5f, (fp.y + tp.y) * 0.5f};
+            ImVec2 text_sz = ImGui::CalcTextSize(link.net_name.c_str());
+            float tw = text_sz.x * (font_size / ImGui::GetFontSize());
+            float th = text_sz.y * (font_size / ImGui::GetFontSize());
+            float cx = mid.x - tw * 0.5f;
+            float cy = mid.y - th * 0.5f;
+            // Background pill
+            dl->AddRectFilled({cx - 3, cy - 1}, {cx + tw + 3, cy + th + 1},
+                              IM_COL32(30, 30, 40, 200), 3.0f);
+            dl->AddText(nullptr, font_size, {cx, cy}, IM_COL32(180, 220, 255, 255), link.net_name.c_str());
+        }
+    }
 }
 
 void FlowEditorWindow::draw() {
@@ -875,7 +952,7 @@ void FlowEditorWindow::draw() {
         }
     }
     // --- Single click ---
-    else if (canvas_hovered && ImGui::IsMouseClicked(ImGuiMouseButton_Left)) {
+    else if (canvas_hovered && editing_link_ < 0 && ImGui::IsMouseClicked(ImGuiMouseButton_Left)) {
         if (editing_node_ >= 0) {
             if (creating_new_node_ && editing_node_ > 0) active().graph.remove_node(editing_node_);
             editing_node_ = -1;
@@ -908,12 +985,20 @@ void FlowEditorWindow::draw() {
                         dragging_node_ = -1;
                     }
                 } else {
-                    // Click empty space: start potential box select
-                    // If released without dragging: deselect (if selected) or create node
-                    box_selecting_ = true;
-                    box_select_start_ = mouse_pos;
-                    dragging_node_ = -1;
-                    dragging_selection_ = false;
+                    // Check if clicking a wire — if so, don't start box select
+                    int wire_hit = hit_test_link(mouse_pos, canvas_origin);
+                    if (wire_hit >= 0) {
+                        // Wire clicked — will be handled by link rename on mouse up
+                        dragging_node_ = -1;
+                        dragging_selection_ = false;
+                    } else {
+                        // Click empty space: start potential box select
+                        // If released without dragging: deselect (if selected) or create node
+                        box_selecting_ = true;
+                        box_select_start_ = mouse_pos;
+                        dragging_node_ = -1;
+                        dragging_selection_ = false;
+                    }
                 }
             }
         }
@@ -1343,7 +1428,7 @@ void FlowEditorWindow::draw() {
     }
 
     // --- Tooltips ---
-    if (canvas_hovered && editing_node_ < 0) {
+    if (canvas_hovered && editing_node_ < 0 && editing_link_ < 0) {
         if (!hovered_pin.pin_id.empty()) {
             // Pin tooltip
             for (auto& node : active().graph.nodes) {
@@ -1407,13 +1492,25 @@ void FlowEditorWindow::draw() {
 
                         ImGui::BeginTooltip();
                         ImGui::SetWindowFontScale(active().canvas_zoom);
+                        // Show net name prominently if it has one
+                        if (!link.net_name.empty()) {
+                            ImGui::TextColored({0.7f, 0.9f, 1.0f, 1.0f}, "%s", link.net_name.c_str());
+                        }
                         ImGui::TextUnformatted((from_label + " -> " + to_label).c_str());
                         ImGui::TextDisabled("%s -> %s", from_type_str.c_str(), to_type_str.c_str());
                         if (!link.error.empty())
                             ImGui::TextColored({1.0f, 0.2f, 0.2f, 1.0f}, "%s", link.error.c_str());
                         else if (type_err)
                             ImGui::TextColored({1.0f, 0.2f, 0.2f, 1.0f}, "Type mismatch!");
+                        ImGui::TextDisabled("Click to rename wire");
                         ImGui::EndTooltip();
+
+                        // Left-click on wire opens rename editor (on release)
+                        if (ImGui::IsMouseReleased(ImGuiMouseButton_Left)) {
+                            editing_link_ = link.id;
+                            link_edit_buf_ = link.net_name.empty() ? "$" : link.net_name;
+                            link_edit_just_opened_ = true;
+                        }
                     }
                     break;
                 }
@@ -1776,6 +1873,108 @@ void FlowEditorWindow::draw() {
             ImGui::End();
             ImGui::PopStyleVar(3);
         } // end of edit window block
+    }
+
+    // --- Wire name editing popup ---
+    if (editing_link_ >= 0) {
+        FlowLink* edit_link = nullptr;
+        for (auto& link : active().graph.links) {
+            if (link.id == editing_link_) { edit_link = &link; break; }
+        }
+        if (!edit_link) {
+            editing_link_ = -1;
+        } else {
+            // Position popup near the wire midpoint
+            ImVec2 fp = {}, tp = {};
+            for (auto& n : active().graph.nodes) {
+                for (auto& p : n.outputs) if (p->id == edit_link->from_pin) fp = get_pin_pos(n, *p, canvas_origin);
+                for (auto& p : n.nexts) if (p->id == edit_link->from_pin) fp = get_pin_pos(n, *p, canvas_origin);
+                if (n.lambda_grab.id == edit_link->from_pin) fp = get_pin_pos(n, n.lambda_grab, canvas_origin);
+                if (n.bang_pin.id == edit_link->from_pin) fp = get_pin_pos(n, n.bang_pin, canvas_origin);
+                for (auto& p : n.inputs) if (p->id == edit_link->to_pin) tp = get_pin_pos(n, *p, canvas_origin);
+                for (auto& p : n.triggers) if (p->id == edit_link->to_pin) tp = get_pin_pos(n, *p, canvas_origin);
+            }
+            ImVec2 mid = {(fp.x + tp.x) * 0.5f, (fp.y + tp.y) * 0.5f};
+
+            float text_w = ImGui::CalcTextSize(link_edit_buf_.c_str()).x * active().canvas_zoom + 40.0f * active().canvas_zoom;
+            float popup_w = std::max(200.0f * active().canvas_zoom, text_w);
+            ImGui::SetNextWindowPos({mid.x - popup_w * 0.5f, mid.y - 15.0f * active().canvas_zoom});
+            ImGui::SetNextWindowSize({popup_w, 0});
+            ImGui::PushStyleVar(ImGuiStyleVar_WindowPadding, {4 * active().canvas_zoom, 4 * active().canvas_zoom});
+            ImGui::Begin("##wire_rename", nullptr,
+                         ImGuiWindowFlags_NoTitleBar | ImGuiWindowFlags_NoResize |
+                         ImGuiWindowFlags_NoMove | ImGuiWindowFlags_AlwaysAutoResize |
+                         ImGuiWindowFlags_NoSavedSettings | ImGuiWindowFlags_NoScrollbar);
+            ImGui::SetWindowFontScale(active().canvas_zoom);
+
+            bool was_just_opened = link_edit_just_opened_;
+            if (link_edit_just_opened_) {
+                ImGui::SetKeyboardFocusHere();
+                link_edit_just_opened_ = false;
+            }
+
+            char buf[128];
+            strncpy(buf, link_edit_buf_.c_str(), sizeof(buf) - 1);
+            buf[sizeof(buf) - 1] = '\0';
+
+            bool committed = ImGui::InputText("##wire_name", buf, sizeof(buf),
+                                               ImGuiInputTextFlags_EnterReturnsTrue);
+            link_edit_buf_ = buf;
+
+            // Validate: must start with $, must be unique among net names
+            bool valid = true;
+            std::string error_msg;
+            std::string new_name = link_edit_buf_;
+            if (new_name.empty() || new_name[0] != '$') {
+                valid = false;
+                error_msg = "Must start with $";
+            } else if (new_name.size() < 2) {
+                valid = false;
+                error_msg = "Name too short";
+            } else {
+                // Check uniqueness: no other link with a different source pin should have this net name
+                for (auto& other : active().graph.links) {
+                    if (other.id == edit_link->id) continue;
+                    if (other.net_name == new_name && other.from_pin != edit_link->from_pin) {
+                        valid = false;
+                        error_msg = "Name already in use";
+                        break;
+                    }
+                }
+            }
+
+            if (!valid && !error_msg.empty()) {
+                ImGui::TextColored({1.0f, 0.3f, 0.3f, 1.0f}, "%s", error_msg.c_str());
+            }
+
+            if (committed && valid) {
+                // Update net name on this link AND all links from the same source pin
+                std::string old_from = edit_link->from_pin;
+                for (auto& link : active().graph.links) {
+                    if (link.from_pin == old_from) {
+                        link.net_name = new_name;
+                        link.auto_wire = false;
+                    }
+                }
+                editing_link_ = -1;
+                rebuild_all_inline_display(active().graph);
+                mark_dirty();
+            }
+
+            if (ImGui::IsKeyPressed(ImGuiKey_Escape)) {
+                editing_link_ = -1;
+            }
+
+            // Dismiss if clicked outside the rename window (skip first frame)
+            if (!was_just_opened &&
+                !ImGui::IsWindowHovered(ImGuiHoveredFlags_AllowWhenBlockedByActiveItem) &&
+                ImGui::IsMouseClicked(ImGuiMouseButton_Left)) {
+                editing_link_ = -1;
+            }
+
+            ImGui::End();
+            ImGui::PopStyleVar(1);
+        }
     }
 
     ImGui::EndChild(); // flow_canvas

@@ -261,8 +261,10 @@ static void migrate_v1_to_v2(FlowGraph& graph) {
             }
             if (!existing_net.empty()) {
                 link.net_name = existing_net;
+                link.auto_wire = true;
             } else {
                 link.net_name = source_node_id + "-" + pin_name;
+                link.auto_wire = true;
             }
         }
     }
@@ -613,6 +615,7 @@ static bool load_v2_stream(std::istream& f, FlowGraph& graph, const std::string&
                 for (auto& link : graph.links) {
                     if (link.id == link_id) {
                         link.net_name = net_name;
+                        link.auto_wire = (net_name.substr(0, 6) == "$auto-");
                         break;
                     }
                 }

@@ -126,6 +126,7 @@ struct FlowLink {
     std::string from_pin; // output pin id string (for serialization)
     std::string to_pin;   // input pin id string (for serialization)
     std::string net_name;  // named net this link belongs to (v2 format, e.g. "$my-signal")
+    bool auto_wire = false; // true for auto-generated nets (not shown in display)
     std::string error;    // non-empty if this link has a type error (set during inference)
     // Resolved pointers — populated by GraphIndex::rebuild(), not serialized
     FlowPin* from = nullptr;

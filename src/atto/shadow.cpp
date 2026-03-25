@@ -349,6 +349,32 @@ void rebuild_all_inline_display(FlowGraph& graph) {
         std::sort(infos.begin(), infos.end(), [](auto& a, auto& b) { return a.arg_index < b.arg_index; });
     }
 
+    // Helper: find the user-named net connected to a node's descriptor input pin
+    auto find_connected_net = [&](const FlowNode& node, const std::string& pin_name) -> std::string {
+        std::string pin_id = node.guid + "." + pin_name;
+        for (auto& link : graph.links) {
+            if (link.to_pin == pin_id && !link.net_name.empty() && !link.auto_wire) {
+                return link.net_name;
+            }
+        }
+        return "";
+    };
+
+    // Helper: find the node_id of a node connected via as_lambda to a given pin
+    auto find_connected_lambda_id = [&](const FlowNode& node, const std::string& pin_name) -> std::string {
+        std::string pin_id = node.guid + "." + pin_name;
+        for (auto& link : graph.links) {
+            if (link.to_pin != pin_id) continue;
+            // Find source node — the from_pin should be "guid.as_lambda"
+            for (auto& src : graph.nodes) {
+                if (src.lambda_grab.id == link.from_pin && !src.node_id.empty()) {
+                    return src.node_id;
+                }
+            }
+        }
+        return "";
+    };
+
     // Rebuild inline_display for all non-shadow nodes
     for (auto& node : graph.nodes) {
         if (node.shadow) continue;
@@ -374,8 +400,32 @@ void rebuild_all_inline_display(FlowGraph& graph) {
             for (auto& si : it->second)
                 tokens[si.arg_index] = si.expr;
 
+            // Substitute net names for shadow tokens connected via nets
+            auto* nt = find_node_type(node.type_id);
+            for (auto& si : it->second) {
+                if (si.arg_index < (int)tokens.size() && nt && nt->input_ports && si.arg_index < nt->inputs) {
+                    std::string pin_name = nt->input_ports[si.arg_index].name;
+                    std::string net = find_connected_net(node, pin_name);
+                    if (!net.empty()) {
+                        tokens[si.arg_index] = net;
+                    }
+                }
+            }
+
             for (auto& t : tokens) {
                 s += " " + t;
+            }
+
+            // Append lambda pin references (show $node-id for connected lambdas)
+            if (nt && nt->input_ports) {
+                for (int i = 0; i < nt->inputs; i++) {
+                    if (nt->input_ports[i].kind == PortKind::Lambda) {
+                        std::string lambda_id = find_connected_lambda_id(node, nt->input_ports[i].name);
+                        if (!lambda_id.empty()) {
+                            s += " " + lambda_id;
+                        }
+                    }
+                }
             }
         } else if (!node.args.empty()) {
             s += " " + node.args;

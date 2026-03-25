@@ -43,7 +43,7 @@ int main(int argc, char* argv[]) {
         }
     }
 
-    editor.shutdown();
+    editor.shutdown(); 
     SDL_Quit();
     return 0;
 }

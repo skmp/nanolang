@@ -293,7 +293,7 @@ id = "$auto-45df349a6ae05f56"
 type = "store!"
 args = ["$delay_line_size"]
 inputs = ["$auto-ddaf4497489a54c2-bang0", "$auto-45df349a6ae05f56_s1-out0"]
-outputs = ["$auto-45df349a6ae05f56-bang0"]
+outputs = ["$step2"]
 position = [785.327, 1265.73]
 
 [[node]]
@@ -411,9 +411,9 @@ position = [1284.42, 1561.27]
 id = "$auto-f79f6fb421f321f0"
 type = "store!"
 args = ["$klavie_down"]
-inputs = ["$auto-45df349a6ae05f56-bang0", "$auto-daa77173e91ec011-as_lambda"]
+inputs = ["$step2", "$auto-daa77173e91ec011-as_lambda"]
 outputs = ["$auto-f79f6fb421f321f0-bang0"]
-position = [1224.44, 1270.42]
+position = [1186.87, 1217.83]
 
 [[node]]
 id = "$auto-487ba455bf42a84c"
@@ -1183,7 +1183,7 @@ position = [1749.22, 1038.66]
 id = "$auto-7837ca36997a9a3d"
 type = "decl_var"
 inputs = ["", "$auto-7837ca36997a9a3d_s0-out0", "$auto-7837ca36997a9a3d_s1-out0"]
-position = [1419.58, 1130.03]
+position = [1412.31, 1178.21]
 
 [[node]]
 id = "$auto-7837ca36997a9a3d_s0"
@@ -1248,11 +1248,6 @@ shadow = true
 args = ["array<f32,48000>"]
 outputs = ["$auto-7837ca36997a9a3d_s1-out0"]
 position = [1060.74, 944.346]
-
-[[node]]
-id = "$auto-206413c1566d4d28"
-type = "decl_var"
-position = [1385.62, 980.6]
 
 [[node]]
 id = "$auto-960e1ea09eeca09e"

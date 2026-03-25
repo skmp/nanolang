@@ -130,6 +130,11 @@ private:
     bool creating_new_node_ = false;
     ImVec2 new_node_pos_;
 
+    // Link/wire name editing
+    int editing_link_ = -1;
+    std::string link_edit_buf_;
+    bool link_edit_just_opened_ = false;
+
     // Shadow pin filtering (rebuilt each frame before drawing)
     std::set<std::string> shadow_connected_pins_; // pin IDs connected from shadow nodes
 
