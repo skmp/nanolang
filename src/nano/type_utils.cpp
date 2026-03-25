@@ -1,8 +1,17 @@
 #include "type_utils.h"
 #include "node_types.h"
 #include "types.h"
+#include "expr.h"
 #include <sstream>
 #include <map>
+
+std::string get_decl_name(const FlowNode& node) {
+    if (!node.parsed_exprs.empty() && node.parsed_exprs[0] &&
+        node.parsed_exprs[0]->kind == ExprKind::SymbolRef)
+        return node.parsed_exprs[0]->symbol_name;
+    auto tokens = tokenize_args(node.args, false);
+    return tokens.empty() ? "" : tokens[0];
+}
 
 std::vector<TypeField> parse_type_fields(const FlowNode& type_node) {
     std::vector<TypeField> fields;
@@ -22,8 +31,7 @@ std::vector<TypeField> parse_type_fields(const FlowNode& type_node) {
 const FlowNode* find_type_node(const FlowGraph& graph, const std::string& type_name) {
     for (auto& n : graph.nodes) {
         if (n.type_id != NodeTypeID::DeclType) continue;
-        auto tokens = tokenize_args(n.args, false);
-        if (!tokens.empty() && tokens[0] == type_name) return &n;
+        if (get_decl_name(n) == type_name) return &n;
     }
     return nullptr;
 }
@@ -33,8 +41,7 @@ const FlowNode* find_event_node(const FlowGraph& graph, const std::string& event
     if (!name.empty() && name[0] == '~') name = name.substr(1);
     for (auto& n : graph.nodes) {
         if (n.type_id != NodeTypeID::DeclEvent) continue;
-        auto tokens = tokenize_args(n.args, false);
-        if (!tokens.empty() && tokens[0] == name) return &n;
+        if (get_decl_name(n) == name) return &n;
     }
     return nullptr;
 }

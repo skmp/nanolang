@@ -1,4 +1,5 @@
 #include "inference.h"
+#include "type_utils.h"
 
 std::vector<std::string> GraphInference::run(FlowGraph& graph) {
     std::vector<std::string> all_errors;
@@ -229,6 +230,8 @@ void GraphInference::build_registry(FlowGraph& graph) {
     registry.clear();
     for (auto& node : graph.nodes) {
         if (node.type_id != NodeTypeID::DeclType) continue;
+        std::string name = get_decl_name(node);
+        if (name.empty()) continue;
         auto tokens = tokenize_args(node.args, false);
         if (tokens.size() < 2) continue;
         std::string def;
@@ -239,15 +242,23 @@ void GraphInference::build_registry(FlowGraph& graph) {
         // Determine if this is a type alias, function type, or struct with fields
         int decl_class = classify_decl_type(tokens);
         if (decl_class == 0 || decl_class == 1) { // alias or function type
-            // Type alias (e.g. "osc_list list<osc_def>") or
-            // Function type (e.g. "gen_fn (id:u64) -> osc_res")
-            registry.register_type(tokens[0], def);
-        } else { 
+            registry.register_type(name, def);
+        } else {
             // Struct with fields — register as placeholder, fields validated separately
-            registry.register_type(tokens[0], "void");
+            registry.register_type(name, "void");
         }
     }
     registry.resolve_all();
+}
+
+// Helper: join tokens[start..] into a type string
+static std::string join_type_tokens(const std::vector<std::string>& tokens, size_t start) {
+    std::string type_str;
+    for (size_t i = start; i < tokens.size(); i++) {
+        if (!type_str.empty()) type_str += " ";
+        type_str += tokens[i];
+    }
+    return type_str;
 }
 
 void GraphInference::build_context(FlowGraph& graph) {
@@ -256,89 +267,86 @@ void GraphInference::build_context(FlowGraph& graph) {
 
     for (auto& node : graph.nodes) {
         if (node.type_id == NodeTypeID::DeclVar) {
-            // decl_var: register variable in var_types and symbol table
+            std::string name = get_decl_name(node);
+            if (name.empty()) continue;
             auto tokens = tokenize_args(node.args, false);
-            if (tokens.size() >= 2) {
-                // Join all tokens after the name as the type (handles "map<u32, f32>")
-                std::string type_str;
-                for (size_t i = 1; i < tokens.size(); i++) {
-                    if (!type_str.empty()) type_str += " ";
-                    type_str += tokens[i];
-                }
-                auto var_type = pool.intern(type_str);
-                ctx.var_types[tokens[0]] = var_type;
-                // Also register in symbol table
-                if (var_type) {
-                    auto ref_type = std::make_shared<TypeExpr>(*var_type);
-                    ref_type->category = TypeCategory::Reference;
-                    symbol_table.add(tokens[0], ref_type);
-                }
+            if (tokens.size() < 2) continue;
+            auto var_type = pool.intern(join_type_tokens(tokens, 1));
+            ctx.var_types[name] = var_type;
+            if (var_type) {
+                auto ref_type = std::make_shared<TypeExpr>(*var_type);
+                ref_type->category = TypeCategory::Reference;
+                symbol_table.add(name, ref_type);
             }
         }
     }
     // Register FFI functions as global variables with function types
     for (auto& node : graph.nodes) {
         if (node.type_id == NodeTypeID::Ffi) {
+            std::string name = get_decl_name(node);
             auto tokens = tokenize_args(node.args, false);
-            if (tokens.size() >= 2) {
-                std::string type_str;
-                for (size_t i = 1; i < tokens.size(); i++) {
-                    if (!type_str.empty()) type_str += " ";
-                    type_str += tokens[i];
-                }
-                auto fn_type = pool.intern(type_str);
+            if (!name.empty() && tokens.size() >= 2) {
+                auto fn_type = pool.intern(join_type_tokens(tokens, 1));
                 if (fn_type && fn_type->kind == TypeKind::Function) {
-                    ctx.var_types[tokens[0]] = fn_type;
-                    symbol_table.add(tokens[0], fn_type);
+                    ctx.var_types[name] = fn_type;
+                    symbol_table.add(name, fn_type);
                 } else {
-                    node.error = "ffi: type must be a function type (got " + type_str + ")";
+                    node.error = "ffi: type must be a function type (got " + join_type_tokens(tokens, 1) + ")";
                 }
             } else {
                 node.error = "ffi: requires <name> <function_type>";
             }
         }
         if (node.type_id == NodeTypeID::DeclImport) {
-            auto tokens = tokenize_args(node.args, false);
-            if (tokens.empty()) {
-                node.error = "decl_import: requires a path string (e.g. \"std/imgui\")";
+            // Extract path from parsed_exprs (string literal) or raw tokens
+            std::string path;
+            if (!node.parsed_exprs.empty() && node.parsed_exprs[0] &&
+                node.parsed_exprs[0]->kind == ExprKind::Literal &&
+                node.parsed_exprs[0]->literal_kind == LiteralKind::String) {
+                path = node.parsed_exprs[0]->string_value;
             } else {
-                // Strip quotes from string literal
-                std::string path = tokens[0];
+                auto tokens = tokenize_args(node.args, false);
+                if (tokens.empty()) {
+                    node.error = "decl_import: requires a path string (e.g. \"std/imgui\")";
+                    continue;
+                }
+                path = tokens[0];
                 if (path.size() >= 2 && path.front() == '"' && path.back() == '"')
                     path = path.substr(1, path.size() - 2);
-                if (path.substr(0, 4) != "std/") {
-                    node.error = "decl_import: only std/ imports are currently supported (got " + path + ")";
-                }
+            }
+            if (path.empty()) {
+                node.error = "decl_import: requires a path string (e.g. \"std/imgui\")";
+            } else if (path.substr(0, 4) != "std/") {
+                node.error = "decl_import: only std/ imports are currently supported (got " + path + ")";
             }
         }
     }
     for (auto& node : graph.nodes) {
         if (node.type_id != NodeTypeID::DeclType) continue;
+        std::string name = get_decl_name(node);
+        if (name.empty()) continue;
         auto tokens = tokenize_args(node.args, false);
         if (tokens.size() < 2) continue;
         auto fields = parse_type_fields(node);
         if (!fields.empty()) {
-            // Struct type with fields
             auto struct_type = std::make_shared<TypeExpr>();
             struct_type->kind = TypeKind::Struct;
             for (auto& f : fields) {
                 if (!f.resolved) f.resolved = pool.intern(f.type_name);
                 struct_type->fields.push_back({f.name, f.resolved});
             }
-            ctx.named_types[tokens[0]] = struct_type;
-            // Register in symbol table as type<T>
+            ctx.named_types[name] = struct_type;
             auto meta = std::make_shared<TypeExpr>();
             meta->kind = TypeKind::MetaType;
             meta->wrapped_type = struct_type;
-            symbol_table.add(tokens[0], meta);
+            symbol_table.add(name, meta);
         } else {
-            // Type alias or function type — register via registry
-            auto resolved = registry.parsed.count(tokens[0]) ? registry.parsed[tokens[0]] : nullptr;
+            auto resolved = registry.parsed.count(name) ? registry.parsed[name] : nullptr;
             if (resolved) {
                 auto meta = std::make_shared<TypeExpr>();
                 meta->kind = TypeKind::MetaType;
                 meta->wrapped_type = resolved;
-                symbol_table.add(tokens[0], meta);
+                symbol_table.add(name, meta);
             }
         }
     }
@@ -397,38 +405,42 @@ bool GraphInference::infer_expr_nodes(FlowGraph& graph) {
             NodeTypeID::Call, NodeTypeID::CallBang,
             NodeTypeID::Cast);
         if (!is_expr) {
-            // DeclVar is a declaration but needs output type inference
+            // DeclVar needs output type inference
             if (node.type_id == NodeTypeID::DeclVar) {
-                auto tokens = tokenize_args(node.args, false);
-                if (tokens.size() < 2) {
+                std::string name = get_decl_name(node);
+                if (name.empty()) {
                     if (!node.args.empty() && node.error.empty())
                         node.error = "decl_var requires: name type";
                     continue;
                 }
-                if (true) {
-                    std::string type_str;
-                    for (size_t i = 1; i < tokens.size(); i++) {
-                        if (!type_str.empty()) type_str += " ";
-                        type_str += tokens[i];
-                    }
-                    TypePtr var_type = pool.intern(type_str);
-                    if (var_type && !node.outputs.empty()) {
-                        if (!node.outputs[0]->resolved_type || node.outputs[0]->resolved_type->is_generic) {
-                            auto ref_type = std::make_shared<TypeExpr>(*var_type);
-                            ref_type->category = TypeCategory::Reference;
-                            node.outputs[0]->resolved_type = ref_type;
-                            changed = true;
-                        }
-                    }
-                    ctx.var_types[tokens[0]] = var_type;
+                auto it = ctx.var_types.find(name);
+                if (it == ctx.var_types.end()) {
+                    if (node.error.empty())
+                        node.error = "decl_var requires: name type";
+                    continue;
                 }
-                continue;
+                if (it != ctx.var_types.end() && it->second && !node.outputs.empty()) {
+                    if (!node.outputs[0]->resolved_type || node.outputs[0]->resolved_type->is_generic) {
+                        auto ref_type = std::make_shared<TypeExpr>(*(it->second));
+                        ref_type->category = TypeCategory::Reference;
+                        node.outputs[0]->resolved_type = ref_type;
+                        changed = true;
+                    }
+                }
+                // Fall through to expression inference for validation
             }
-            if (!nt || nt->is_declaration) continue;
+            // Other declaration nodes: skip if no parsed_exprs to infer
+            if (!nt) continue;
+            if (nt->is_declaration && node.type_id != NodeTypeID::DeclVar) {
+                if (node.parsed_exprs.empty()) continue;
+                // Fall through to expression inference for validation
+            }
+            if (!nt->is_declaration) {
             if (is_any_of(node.type_id, NodeTypeID::New, NodeTypeID::EventBang)) continue;
             if (node.type_id == NodeTypeID::Label) continue;
             if (node.args.empty() && !needs_type_propagation && !has_custom_output) continue;
             if (nt->inputs == 0 && !needs_type_propagation && !has_custom_output) continue;
+            } // end !nt->is_declaration
         }
 
         // Skip expression parsing for nodes whose args aren't expressions

@@ -13,6 +13,10 @@
 struct TypeField { std::string name; std::string type_name; TypePtr resolved = nullptr; };
 std::vector<TypeField> parse_type_fields(const FlowNode& type_node);
 
+// Extract the declaration name from a node's parsed_exprs (first SymbolRef),
+// falling back to tokenize_args if not available.
+std::string get_decl_name(const FlowNode& node);
+
 // Find a "decl_type" node by its name (first arg token) in the graph
 const FlowNode* find_type_node(const FlowGraph& graph, const std::string& type_name);
 

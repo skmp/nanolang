@@ -230,9 +230,7 @@ void FlowNode::parse_args() {
     bool is_expr = is_any_of(type_id, NodeTypeID::Expr, NodeTypeID::ExprBang);
     bool args_are_type = is_any_of(type_id, NodeTypeID::Cast, NodeTypeID::New);
     bool skip = is_any_of(type_id,
-        NodeTypeID::Void,
-        NodeTypeID::DeclType, NodeTypeID::DeclVar, NodeTypeID::DeclEvent,
-        NodeTypeID::DeclImport, NodeTypeID::Ffi, NodeTypeID::New,
+        NodeTypeID::Void, NodeTypeID::New,
         NodeTypeID::Decl, NodeTypeID::EventBang, NodeTypeID::Label);
 
     // Parse expression tokens
@@ -247,8 +245,9 @@ void FlowNode::parse_args() {
     // Note: $N:name annotations are NOT applied to pin.name (which is used for pin IDs).
     // The display name comes from the parsed expression and is resolved at display time.
 
-    // Compute inline metadata for non-expr, non-type-arg nodes
-    if (!is_expr && !args_are_type) {
+    // Compute inline metadata for non-expr, non-type-arg, non-declaration nodes
+    bool is_decl = nt && nt->is_declaration;
+    if (!is_expr && !args_are_type && !is_decl) {
         int di = nt ? nt->inputs : 0;
         auto info = compute_inline_args(args, di);
         inline_meta.num_inline_args = info.num_inline_args;

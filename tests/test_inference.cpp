@@ -3460,14 +3460,14 @@ TEST(call_partial_inline_creates_remaining_pins) {
 
 TEST(decl_import_std_ok) {
     GraphBuilder gb;
-    gb.add("i", "decl_import", "std/math");
+    gb.add("i", "decl_import", "\"std/math\"");
     gb.run_inference();
     ASSERT(gb.find("i")->error.empty());
 }
 
 TEST(decl_import_non_std_error) {
     GraphBuilder gb;
-    gb.add("i", "decl_import", "foo/bar");
+    gb.add("i", "decl_import", "\"foo/bar\"");
     gb.run_inference();
     ASSERT(!gb.find("i")->error.empty());
     ASSERT_CONTAINS(gb.find("i")->error, "std/");
@@ -5434,6 +5434,56 @@ TEST(literal_select_strips_literal) {
     ASSERT(n != nullptr);
     ASSERT(n->error.empty());
     ASSERT_TYPE(n->outputs[0].get(), "f32");
+}
+
+// ============================================================
+// Declaration nodes use expression parsing
+// ============================================================
+
+TEST(decl_var_has_parsed_exprs) {
+    GraphBuilder gb;
+    gb.add("dv", "decl_var", "myvar f32");
+    auto* n = gb.find("dv");
+    ASSERT(n != nullptr);
+    // parsed_exprs should contain the name and type tokens
+    ASSERT(n->parsed_exprs.size() >= 1);
+    ASSERT(n->parsed_exprs[0] != nullptr);
+    ASSERT_EQ(n->parsed_exprs[0]->kind, ExprKind::SymbolRef);
+    ASSERT_EQ(n->parsed_exprs[0]->symbol_name, "myvar");
+}
+
+TEST(decl_type_has_parsed_exprs) {
+    GraphBuilder gb;
+    gb.add("dt", "decl_type", "vec2 x:f32 y:f32");
+    auto* n = gb.find("dt");
+    ASSERT(n != nullptr);
+    ASSERT(n->parsed_exprs.size() >= 1);
+    ASSERT(n->parsed_exprs[0] != nullptr);
+    ASSERT_EQ(n->parsed_exprs[0]->kind, ExprKind::SymbolRef);
+    ASSERT_EQ(n->parsed_exprs[0]->symbol_name, "vec2");
+}
+
+TEST(decl_import_has_parsed_exprs) {
+    GraphBuilder gb;
+    gb.add("di", "decl_import", "\"std/imgui\"");
+    auto* n = gb.find("di");
+    ASSERT(n != nullptr);
+    ASSERT(n->parsed_exprs.size() >= 1);
+    ASSERT(n->parsed_exprs[0] != nullptr);
+    ASSERT_EQ(n->parsed_exprs[0]->kind, ExprKind::Literal);
+    ASSERT_EQ(n->parsed_exprs[0]->literal_kind, LiteralKind::String);
+    ASSERT_EQ(n->parsed_exprs[0]->string_value, "std/imgui");
+}
+
+TEST(ffi_has_parsed_exprs) {
+    GraphBuilder gb;
+    gb.add("ff", "ffi", "my_fn (x:f32)->f32");
+    auto* n = gb.find("ff");
+    ASSERT(n != nullptr);
+    ASSERT(n->parsed_exprs.size() >= 1);
+    ASSERT(n->parsed_exprs[0] != nullptr);
+    ASSERT_EQ(n->parsed_exprs[0]->kind, ExprKind::SymbolRef);
+    ASSERT_EQ(n->parsed_exprs[0]->symbol_name, "my_fn");
 }
 
 // ============================================================
