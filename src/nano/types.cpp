@@ -216,6 +216,10 @@ TypePtr TypeParser::parse() {
                     while (!eof() && (std::isdigit(peek()) || peek() == '.' || peek() == 'f'))
                         value_str += advance();
                     domain->literal_value = value_str;
+                } else if (peek() == '?') {
+                    // Unvalued literal: literal<T,?>
+                    advance();
+                    domain->is_unvalued_literal = true;
                 } else {
                     // Identifier value (symbol name, bool, etc.)
                     value_str = read_ident();

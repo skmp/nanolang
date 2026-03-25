@@ -5356,6 +5356,37 @@ TEST(literal_keyword_without_angle_errors) {
     ASSERT(!r.error.empty());
 }
 
+TEST(parse_unvalued_literal_string) {
+    std::string err;
+    auto t = parse_type("literal<string,?>", err);
+    ASSERT(t != nullptr);
+    ASSERT(err.empty());
+    ASSERT(t->is_unvalued_literal);
+    ASSERT(t->literal_value.empty());
+    ASSERT_EQ(type_to_string(t), "literal<string,?>");
+}
+
+TEST(parse_unvalued_literal_f32) {
+    std::string err;
+    auto t = parse_type("literal<f32,?>", err);
+    ASSERT(t != nullptr);
+    ASSERT(err.empty());
+    ASSERT(t->is_unvalued_literal);
+    ASSERT_EQ(type_to_string(t), "literal<f32,?>");
+}
+
+TEST(decl_import_pin_type) {
+    GraphBuilder gb;
+    gb.add("di", "decl_import", "\"std/imgui\"");
+    gb.run_inference();
+    auto* n = gb.find("di");
+    ASSERT(n != nullptr);
+    // The input pin should have type literal<string,?>
+    ASSERT(!n->inputs.empty());
+    ASSERT(n->inputs[0]->resolved_type != nullptr);
+    ASSERT_TYPE(n->inputs[0].get(), "literal<string,?>");
+}
+
 // ============================================================
 // Operations on literals produce runtime (non-literal) types
 // ============================================================

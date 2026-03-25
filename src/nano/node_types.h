@@ -97,6 +97,7 @@ static const PortDesc P_DECL_VAR_OUT[] = {{"ref", "reference to variable", PortK
 static const PortDesc P_DECL_TYPE_IN[] = {{"name", "type name (symbol)"}, {"type", "type definition"}};
 static const PortDesc P_DECL_TYPE_OUT[]= {{"type", "the declared type", PortKind::Data, "value"}};
 static const PortDesc P_DECL_SYM_IN[] = {{"name", "symbol name"}};
+static const PortDesc P_DECL_IMPORT_IN[] = {{"path", "module path", PortKind::Data, "literal<string,?>"}};
 static const PortDesc P_DECL_SYM_TYPE_IN[] = {{"name", "symbol name"}, {"type", "function type"}};
 static const PortDesc P_ITERATE_IN[] = {{"collection", "collection to iterate over", PortKind::Data, "collection"}, {"fn", "it=fn(it); while it!=end", PortKind::Lambda, "lambda"}};
 static const PortDesc P_LOCK_IN[]   = {{"mutex", "mutex to lock", PortKind::Data, "&mutex"}, {"fn", "body to execute under lock", PortKind::Lambda, "lambda"}};
@@ -115,7 +116,7 @@ static const NodeType NODE_TYPES[] = {
     {NodeTypeID::DeclVar,       "decl_var",   "Declare a variable",                  1,3, 1,1, false,true, false,true,  P_BANG_IN, P_DECL_VAR_IN, P_BANG_TRIG, P_DECL_VAR_OUT},
     {NodeTypeID::Decl,          "decl",       "Compile-time entry point",            0,0, 1,0, false,true, false,true,  nullptr, nullptr, P_BANG_TRIG, nullptr},
     {NodeTypeID::DeclEvent,     "decl_event", "Declare event: name fn_type",         1,2, 1,0, false,true, false,true,  P_BANG_IN, P_DECL_SYM_TYPE_IN, P_BANG_TRIG, nullptr},
-    {NodeTypeID::DeclImport,    "decl_import","Import module: \"std/module\"",          1,1, 1,0, false,true, false,true,  P_BANG_IN, P_DECL_SYM_IN, P_BANG_TRIG, nullptr},
+    {NodeTypeID::DeclImport,    "decl_import","Import module: \"std/module\"",          1,1, 1,0, false,true, false,true,  P_BANG_IN, P_DECL_IMPORT_IN, P_BANG_TRIG, nullptr},
     {NodeTypeID::Ffi,           "ffi",        "Declare external function: name type", 1,2, 1,0, false,true, false,true,  P_BANG_IN, P_DECL_SYM_TYPE_IN, P_BANG_TRIG, nullptr},
     {NodeTypeID::Call,          "call",       "Call function with arguments",         0,0, 0,0, false,false,true, false, nullptr, nullptr, nullptr, nullptr},
     {NodeTypeID::CallBang,      "call!",      "Call function with arguments (bang)",   1,0, 1,0, false,true, false,false, P_BANG_IN, nullptr, P_BANG_TRIG, nullptr},
