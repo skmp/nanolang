@@ -53,6 +53,7 @@ std::string reconstruct_args_str(const ParsedArgs2& args);
 // Named wire — one source, many destinations (weak refs to BuilderEntry, must be FlowNodeBuilder).
 struct NetBuilder {
     bool auto_wire = false;
+    bool is_the_unconnected = false;  // true for the special $unconnected sentinel
 
     BuilderEntryWeak source;
     std::vector<BuilderEntryWeak> destinations;
@@ -62,12 +63,16 @@ struct NetBuilder {
     void validate() const;
 };
 
+// Remap: $N → net mapping (from folded shadow inputs)
+using Remaps = std::vector<ArgNet2>;
+
 // A node under construction — holds structured parsed args instead of raw string.
 struct FlowNodeBuilder {
     NodeTypeID type_id = NodeTypeID::Unknown;
     std::shared_ptr<ParsedArgs2> parsed_args;
+    Remaps remaps;                // $N → net mapping (remaps[0] = net for $0, etc.)
     Vec2 position = {0, 0};
-    bool shadow = false;
+    bool shadow = false;          // only used during migration, must be false after folding
     std::string error;
 
     std::string args_str() const;
@@ -80,6 +85,9 @@ struct GraphBuilder {
     std::map<NodeId, BuilderEntryPtr> entries;
 
     FlowNodeBuilder& add_node(NodeId id, NodeTypeID type, std::shared_ptr<ParsedArgs2> args);
+
+    // Ensure the $unconnected sentinel net exists
+    void ensure_unconnected();
 
     std::pair<NodeId, BuilderEntryPtr> find_or_create_net(const NodeId& name, bool for_source = false);
 

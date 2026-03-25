@@ -201,6 +201,15 @@ FlowNodeBuilder& GraphBuilder::add_node(NodeId id, NodeTypeID type, std::shared_
     return nb;
 }
 
+void GraphBuilder::ensure_unconnected() {
+    if (entries.count("$unconnected")) return;
+    auto entry = std::make_shared<BuilderEntry>(NetBuilder{});
+    auto& net = std::get<NetBuilder>(*entry);
+    net.is_the_unconnected = true;
+    net.auto_wire = true;
+    entries["$unconnected"] = entry;
+}
+
 std::pair<NodeId, BuilderEntryPtr> GraphBuilder::find_or_create_net(const NodeId& name, bool for_source) {
     auto [id, ptr] = find_net(name); // throws if name exists as a node
     if (ptr) {
@@ -238,12 +247,14 @@ std::pair<NodeId, BuilderEntryPtr> GraphBuilder::find_net(const NodeId& name) {
 
 void GraphBuilder::compact() {
     for (auto it = entries.begin(); it != entries.end(); ) {
-        if (std::holds_alternative<NetBuilder>(*it->second) &&
-            std::get<NetBuilder>(*it->second).unused()) {
-            it = entries.erase(it);
-        } else {
-            ++it;
+        if (std::holds_alternative<NetBuilder>(*it->second)) {
+            auto& net = std::get<NetBuilder>(*it->second);
+            if (!net.is_the_unconnected && net.unused()) {
+                it = entries.erase(it);
+                continue;
+            }
         }
+        ++it;
     }
 }
 
@@ -322,6 +333,7 @@ Deserializer::ParseAttoResult Deserializer::parse_atto(std::istream& f) {
     }
 
     auto gb = std::make_shared<GraphBuilder>();
+    gb->ensure_unconnected();
 
     bool in_node = false;
     std::string cur_id, cur_type;
@@ -329,6 +341,9 @@ Deserializer::ParseAttoResult Deserializer::parse_atto(std::istream& f) {
     std::vector<std::string> cur_inputs, cur_outputs;
     float cur_x = 0, cur_y = 0;
     bool cur_shadow = false;
+
+    // Track shadow input nets for remap construction during folding
+    std::map<NodeId, std::vector<std::string>> shadow_input_nets; // shadow_id → input net names
 
     auto flush_node = [&]() {
         if (cur_type.empty()) {
@@ -343,6 +358,11 @@ Deserializer::ParseAttoResult Deserializer::parse_atto(std::istream& f) {
         auto& nb = parse_or_error(gb, cur_id, cur_type, cur_args);
         nb.position = {cur_x, cur_y};
         nb.shadow = cur_shadow;
+
+        // Save shadow input nets for later folding
+        if (cur_shadow) {
+            shadow_input_nets[cur_id] = cur_inputs;
+        }
 
         auto node_entry = gb->find(cur_id);
 
@@ -398,6 +418,87 @@ Deserializer::ParseAttoResult Deserializer::parse_atto(std::istream& f) {
         }
     }
     flush_node();
+
+    // ─── Fold shadow nodes into parents ───
+    auto unconnected_entry = gb->find("$unconnected");
+
+    // Collect shadow ids
+    std::vector<NodeId> shadow_ids;
+    for (auto& [id, entry] : gb->entries) {
+        if (!std::holds_alternative<FlowNodeBuilder>(*entry)) continue;
+        if (std::get<FlowNodeBuilder>(*entry).shadow)
+            shadow_ids.push_back(id);
+    }
+
+    for (auto& shadow_id : shadow_ids) {
+        // Extract parent id and arg index: "$auto-xyz_s0" → "$auto-xyz", 0
+        auto underscore_s = shadow_id.rfind("_s");
+        if (underscore_s == std::string::npos) continue;
+        std::string parent_id = shadow_id.substr(0, underscore_s);
+        int arg_index = std::stoi(shadow_id.substr(underscore_s + 2));
+
+        auto [_, parent_ptr] = gb->find_node(parent_id);
+        if (!parent_ptr) continue;
+        auto& parent = std::get<FlowNodeBuilder>(*parent_ptr);
+
+        auto shadow_ptr = gb->find(shadow_id);
+        if (!shadow_ptr) continue;
+        auto& shadow = std::get<FlowNodeBuilder>(*shadow_ptr);
+
+        // Insert shadow expression into parent's parsed_args at arg_index
+        if (parent.parsed_args) {
+            while ((int)parent.parsed_args->size() <= arg_index)
+                parent.parsed_args->push_back(ArgString2{""});
+            if (shadow.parsed_args && !shadow.parsed_args->empty())
+                (*parent.parsed_args)[arg_index] = (*shadow.parsed_args)[0];
+        }
+
+        // Build remaps from saved shadow input nets
+        auto sin_it = shadow_input_nets.find(shadow_id);
+        if (sin_it != shadow_input_nets.end()) {
+            auto& sin = sin_it->second;
+            // Shadow is an expr — no triggers, so inputs[i] maps directly to $i
+            for (int i = 0; i < (int)sin.size(); i++) {
+                // Ensure parent remaps is large enough
+                while ((int)parent.remaps.size() <= i)
+                    parent.remaps.push_back(ArgNet2{"$unconnected", unconnected_entry});
+
+                if (!sin[i].empty()) {
+                    auto net_ptr = gb->find(sin[i]);
+                    parent.remaps[i] = ArgNet2{sin[i], net_ptr};
+
+                    // Remove shadow from net's destinations, add parent instead
+                    if (net_ptr && std::holds_alternative<NetBuilder>(*net_ptr)) {
+                        auto& net = std::get<NetBuilder>(*net_ptr);
+                        // Remove shadow destinations
+                        auto& dests = net.destinations;
+                        dests.erase(
+                            std::remove_if(dests.begin(), dests.end(),
+                                [&](auto& w) { return w.lock() == shadow_ptr; }),
+                            dests.end());
+                        // Add parent as destination
+                        net.destinations.push_back(parent_ptr);
+                    }
+                }
+            }
+        }
+
+        // Remove nets where shadow is source (internal shadow→parent plumbing)
+        std::vector<NodeId> nets_to_remove;
+        for (auto& [net_id, net_entry] : gb->entries) {
+            if (!std::holds_alternative<NetBuilder>(*net_entry)) continue;
+            auto src = std::get<NetBuilder>(*net_entry).source.lock();
+            if (src == shadow_ptr)
+                nets_to_remove.push_back(net_id);
+        }
+        for (auto& nid : nets_to_remove)
+            gb->entries.erase(nid);
+
+        // Remove shadow from graph
+        gb->entries.erase(shadow_id);
+    }
+
+    gb->compact();
 
     return gb;
 }

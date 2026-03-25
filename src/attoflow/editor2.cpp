@@ -7,6 +7,7 @@
 #include <fstream>
 #include <sstream>
 #include <cstdio>
+#include <stdexcept>
 
 // ─── Constants ───
 
@@ -103,10 +104,12 @@ void Editor2Pane::draw() {
     // Clip
     dl->PushClipRect(canvas_p0, v2add(canvas_p0, canvas_sz), true);
 
-    // Draw nodes
+    // Draw nodes (skip shadows)
     for (auto& [id, entry] : gb_->entries) {
         if (std::holds_alternative<FlowNodeBuilder>(*entry)) {
-            draw_node(dl, id, std::get<FlowNodeBuilder>(*entry), canvas_origin);
+            auto& node = std::get<FlowNodeBuilder>(*entry);
+            if (node.shadow) throw std::logic_error("Editor2Pane: shadow nodes must be folded before rendering (id: " + id + ")");
+            draw_node(dl, id, node, canvas_origin);
         }
     }
 
