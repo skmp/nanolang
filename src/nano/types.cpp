@@ -18,6 +18,27 @@ TypePtr TypeParser::parse() {
         return parse_function(result->category);
     }
 
+    // Check for struct type: {field:type field:type ...}
+    if (peek() == '{') {
+        advance(); // consume '{'
+        auto st = std::make_shared<TypeExpr>();
+        st->kind = TypeKind::Struct;
+        st->category = result->category;
+        skip_ws();
+        while (peek() != '}' && !eof()) {
+            std::string field_name = read_ident();
+            if (field_name.empty()) { error = "Expected field name in struct type"; return nullptr; }
+            if (!expect(':')) return nullptr;
+            auto field_type = parse();
+            if (!field_type) return nullptr;
+            st->fields.push_back({field_name, field_type});
+            skip_ws();
+        }
+        if (st->fields.empty()) { error = "Struct type must have at least one field"; return nullptr; }
+        if (!expect('}')) return nullptr;
+        return st;
+    }
+
     std::string name = read_ident();
     if (name.empty()) { error = "Expected type name at position " + std::to_string(pos); return nullptr; }
 
@@ -127,6 +148,32 @@ TypePtr TypeParser::parse() {
         if (!result->value_type) return nullptr;
         skip_ws();
         if (!expect('>')) return nullptr;
+        return result;
+    }
+
+    // type<T> — metatype
+    if (name == "type") {
+        skip_ws();
+        if (peek() == '<') {
+            advance();
+            auto inner = parse();
+            if (!inner) return nullptr;
+            skip_ws();
+            if (!expect('>')) return nullptr;
+            result->kind = TypeKind::MetaType;
+            result->wrapped_type = inner;
+            return result;
+        }
+        // bare "type" without <> is a named type reference
+    }
+
+    // symbol / undefined_symbol as type names
+    if (name == "symbol") {
+        result->kind = TypeKind::Symbol;
+        return result;
+    }
+    if (name == "undefined_symbol") {
+        result->kind = TypeKind::UndefinedSymbol;
         return result;
     }
 
@@ -281,6 +328,12 @@ bool TypeRegistry::check_refs(const TypePtr& t, std::set<std::string>& visited, 
         for (auto& arg : t->func_args)
             if (!check_refs(arg.type, visited, error)) return false;
         return t->return_type ? check_refs(t->return_type, visited, error) : true;
+    case TypeKind::Struct:
+        for (auto& f : t->fields)
+            if (!check_refs(f.type, visited, error)) return false;
+        return true;
+    case TypeKind::MetaType:
+        return t->wrapped_type ? check_refs(t->wrapped_type, visited, error) : true;
     default:
         return true;
     }
@@ -358,6 +411,12 @@ std::string type_to_string(const TypePtr& t) {
         s += "}";
         return s;
     }
+    case TypeKind::Symbol:
+        return prefix + "symbol<" + t->symbol_name + ">";
+    case TypeKind::UndefinedSymbol:
+        return prefix + "undefined_symbol<" + t->symbol_name + ">";
+    case TypeKind::MetaType:
+        return prefix + "type<" + type_to_string(t->wrapped_type) + ">";
     }
     return "?";
 }
@@ -426,6 +485,11 @@ bool types_compatible(const TypePtr& from, const TypePtr& to) {
             if (!types_compatible(from->fields[i].type, to->fields[i].type)) return false;
         }
         return true;
+    case TypeKind::Symbol:
+    case TypeKind::UndefinedSymbol:
+        return from->kind == to->kind && from->symbol_name == to->symbol_name;
+    case TypeKind::MetaType:
+        return types_compatible(from->wrapped_type, to->wrapped_type);
     }
     return false;
 }
@@ -459,6 +523,9 @@ TypePool::TypePool() {
     t_bang = std::make_shared<TypeExpr>();
     t_bang->kind = TypeKind::Function;
     t_bang->return_type = t_void;
+
+    t_symbol = mk(TypeKind::Symbol);
+    t_undefined_symbol = mk(TypeKind::UndefinedSymbol);
 
     cache["void"] = t_void; cache["bool"] = t_bool; cache["string"] = t_string; cache["mutex"] = t_mutex;
     cache["u8"] = t_u8; cache["s8"] = t_s8;

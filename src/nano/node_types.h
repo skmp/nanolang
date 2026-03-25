@@ -14,7 +14,7 @@ enum class NodeTypeID : uint8_t {
     Discard,        // 7
     DeclType,       // 8
     DeclVar,        // 9
-    DeclLocal,      // 10
+    Decl,           // 10 — compile-time entry point (was DeclLocal)
     DeclEvent,      // 11
     DeclImport,     // 12
     Ffi,            // 13
@@ -92,7 +92,12 @@ static const PortDesc P_ERASE_IN[]   = {{"target", "collection to erase from", P
 static const PortDesc P_COND_IN[]    = {{"condition", "boolean condition", PortKind::Data, "bool"}};
 static const PortDesc P_COND_BANG[]  = {{"next", "fires after true/false completes", PortKind::Data, "bang"}, {"true", "fires when condition is true", PortKind::Data, "bang"}, {"false", "fires when condition is false", PortKind::Data, "bang"}};
 static const PortDesc P_SELECT_IN[]  = {{"condition", "boolean selector", PortKind::Data, "bool"}, {"if_true", "value when true", PortKind::Data, "value"}, {"if_false", "value when false", PortKind::Data, "value"}};
-static const PortDesc P_LOCAL_IN[]   = {{"name", "variable name"}, {"type", "variable type"}};
+static const PortDesc P_DECL_VAR_IN[]  = {{"name", "variable name (symbol)"}, {"type", "variable type"}, {"init", "initial value (optional)", PortKind::Data, "value"}};
+static const PortDesc P_DECL_VAR_OUT[] = {{"ref", "reference to variable", PortKind::Data, "value"}};
+static const PortDesc P_DECL_TYPE_IN[] = {{"name", "type name (symbol)"}, {"type", "type definition"}};
+static const PortDesc P_DECL_TYPE_OUT[]= {{"type", "the declared type", PortKind::Data, "value"}};
+static const PortDesc P_DECL_SYM_IN[] = {{"name", "symbol name"}};
+static const PortDesc P_DECL_SYM_TYPE_IN[] = {{"name", "symbol name"}, {"type", "function type"}};
 static const PortDesc P_ITERATE_IN[] = {{"collection", "collection to iterate over", PortKind::Data, "collection"}, {"fn", "it=fn(it); while it!=end", PortKind::Lambda, "lambda"}};
 static const PortDesc P_LOCK_IN[]   = {{"mutex", "mutex to lock", PortKind::Data, "&mutex"}, {"fn", "body to execute under lock", PortKind::Lambda, "lambda"}};
 static const PortDesc P_RESIZE_IN[] = {{"target", "vector to resize", PortKind::Data, "value"}, {"size", "new size", PortKind::Data, "s32"}};
@@ -106,12 +111,12 @@ static const NodeType NODE_TYPES[] = {
     {NodeTypeID::Void,          "void",       "Void result (no-op)",                 0,0, 0,1, false,false,true, false, nullptr, nullptr, nullptr, P_RESULT},
     {NodeTypeID::DiscardBang,   "discard!",   "Discard value, pass bang",             1,1, 1,0, false,true, false,false, P_BANG_IN, P_VALUE, P_BANG_TRIG, nullptr},
     {NodeTypeID::Discard,       "discard",    "Discard input values",               0,1, 0,0, false,false,true, false, nullptr, P_VALUE, nullptr, nullptr},
-    {NodeTypeID::DeclType,      "decl_type",  "Declare a type",                      0,0, 0,0, false,false,false,true,  nullptr, nullptr, nullptr, nullptr},
-    {NodeTypeID::DeclVar,       "decl_var",   "Declare a variable",                  0,0, 0,0, false,false,false,true,  nullptr, nullptr, nullptr, nullptr},
-    {NodeTypeID::DeclLocal,     "decl_local", "Declare local: name type",            1,2, 1,1, false,true, false,false, P_BANG_IN, P_LOCAL_IN, P_BANG_TRIG, P_RESULT},
-    {NodeTypeID::DeclEvent,     "decl_event", "Declare event: name fn_type|(args)->ret", 0,0, 0,0, false,false,false,true, nullptr, nullptr, nullptr, nullptr},
-    {NodeTypeID::DeclImport,    "decl_import","Import namespace: std/<module>",       0,0, 0,0, false,false,false,true, nullptr, nullptr, nullptr, nullptr},
-    {NodeTypeID::Ffi,           "ffi",        "Declare external function: name type", 0,0, 0,0, false,false,false,true, nullptr, nullptr, nullptr, nullptr},
+    {NodeTypeID::DeclType,      "decl_type",  "Declare a type",                      1,2, 1,1, false,true, false,true,  P_BANG_IN, P_DECL_TYPE_IN, P_BANG_TRIG, P_DECL_TYPE_OUT},
+    {NodeTypeID::DeclVar,       "decl_var",   "Declare a variable",                  1,3, 1,1, false,true, false,true,  P_BANG_IN, P_DECL_VAR_IN, P_BANG_TRIG, P_DECL_VAR_OUT},
+    {NodeTypeID::Decl,          "decl",       "Compile-time entry point",            0,0, 1,0, false,true, false,true,  nullptr, nullptr, P_BANG_TRIG, nullptr},
+    {NodeTypeID::DeclEvent,     "decl_event", "Declare event: name fn_type",         1,2, 1,0, false,true, false,true,  P_BANG_IN, P_DECL_SYM_TYPE_IN, P_BANG_TRIG, nullptr},
+    {NodeTypeID::DeclImport,    "decl_import","Import namespace: std::module",        1,1, 1,0, false,true, false,true,  P_BANG_IN, P_DECL_SYM_IN, P_BANG_TRIG, nullptr},
+    {NodeTypeID::Ffi,           "ffi",        "Declare external function: name type", 1,2, 1,0, false,true, false,true,  P_BANG_IN, P_DECL_SYM_TYPE_IN, P_BANG_TRIG, nullptr},
     {NodeTypeID::Call,          "call",       "Call function with arguments",         0,0, 0,0, false,false,true, false, nullptr, nullptr, nullptr, nullptr},
     {NodeTypeID::CallBang,      "call!",      "Call function with arguments (bang)",   1,0, 1,0, false,true, false,false, P_BANG_IN, nullptr, P_BANG_TRIG, nullptr},
     {NodeTypeID::Erase,         "erase",      "Erase from collection",               0,2, 0,1, false,false,false,false, nullptr, P_ERASE_IN, nullptr, P_RESULT},

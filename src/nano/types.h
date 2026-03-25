@@ -40,6 +40,9 @@ enum class TypeKind {
     Tensor,     // tensor<Vt>
     Function,   // (arg:type ...) -> ret
     Struct,     // inline struct (fields from decl_type)
+    Symbol,     // compile-time symbol (defined in symbol table)
+    UndefinedSymbol, // compile-time symbol (not yet in symbol table)
+    MetaType,   // type<T> — a type as a first-class compile-time value
 };
 
 // Scalar subtypes
@@ -107,6 +110,12 @@ struct TypeExpr {
 
     // Struct fields (from decl_type)
     std::vector<FuncArg> fields; // reuse FuncArg as name:type pair
+
+    // Symbol name (for Symbol/UndefinedSymbol kinds)
+    std::string symbol_name;
+
+    // MetaType: the wrapped type T in type<T>
+    TypePtr wrapped_type;
 };
 
 // Type parser
@@ -265,6 +274,8 @@ struct TypePool {
     TypePtr t_float_literal; // unresolved float literal (is_generic, defaults to f64)
     TypePtr t_unknown;       // completely unresolved (is_generic)
     TypePtr t_bang;          // () -> void (bang type)
+    TypePtr t_symbol;        // base symbol type
+    TypePtr t_undefined_symbol; // base undefined symbol type
 
     std::map<std::string, TypePtr> cache;
 

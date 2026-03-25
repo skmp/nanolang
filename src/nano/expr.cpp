@@ -1,4 +1,5 @@
 #include "expr.h"
+#include "symbol_table.h"
 
 // --- ExprTokenizer::next() ---
 
@@ -20,8 +21,8 @@ ExprToken ExprTokenizer::next() {
         ExprToken t; t.kind = ExprTokenKind::String; t.text = val; return t;
     }
 
-    // & as reference operator (when not followed by digit = not a pin ref)
-    if (c == '&' && (pos + 1 >= src.size() || !std::isdigit(src[pos + 1]))) {
+    // & is always the reference operator now (no longer a pin sigil)
+    if (c == '&') {
         advance();
         return {ExprTokenKind::Ampersand, "&"};
     }
@@ -47,14 +48,12 @@ ExprToken ExprTokenizer::next() {
             return t;
         }
         if (sigil == '$' && !eof() && (std::isalpha(peek()) || peek() == '_')) {
-            // Variable ref: $name — return as PinRef with index=-1, parser will handle
+            // $name is no longer valid — only $N (numeric pin refs) are allowed.
+            // Variables are accessed as bare symbols.
             std::string name;
             while (!eof() && (std::isalnum(peek()) || peek() == '_')) name += advance();
-            ExprToken t;
-            t.kind = ExprTokenKind::PinRef;
-            t.pin_ref = {'$', -1, name};
-            t.text = "$" + name;
-            return t;
+            error = "$" + name + " is invalid — use bare name '" + name + "' instead of '$" + name + "'";
+            return {ExprTokenKind::Error, "$" + name};
         }
         // Standalone sigil — error
         error = std::string("Unexpected sigil '") + sigil + "' at position " + std::to_string(pos - 1);
@@ -102,6 +101,10 @@ ExprToken ExprTokenizer::next() {
         return t;
     }
 
+    // Braces
+    if (c == '{') { advance(); return {ExprTokenKind::LBrace, "{"}; }
+    if (c == '}') { advance(); return {ExprTokenKind::RBrace, "}"}; }
+
     // Two-character operators
     if (c == '=' && peek2() == '=') { advance(); advance(); return {ExprTokenKind::Eq, "=="}; }
     if (c == '!' && peek2() == '=') { advance(); advance(); return {ExprTokenKind::Ne, "!="}; }
@@ -126,7 +129,9 @@ ExprToken ExprTokenizer::next() {
     case ']': return {ExprTokenKind::RBrack, "]"};
     case '(': return {ExprTokenKind::LParen, "("};
     case ')': return {ExprTokenKind::RParen, ")"};
-    case ':': return {ExprTokenKind::Colon, ":"};
+    case ':':
+        if (!eof() && peek() == ':') { advance(); return {ExprTokenKind::ColonColon, "::"}; }
+        return {ExprTokenKind::Colon, ":"};
     case '?': return {ExprTokenKind::Question, "?"};
     case ',': return {ExprTokenKind::Comma, ","};
     default:
@@ -298,16 +303,32 @@ ExprPtr ExprParser::parse_postfix() {
                 left = node;
             }
         }
+        else if (check(ExprTokenKind::ColonColon)) {
+            // Namespace access: a::b
+            advance();
+            if (!check(ExprTokenKind::Ident)) {
+                if (error.empty()) error = "Expected identifier after '::'";
+                return left;
+            }
+            auto node = make_expr(ExprKind::NamespaceAccess);
+            node->field_name = current.text; // reuse field_name for the right-hand name
+            node->children = {left};
+            advance();
+            left = node;
+        }
         else if (check(ExprTokenKind::LParen)) {
             // Function/lambda call
             advance();
             auto node = make_expr(ExprKind::FuncCall);
             node->children.push_back(left); // children[0] = callee
-            // If callee is a simple ident, check for builtin
-            if (left->kind == ExprKind::VarRef) {
+            // If callee is a symbol ref, record the name and check for builtin
+            if (left->kind == ExprKind::SymbolRef) {
+                node->func_name = left->symbol_name;
+                node->builtin = lookup_builtin(left->symbol_name);
+            } else if (left->kind == ExprKind::VarRef) {
+                // Legacy path for $name() calls
                 node->func_name = left->var_name;
                 node->builtin = lookup_builtin(left->var_name);
-                // Replace callee — it's a named call, not a var deref
             }
             if (!check(ExprTokenKind::RParen)) {
                 node->children.push_back(parse_expr());
@@ -369,20 +390,20 @@ ExprPtr ExprParser::parse_primary() {
         return node;
     }
 
-    // Identifier: could be builtin name used as value, bool literal, or just a name
+    // Identifier: symbol reference (resolved via symbol table during inference)
     if (check(ExprTokenKind::Ident)) {
         std::string name = current.text;
-        if (name == "true" || name == "false") {
-            auto node = make_expr(ExprKind::BoolLiteral);
-            node->bool_value = (name == "true");
-            advance();
-            return node;
-        }
-        // Treat as a var ref (for function names, field access will build on this)
-        auto node = make_expr(ExprKind::VarRef);
+        auto node = make_expr(ExprKind::SymbolRef);
+        node->symbol_name = name;
+        // Also set var_name for backward compat with inference code that checks VarRef
         node->var_name = name;
         advance();
         return node;
+    }
+
+    // Struct literal or struct type: { ... }
+    if (check(ExprTokenKind::LBrace)) {
+        return parse_struct_expr();
     }
 
     // Parenthesized expression
@@ -396,6 +417,65 @@ ExprPtr ExprParser::parse_primary() {
     if (error.empty())
         error = "Unexpected token: '" + current.text + "'";
     return make_expr(ExprKind::IntLiteral); // dummy
+}
+
+ExprPtr ExprParser::parse_struct_expr() {
+    // Called when current token is LBrace
+    advance(); // consume '{'
+
+    if (check(ExprTokenKind::RBrace)) {
+        if (error.empty()) error = "Empty struct literal/type";
+        advance();
+        return make_expr(ExprKind::StructLiteral); // dummy
+    }
+
+    // Parse first field to determine if this is a literal (commas) or type (spaces)
+    // Both start with: ident ':' ...
+    // We'll parse all fields, then decide based on whether we see commas
+    struct PendingField {
+        std::string name;
+        ExprPtr value;
+    };
+    std::vector<PendingField> fields;
+    bool has_comma = false;
+
+    while (!check(ExprTokenKind::RBrace) && !check(ExprTokenKind::Eof)) {
+        if (!check(ExprTokenKind::Ident)) {
+            if (error.empty()) error = "Expected field name in struct";
+            return make_expr(ExprKind::StructLiteral);
+        }
+        std::string field_name = current.text;
+        advance();
+        if (!expect(ExprTokenKind::Colon)) return make_expr(ExprKind::StructLiteral);
+
+        auto value = parse_expr();
+        fields.push_back({field_name, value});
+
+        if (check(ExprTokenKind::Comma)) {
+            has_comma = true;
+            advance();
+        }
+    }
+    expect(ExprTokenKind::RBrace);
+
+    if (has_comma) {
+        // Struct literal: {name:value, name:value, ...}
+        auto node = make_expr(ExprKind::StructLiteral);
+        for (auto& f : fields) {
+            node->struct_field_names.push_back(f.name);
+            node->children.push_back(f.value);
+        }
+        return node;
+    } else {
+        // Struct type: {name:type name:type ...}
+        // The "values" are actually type expressions parsed as expressions
+        auto node = make_expr(ExprKind::StructType);
+        for (auto& f : fields) {
+            node->struct_field_names.push_back(f.name);
+            node->children.push_back(f.value);
+        }
+        return node;
+    }
 }
 
 BuiltinFunc ExprParser::lookup_builtin(const std::string& name) {
@@ -509,10 +589,11 @@ void clear_expr_types(const ExprPtr& expr) {
 bool is_lvalue(const ExprPtr& e) {
     if (!e) return false;
     switch (e->kind) {
-    case ExprKind::VarRef:    return true;  // $name
-    case ExprKind::PinRef:    return true;  // $N
+    case ExprKind::VarRef:      return true;  // $name (legacy)
+    case ExprKind::SymbolRef:   return true;  // bare name (resolves to variable)
+    case ExprKind::PinRef:      return true;  // $N
     case ExprKind::FieldAccess: return is_lvalue(e->children[0]); // lvalue.field
-    case ExprKind::Index:     return is_lvalue(e->children[0]); // lvalue[expr]
+    case ExprKind::Index:       return is_lvalue(e->children[0]); // lvalue[expr]
     default: return false;
     }
 }
@@ -566,6 +647,41 @@ std::string expr_to_string(const ExprPtr& e) {
         return "&" + expr_to_string(e->children[0]);
     case ExprKind::Deref:
         return "*" + expr_to_string(e->children[0]);
+    case ExprKind::Literal: {
+        switch (e->literal_kind) {
+        case LiteralKind::Integer:
+        case LiteralKind::Unsigned:
+        case LiteralKind::Signed:
+            return std::to_string(e->int_value);
+        case LiteralKind::F32: return std::to_string(e->float_value) + "f";
+        case LiteralKind::F64: return std::to_string(e->float_value);
+        case LiteralKind::String: return "\"" + e->string_value + "\"";
+        case LiteralKind::Bool: return e->bool_value ? "true" : "false";
+        }
+        return "?literal";
+    }
+    case ExprKind::SymbolRef:
+        return e->symbol_name;
+    case ExprKind::StructLiteral: {
+        std::string s = "{";
+        for (size_t i = 0; i < e->struct_field_names.size(); i++) {
+            if (i > 0) s += ", ";
+            s += e->struct_field_names[i] + ": " + expr_to_string(e->children[i]);
+        }
+        s += "}";
+        return s;
+    }
+    case ExprKind::StructType: {
+        std::string s = "{";
+        for (size_t i = 0; i < e->struct_field_names.size(); i++) {
+            if (i > 0) s += " ";
+            s += e->struct_field_names[i] + ":" + expr_to_string(e->children[i]);
+        }
+        s += "}";
+        return s;
+    }
+    case ExprKind::NamespaceAccess:
+        return expr_to_string(e->children[0]) + "::" + e->field_name;
     }
     return "?";
 }
@@ -693,6 +809,29 @@ TypePtr TypeInferenceContext::infer(const ExprPtr& expr) {
         }
         break;
     }
+
+    case ExprKind::SymbolRef:
+        result = [&]() -> TypePtr {
+            // 1. Declared variables (var_types from decl_var)
+            auto vit = var_types.find(expr->symbol_name);
+            if (vit != var_types.end()) return vit->second;
+            // 2. Symbol table (builtins + declarations)
+            if (symbol_table) {
+                auto* e = symbol_table->lookup(expr->symbol_name);
+                if (e) return e->decay_type;
+            }
+            add_error("Unknown identifier: " + expr->symbol_name);
+            return pool.t_unknown;
+        }();
+        break;
+
+    case ExprKind::Literal:
+    case ExprKind::StructLiteral:
+    case ExprKind::StructType:
+    case ExprKind::NamespaceAccess:
+        // These will be fully implemented in Phase 5 (inference pipeline)
+        result = pool.t_unknown;
+        break;
 
     case ExprKind::UnaryMinus: {
         auto operand = resolve_type(infer(expr->children[0]));
@@ -850,6 +989,7 @@ TypePtr TypeInferenceContext::infer(const ExprPtr& expr) {
     if (expr->resolved_type && expr->resolved_type->category == TypeCategory::Reference) {
         bool is_lvalue_kind = (expr->kind == ExprKind::PinRef ||
                                expr->kind == ExprKind::VarRef ||
+                               expr->kind == ExprKind::SymbolRef ||
                                expr->kind == ExprKind::FieldAccess ||
                                expr->kind == ExprKind::Index ||
                                expr->kind == ExprKind::Ref);
@@ -970,8 +1110,8 @@ TypePtr TypeInferenceContext::infer_ref(const ExprPtr& expr) {
     // Only valid forms: &$name, &$name[expr]
     // Invalid: &$name.field, &$name[expr].field, &literal, &(expr), etc.
 
-    if (inner->kind == ExprKind::VarRef) {
-        // &$name → reference to variable
+    if (inner->kind == ExprKind::VarRef || inner->kind == ExprKind::SymbolRef) {
+        // &name → reference to variable
         auto var_type = infer(inner);
         if (var_type && !var_type->is_generic) {
             auto ref_type = std::make_shared<TypeExpr>(*var_type);

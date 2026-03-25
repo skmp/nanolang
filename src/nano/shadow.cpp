@@ -7,7 +7,7 @@
 
 static bool skip_shadow(NodeTypeID id) {
     return is_any_of(id,
-        NodeTypeID::DeclType, NodeTypeID::DeclVar, NodeTypeID::DeclLocal,
+        NodeTypeID::DeclType, NodeTypeID::DeclVar, NodeTypeID::Decl,
         NodeTypeID::DeclEvent, NodeTypeID::DeclImport, NodeTypeID::Ffi,
         NodeTypeID::New, NodeTypeID::EventBang, NodeTypeID::Cast,
         NodeTypeID::Label, NodeTypeID::Deref,

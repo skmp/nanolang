@@ -4,17 +4,119 @@
 
 ### Value Categories
 
-A value in NanoProg has a **category** indicated by a prefix sigil:
+A value in NanoProg has a **category**:
 
-| Sigil | Category   | Description                         |
-|-------|-----------|--------------------------------------|
-| `%`   | Data      | Plain value                          |
-| `&`   | Reference | Reference to a value                 |
-| `^`   | Iterator  | Iterator into a container            |
-| `@`   | Lambda    | Callable function reference          |
-| `#`   | Enum      | Enumeration value                    |
-| `!`   | Bang      | Trigger signal (no data)             |
-| `~`   | Event     | Event source                         |
+| Category   | Description                         |
+|-----------|--------------------------------------|
+| Data      | Plain value                          |
+| Reference | Reference to a value (`&T`)          |
+| Iterator  | Iterator into a container (`^T`)     |
+| Lambda    | Callable function reference          |
+| Enum      | Enumeration value                    |
+| Bang      | Trigger signal (no data)             |
+| Event     | Event source                         |
+
+Value categories are part of the type system but are not indicated by prefix sigils during access. The only prefix syntax retained is `$N` for pin references in expressions (see [Input References](#input-references)).
+
+### Literal Type
+
+`literal<T, V>` is a unified compile-time value type, parameterized by a type domain `T` and a compile-time value `V`. All compile-time constants — numbers, booleans, strings, symbols, and types — are represented as literals.
+
+| Expression | Type | Decays to |
+|---|---|---|
+| `0` | `literal<unsigned<?>, 0>` | Concrete unsigned type from context |
+| `-1` | `literal<signed<?>, -1>` | Concrete signed type from context |
+| `42` | `literal<integer<?>, 42>` | Concrete integer type from context |
+| `3.14f` | `literal<f32, 3.14>` | `f32` |
+| `3.14` | `literal<f64, 3.14>` | `f64` |
+| `true` | `literal<symbol, true>` | `bool` (via symbol table) |
+| `false` | `literal<symbol, false>` | `bool` (via symbol table) |
+| `"hello"` | `literal<string, "hello">` | `string` |
+| `sin` | `literal<symbol, sin>` | `(float<T:?>) -> float<T>` (via symbol table) |
+| `pi` | `literal<symbol, pi>` | `float<?>` (via symbol table) |
+| `f32` | `literal<symbol, f32>` | `type<f32>` (via symbol table) |
+| `vector` | `literal<symbol, vector>` | `type<vector<?>>` (via symbol table) |
+| `myvar` | `literal<undefined_symbol, myvar>` | Resolved by context or errors on evaluation |
+
+Literals are compile-time only values. They must be resolved (decayed) before codegen. An unresolved literal at codegen time is a compile error.
+
+#### Literal Decay
+
+Literals decay to their resolved types when used in a typed context:
+
+- `literal<unsigned<?>, 0>` in a context expecting `u32` → decays to `u32` (value 0)
+- `literal<symbol, sin>` in a call context → decays to `(f32) -> f32` (or `(f64) -> f64` depending on context)
+- `literal<symbol, pi>` in a context expecting `f32` → decays to `f32` (value 3.14159...)
+
+Integer literals coerce to `f32` or `f64` from context, but only if the value can be represented exactly (f32: |v| <= 2^24 = 16777216, f64: |v| <= 2^53). Values that exceed these limits produce an error.
+
+### Symbol Types
+
+There are two symbol types used within `literal<T, V>`:
+
+- **`symbol`** — A defined symbol found in the symbol table. Has a known decay type.
+- **`undefined_symbol`** — A bare identifier not (yet) in the symbol table. Valid to pass around at compile time (e.g., as a name input to `decl_var`). Errors if something tries to **evaluate** it (emit runtime code).
+
+#### Symbol Table
+
+The symbol table maps symbol names to their meanings. It is populated by:
+
+1. **Built-in entries** (predefined):
+
+| Symbol | Decays to |
+|--------|-----------|
+| `sin` | `(float<T:?>) -> float<T>` |
+| `cos` | `(float<T:?>) -> float<T>` |
+| `pow` | `(float<T:?>, float<T>) -> float<T>` or `(literal<integer, 2>, unsigned<T:?>) -> unsigned<T>` |
+| `exp` | `(float<T:?>) -> float<T>` |
+| `log` | `(float<T:?>) -> float<T>` |
+| `or` | `(integer<T:?>, integer<T>) -> integer<T>` |
+| `xor` | `(integer<T:?>, integer<T>) -> integer<T>` |
+| `and` | `(integer<T:?>, integer<T>) -> integer<T>` |
+| `not` | `(integer<T:?>) -> integer<T>` |
+| `mod` | `(numeric<T:?>, numeric<T>) -> numeric<T>` |
+| `rand` | `(numeric<T:?>, numeric<T>) -> numeric<T>` |
+| `pi` | `float<?>` (value 3.14159265358979323846) |
+| `e` | `float<?>` (value 2.71828182845904523536) |
+| `tau` | `float<?>` (value 6.28318530717958647692) |
+| `true` | `bool` |
+| `false` | `bool` |
+| `f32` | `type<f32>` |
+| `f64` | `type<f64>` |
+| `u8` | `type<u8>` |
+| `u16` | `type<u16>` |
+| `u32` | `type<u32>` |
+| `u64` | `type<u64>` |
+| `s8` | `type<s8>` |
+| `s16` | `type<s16>` |
+| `s32` | `type<s32>` |
+| `s64` | `type<s64>` |
+| `bool` | `type<bool>` |
+| `string` | `type<string>` |
+| `void` | `type<void>` |
+| `mutex` | `type<mutex>` |
+| `vector` | `type<vector<?>>` |
+| `map` | `type<map<?, ?>>` |
+| `set` | `type<set<?>>` |
+| `list` | `type<list<?>>` |
+| `queue` | `type<queue<?>>` |
+| `ordered_map` | `type<ordered_map<?, ?>>` |
+| `ordered_set` | `type<ordered_set<?>>` |
+| `array` | `type<array<?, ...>>` |
+| `tensor` | `type<tensor<?>>` |
+
+2. **Declaration nodes** — `decl_type`, `decl_var`, `decl_import`, `decl_event`, `ffi` add entries during the compile-time phase.
+
+An `undefined_symbol` is promoted to `symbol` when a declaration node adds it to the table.
+
+### Namespace Operator
+
+The `::` operator is used for namespace access within symbol names:
+
+- `std::imgui::Button` — nested namespace lookup
+- `mymodule::MyType` — module-qualified symbol
+
+`.` is always field access on values. `::` is always namespace resolution on symbols. The two never overlap.
 
 ### Scalar Types
 
@@ -40,7 +142,6 @@ A value in NanoProg has a **category** indicated by a prefix sigil:
 | integer    | signed ∪ unsigned              | All integer types            |
 | float      | `f32`, `f64`                   | Floating-point types         |
 | numeric    | integer ∪ float                | All numeric types            |
-| literal    | any typed literal value        | Compile-time constant value  |
 
 These categories are generic type constructors and can be parameterized:
 
@@ -71,6 +172,8 @@ Named generics express constraints across arguments and return types. For exampl
 | `bool`   | Boolean (true/false), 1-bit logical value      |
 | `string` | UTF-8 string, first-class value type           |
 | `mutex`  | Mutual exclusion lock (non-copyable, reference-only) |
+| `symbol` | Symbolic name, compile-time only               |
+| `type<T>`| Type as a first-class compile-time value       |
 
 ### Container Types
 
@@ -116,66 +219,173 @@ tensor<Vt>
 
 Like array but dimensions are determined at runtime.
 
-### Function Types
+### Type Expressions
+
+Type expressions are syntactically distinct from value expressions. The parser can always determine whether an expression is a type or a value.
+
+#### Function Types
 
 ```
-(argname:type anotherarg:type) -> return_type
+(argname:type anotherarg:type)->return_type
 ```
 
-Arguments are named with `name:type` pairs. Return type follows `->`.
-`void` is a valid return type (no return value).
+Identified by the `->` token. Arguments are named with `name:type` pairs (space-separated). Return type follows `->`. `void` is a valid return type.
 
-Example: `(x:f32 y:f32) -> f32`
+Example: `(x:f32 y:f32)->f32`
+
+#### Struct Types
+
+Struct types use `{}` with space-separated `name:type` fields:
+
+```
+{field1:type1 field2:type2 ...}
+```
+
+Example: `{x:f32 y:f32}`, `{gen:gen_fn stop:stop_fn p:f32 pstep:f32 a:f32 astep:f32}`
+
+Struct types must have at least one field.
+
+#### Struct Literals
+
+Struct literals also use `{}` but with **comma-separated** `name:value` pairs:
+
+```
+{field1:value1, field2:value2, ...}
+```
+
+Example: `{x: 1.0f, y: 2.0f}`
+
+The comma is the disambiguator: commas = runtime struct literal, spaces only = type definition.
+
+Struct literals produce a value of an **anonymous struct type**. The type is inferred from the field names and value types. To construct a named type from a struct literal, use the type constructor explicitly:
+
+```
+osc_def({gen: $0, stop: $1, p: 440.0f, pstep: 0.0f, a: 1.0f, astep: 0.0f})
+```
+
+Both positional and named construction are supported:
+- `osc_def($0, $1, 440.0f, 0.0f, 1.0f, 0.0f)` — positional, arguments match field order
+- `osc_def({gen: $0, stop: $1, p: 440.0f, ...})` — named fields via struct literal
+
+#### Type Construction (Calling Types)
+
+Any `type<T>` value can be called to construct a value of that type:
+
+- **Named struct types:** `osc_def(gen_val, stop_val, 440.0f, 0.0f, 1.0f, 0.0f)` — positional arguments matching field order.
+- **Scalar types:** `f32(42)` — casts the argument to `f32`. `string(123)` — converts to string.
+- **Container types:** `vector<f32>(1.0f, 2.0f, 3.0f)` — constructs with initial elements (future).
+
+This is a regular function call on a symbol that decays to `type<T>`. The call operator on `type<T>` decays to the appropriate constructor function. This replaces the need for dedicated `new`, `cast`, and `str` nodes.
+
+#### Parameterized Types
+
+Types can be parameterized with `<>`:
+
+```
+vector<f32>
+map<u64, osc_def>
+array<f32, 4, 4>
+```
+
+#### Type Aliases
+
+A `decl_type` with a symbol and a single type argument (no `{}`) is a type alias:
+
+```
+decl_type gen_fn (x:f32)->f32
+```
 
 ### Named Types (Type Declarations)
 
-Types can be named using `decl_type`:
+Types can be declared using `decl_type` (see [Declaration Nodes](#declaration-nodes-compile-time)):
 
 ```
-decl_type type_name field1:type1 field2:type2 ...
+decl_type osc_def {gen:gen_fn stop:stop_fn p:f32 pstep:f32 a:f32 astep:f32}
 ```
 
 Named types can be used anywhere a type is expected.
 Circular type references are not allowed.
 
-**Struct types must have at least one field.** A `decl_type` with a single token after the name and no `:` is a type alias. A `decl_type` with `(` as the second token is a function type. Any other `decl_type` is a struct and must contain at least one `name:type` field.
+`decl_type` adds the type name to the symbol table mapping to `type<T>`. When called, the type decays to a constructor function with positional arguments matching the struct's field order.
 
-Example:
-```
-decl_type osc_def gen:gen_fn stop:stop_fn p:f32 pstep:f32 a:f32 astep:f32
-```
+## Compile-Time and Runtime Phases
+
+NanoProg has two distinct execution phases with separate bang chains:
+
+### Compile-Time Phase
+
+The compile-time phase establishes the symbol table and type definitions. It is driven by the `decl` node, which is the compile-time entry point (at most one per graph). The `decl` node's bang output chains to declaration nodes (`decl_type`, `decl_var`, `decl_import`, `decl_event`, `ffi`).
+
+Compile-time bang chains:
+- Only connect declaration nodes
+- Only pass around compile-time values: literals, symbols, types
+- No runtime evaluation or side effects
+- Establish the symbol table before any runtime code executes
+
+The declaration order is explicit — determined by the bang chain. Symbols must be declared before they are referenced by downstream nodes.
+
+### Runtime Phase
+
+The runtime phase is event-driven, starting from event nodes (`event!`, `on_key_down!`, etc.). Runtime bang chains execute imperative code: storing values, iterating, branching, calling functions.
+
+`decl_var` on a runtime bang chain declares a **local variable** scoped to that execution path (see below).
+
+The two phases never cross — no bang wire from a compile-time node to a runtime node or vice versa.
 
 ## Node Types
 
-### Declaration Nodes
+### Declaration Nodes (Compile-Time)
 
-These are structural — they define types and variables but have no runtime pins.
+These nodes live on the compile-time bang chain rooted at `decl`. They define types, variables, and imports. All declaration nodes take a bang input and produce a bang output.
 
-- `decl_type <name> <fields...>` — Declare a named type
-- `decl_var <name> <type>` — Declare a global variable (name must not start with `$`)
-- `decl_local <name> <type> <initial_value>` — Declare a local variable (bang in + bang out, no side bang). Declared on the execution path where the input bang arrives, passes bang through. Name must not start with `$`. Type must be valid. Initial value must be compatible with the type. Output pin is `&type` (a reference to the local). The variable is registered for downstream `$name` references.
-- `decl_event <name> <fn_type>` — Declare an event with a function signature
-- `decl_import <path>` — Import declarations from a module. Only `std/` prefix is supported (resolves to `nanostd/<module>.nano`). Non-`std/` paths are reserved for future package/local lib support.
-- `ffi <name> <fn_type>` — Declare an external (FFI) function. The type must be a function type. Registers the function as a global callable via `$name`. In codegen, emits an `extern` declaration.
+- **`decl`** — Compile-time entry point. At most one per graph. No inputs. Outputs: bang. Starts the compile-time bang chain.
+
+- **`decl_type <name> <type>`** — Declare a named type.
+  - Inputs: bang, symbol (name), type (a struct type `{...}`, function type `(...)->T`, or existing type for aliasing)
+  - Outputs: bang, `type<T>` (the declared type)
+  - The symbol input is an `undefined_symbol` that gets added to the symbol table.
+  - The `type<T>` output can be wired directly to other nodes that need the type (e.g., `decl_var`, `new`).
+
+- **`decl_var <name> <type> [initial_value]`** — Declare a variable.
+  - Inputs: bang, symbol (name), type, optional initial value
+  - Outputs: bang, `&T` (reference to the variable)
+  - On the **compile-time** bang chain: declares a **global** variable.
+  - On a **runtime** bang chain: declares a **local** variable scoped to the execution path.
+  - Initial value is optional. If omitted, the variable is default/zero-initialized.
+  - The symbol is added to the symbol table, mapping to `&T`.
+
+- **`decl_event <name> <fn_type>`** — Declare an event with a function signature.
+  - Inputs: bang, symbol (name), type (must be a function type with void return)
+  - Outputs: bang
+
+- **`decl_import <module>`** — Import declarations from a module.
+  - Inputs: bang, symbol (module path, e.g., `std::imgui`)
+  - Outputs: bang
+  - Populates the symbol table with all exported symbols from the module.
+
+- **`ffi <name> <fn_type>`** — Declare an external (FFI) function.
+  - Inputs: bang, symbol (name), type (must be a function type)
+  - Outputs: bang
+  - Registers the function in the symbol table. In codegen, emits an `extern` declaration.
 
 #### Available Standard Modules
 
 | Module | Import | Description |
 |--------|--------|-------------|
-| ImGui  | `decl_import std/imgui` | ImGui bindings — window management, text, buttons, sliders, trees, tables, popups, plotting |
+| ImGui  | `decl_import std::imgui` | ImGui bindings — window management, text, buttons, sliders, trees, tables, popups, plotting |
 
 ### Expression Nodes
 
-- `expr <expression>` — Evaluate expression, inputs from `$N` refs
+- `expr <expression>` — Evaluate expression, inputs from `$N` refs. This is the universal expression node. Type construction (`osc_def($0, $1, ...)`), type casting (`f32($0)`), and string conversion (`string($0)`) are all regular expressions using type constructor calls.
 - `select <cond> <if_true> <if_false>` — Select value by boolean condition. Condition must be `bool`. Both branches must have compatible types.
-- `new <type_name>` — Instantiate a declared type
+- `new <type>` — Visual sugar for type construction. `new osc_def` with input pins is equivalent to `expr osc_def($0, $1, ...)`. Takes a `type<T>` input and creates input pins for each field/argument.
+- `str <value>` — Visual sugar for `expr string($0)`. Input is any type, output is always `string`.
+- `cast <dest_type>` — Visual sugar for `expr T($0)`. Takes a `type<T>` and a value input, outputs `T`.
 - `dup <value>` — Pass through (duplicate) a value
 - `erase <collection> <key>` — Erase from collection (no bangs). Same validation rules as `erase!`. Returns an iterator pointing to the next element.
 - `next <iterator>` — Advance an iterator to the next element. Input must be a container iterator. Returns the same iterator type, advanced by one position. Equivalent to `std::next(it)` in C++.
-- `str <value>` — Convert a value to `string`. Input is any type, output is always `string`. Codegen emits `std::to_string(value)`.
-- `cast <dest_type>` — Cast a value to a different type. Currently only supports `array<T,N>` → `vector<T>` conversions. The dest type is specified as the node's arg (e.g. `cast vector<f32>`). Output type is always the dest type. Codegen emits `vector<T>(src.begin(), src.end())`.
 - `lock <mutex> <fn>` — Execute lambda while holding mutex lock. Mutex auto-decays to reference. Lambda takes no args: `() -> T`. If T is non-void, produces a data output. The node's post_bang fires **inside** the lock scope (all chained operations run under the lock).
-- `call <fn> [args...]` — Call a function. First arg is the function reference (`$name`). Input pins are dynamically created from the function's argument list. Output pin created from return type (omitted if void). Has lambda handle and post_bang (side bang).
+- `call <fn> [args...]` — Call a function. First arg is the function reference. Input pins are dynamically created from the function's argument list. Output pin created from return type (omitted if void). Has lambda handle and post_bang (side bang).
 
 ### Bang Nodes (postfixed with `!`)
 
@@ -202,21 +412,21 @@ Nodes with input or output bangs:
   | scalar `T` | `(&T) -> void` | Runs once |
 - `lock! <mutex> <fn>` — Execute lambda while holding mutex lock (bang in + bang out). Mutex auto-decays to reference. Lambda takes no args: `() -> T`. If T is non-void, produces a data output. Bang output fires **after** the lock is released.
 - `call! <fn> [args...]` — Call a function (bang in + bang out). Same as `call` but with explicit bang control flow. Input/output pins dynamically created from function signature.
-- `event! ~<name>` — Event source. Name must be prefixed with `~`. Outputs derived from `decl_event` function args. Return type must be void.
-- `resize! <collection> <size>` — Resize a vector (bang in + bang out). First arg is the target vector (`$name`), second arg is the new size (integer). If the size arg is not `u64`, a `static_cast<size_t>()` is emitted.
+- `event! <name>` — Event source. Name is a symbol referencing a declared event. Outputs derived from `decl_event` function args. Return type must be void.
+- `resize! <collection> <size>` — Resize a vector (bang in + bang out). First arg is the target vector, second arg is the new size (integer). If the size arg is not `u64`, a `static_cast<size_t>()` is emitted.
 - `output_mix! <value>` — Mix into audio output (bang in)
 - `on_key_down!` — Klavier key press event
 - `on_key_up!` — Klavier key release event
 
 ## Inline Expressions
 
-All non-expr nodes support **inline expressions** in their arguments. Each space-separated arg token replaces the corresponding descriptor input. If an arg is an inline expression (a literal, variable reference, or complex expression), that input slot is "filled" and does not require a pin connection. Only `$N`/`@N` references within inline expressions create actual input pins.
+All non-declaration nodes support **inline expressions** in their arguments. Each space-separated arg token replaces the corresponding descriptor input. If an arg is an inline expression (a literal, symbol, or complex expression), that input slot is "filled" and does not require a pin connection. Only `$N` references within inline expressions create actual input pins.
 
 ### Rules
 
 1. Each arg token (space-separated, respecting parentheses and quotes) maps to a descriptor input left-to-right
 2. The number of arg tokens must not exceed the node's descriptor input count (error otherwise)
-3. `$N` references within inline args create input pins; `$name` variable references do not
+3. `$N` references within inline args create input pins; symbol references (bare names) do not
 4. Pin indices must be contiguous starting from 0 — gaps (e.g. `$0` and `$2` without `$1`) are errors
 5. Descriptor inputs beyond the number of inline args remain as pin connections
 
@@ -225,20 +435,12 @@ All non-expr nodes support **inline expressions** in their arguments. Each space
 | Node text | Pins | Explanation |
 |-----------|------|-------------|
 | `store!` | target, value | No inline args — both inputs are pins |
-| `store! $oscs` | value | target filled by `$oscs` (variable ref) |
-| `store! $oscs 42` | (none) | Both filled inline |
-| `store! $oscs $0` | $0 | target = variable, value = pin $0 |
+| `store! oscs` | value | target filled by symbol `oscs` (resolves via symbol table to `&T`) |
+| `store! oscs 42` | (none) | Both filled inline |
+| `store! oscs $0` | $0 | target = symbol, value = pin $0 |
 | `store! $1 $0` | $0, $1 | Both inline but reference pins |
 | `store! $0 $1 $2` | error | Too many args (store! takes 2) |
 | `store! $0 $2` | error | Missing pin $1 |
-
-### Nodes that do NOT support inline expressions
-
-- Declaration nodes (`decl_type`, `decl_var`, `decl_local`, `decl_event`) — args are type/field definitions
-- `new` — args are type names
-- `cast` — args are type names
-- `event!` — args are event names
-- `label` — args are display text
 
 ## Expression Language
 
@@ -256,17 +458,17 @@ Expressions appear in `expr` nodes (and inline in other node args). They operate
 
 **Parentheses:** `(subexpr)` — grouping, arbitrary nesting
 
-**Reference operator:** `&expr` — creates a reference or iterator. Top-level only (cannot appear inside other expressions like `$0 + &$name`).
+**Reference operator:** `&expr` — creates a reference or iterator. Top-level only (cannot appear inside other expressions like `$0 + &myvar`).
 
 | Form | Result |
 |------|--------|
-| `&$name` | `&T` — reference to the variable's type |
-| `&$name[expr]` on `vector<V>` | `vector_iterator<V>` |
-| `&$name[expr]` on `map<K,V>` | `map_iterator<K,V>` |
-| `&$name[expr]` on `ordered_map<K,V>` | `ordered_map_iterator<K,V>` |
-| `&$name[expr]` on array/tensor | Error — cannot reference array/tensor elements |
-| `&$name.field` | Error — cannot reference fields |
-| `&$name[expr].field` | Error — not allowed |
+| `&name` | `&T` — reference to the variable's type |
+| `&name[expr]` on `vector<V>` | `vector_iterator<V>` |
+| `&name[expr]` on `map<K,V>` | `map_iterator<K,V>` |
+| `&name[expr]` on `ordered_map<K,V>` | `ordered_map_iterator<K,V>` |
+| `&name[expr]` on array/tensor | Error — cannot reference array/tensor elements |
+| `&name.field` | Error — cannot reference fields |
+| `&name[expr].field` | Error — not allowed |
 | `&(expr)`, `&literal` | Error — can only reference variables or indexed containers |
 
 **Indexing:** `expr[expr]` — index into a collection. Supported types and return values:
@@ -284,17 +486,17 @@ Not indexable: `list`, `queue`, `set`, `ordered_set` (use iterators or `?[]` ins
 
 **Query indexing:** `expr?[expr]` — returns `bool`: `true` if the index/key exists, `false` otherwise. Supported on: `map`, `ordered_map`, `set`, `ordered_set`. Not supported on `vector`, `list`, `queue`, `array`, `tensor`.
 
-**Slice:** `$var[start:end]` — pythonic slice semantics (negative indices wrap from end). `start` and `end` must be the same type. Supports array manipulation (see below).
+**Slice:** `var[start:end]` — pythonic slice semantics (negative indices wrap from end). `start` and `end` must be the same type. Supports array manipulation (see below).
 
 **Field access:** `.field` — universal field/member access. Works on:
 
-- **Struct/named types:** access declared fields (e.g. `$pos.x` where `pos : vec2`)
-- **Non-map iterators** (`vector_iterator<V>`, `list_iterator<V>`, `set_iterator<V>`, `ordered_set_iterator<V>`): auto-dereference to the value type. Fields of `V` are accessed directly (e.g. `$it.p` where `it : vector_iterator<osc_def>` accesses `osc_def.p`).
+- **Struct/named types:** access declared fields (e.g. `pos.x` where `pos : vec2`)
+- **Non-map iterators** (`vector_iterator<V>`, `list_iterator<V>`, `set_iterator<V>`, `ordered_set_iterator<V>`): auto-dereference to the value type. Fields of `V` are accessed directly (e.g. `$0.p` where `$0 : vector_iterator<osc_def>` accesses `osc_def.p`).
 - **Map iterators** (`map_iterator<K,V>`, `ordered_map_iterator<K,V>`): have `.key` (returns `K`) and `.value` (returns `V`). No auto-dereference — use `.value.field` to access value fields.
 
-**String concatenation:** `string + string` — the `+` operator concatenates two strings. Both operands must be `string`. To concatenate a non-string value, convert it first with `str`.
+**Namespace access:** `::` — namespace resolution on symbols. `std::imgui::Button` resolves to a symbol in the `std::imgui` namespace. Never used for field access.
 
-**Logical/bitwise (function-call syntax only):** `or(a,b)`, `xor(a,b)`, `and(a,b)`, `not(a)`, `mod(a,b)` — these are **not** infix operators, only callable as functions. Operate on integer types (`u8`/`s8`/`u16`/`s16`/`u32`/`s32`/`u64`/`s64`).
+**String concatenation:** `string + string` — the `+` operator concatenates two strings. Both operands must be `string`. To concatenate a non-string value, convert it first with `str`.
 
 ### Operator Precedence (highest to lowest)
 
@@ -309,74 +511,33 @@ Not indexable: `list`, `queue`, `set`, `ordered_set` (use iterators or `?[]` ins
 | 7         | `<`, `>`, `<=`, `>=`, `<=>`   | Left          |
 | 8         | `==`, `!=`                    | Left          |
 
-Note: `or`, `and`, `xor`, `not`, `mod` are functions, not operators — they do not appear in the precedence table.
+Note: `or`, `and`, `xor`, `not`, `mod` are symbols that decay to functions — they do not appear in the precedence table.
 
-### Built-in Functions
+### Function Calls
 
-Called as `fn(arg1, arg2, ...)`. All built-ins are generic — the return type is resolved from context and the input types follow.
+Any expression that resolves to a callable type can be called: `expr(arg1, arg2, ...)`. This includes:
 
-| Function | Returns (constraint)  | Inputs (derived from return type) |
-|----------|-----------------------|-----------------------------------|
-| `sin`    | `f32`/`f64`           | 1 arg, same as return             |
-| `cos`    | `f32`/`f64`           | 1 arg, same as return             |
-| `pow`    | `f32`/`f64`/unsigned integer | float: 2 args, same as return. integer: base must be literal `2`, exponent is unsigned integer |
-| `exp`    | `f32`/`f64`           | 1 arg, same as return             |
-| `log`    | `f32`/`f64`           | 1 arg, same as return             |
-| `or`     | integer               | 2 args, same as return            |
-| `xor`    | integer               | 2 args, same as return            |
-| `and`    | integer               | 2 args, same as return            |
-| `not`    | integer               | 1 arg, same as return             |
-| `mod`    | numeric               | 2 args, same as return            |
-| `rand`   | numeric               | 2 args (min, max), same as return |
+- **Symbols that decay to functions:** `sin($0)`, `rand(0, 100)`
+- **Pin references to lambdas:** `$0($1)`
+- **Symbols connected via wires:** `expr sin` outputs `literal<symbol, sin>`, which can be wired to another node's `$0` input, then called as `$0($1)` — equivalent to `sin($1)`.
 
-`rand(min, max)` — returns a uniformly distributed random number in `[min, max]`. Both args must be the same numeric type. Returns `f32`/`f64` (using `std::uniform_real_distribution`) or integer (using `std::uniform_int_distribution`) depending on the resolved output type.
+The result type is the return type of the function/lambda. Bangs are lambdas that take no arguments and return void.
 
-All built-in functions have generic return types — their concrete output type is determined by the context they appear in. When a built-in call appears in a typed context (e.g. assigned to an `f32` field), the expected type backpropagates through the call to resolve both the output type and any generic literal arguments. For example, `store! $0.freq rand(200,12000)` where `freq` is `f32` resolves both integer literals to `f32` and produces a float random.
+### Input References
 
-### Lambda Calls
+Inputs to an expression are referenced by `$N` where `N` is the pin index:
 
-Any expression that resolves to a lambda can be called: `expr_resolving_to_lambda(arg1, arg2, ...)`. The result type is the return type of the lambda. Bangs are lambdas that take no arguments and return void.
-
-### Numeric Literals
-
-- **Integers:** `1`, `42`, `0` — unresolved integer type (`int?`). The concrete type is inferred from context:
-  - `$0 + 1` where `$0 : u8` → `1` becomes `u8`
-  - Integer literals also coerce to `f32` or `f64` from context, but only if the value can be represented exactly (f32: |v| <= 2^24 = 16777216, f64: |v| <= 2^53). Values that exceed these limits produce an error.
-  - If no context resolves the type, it remains `int?` (unresolved). In a complete program all types must be resolved — an unresolved `int?` is a compile error.
-- **f32 floats:** `1.0f`, `3.14f`
-- **f64 floats:** `1.0`, `3.14`
-- **Boolean:** `true`, `false` — `bool` type
-
-### Built-in Constants
-
-| Name  | Value                    | Type  |
-|-------|--------------------------|-------|
-| `pi`  | 3.14159265358979323846   | `f64` |
-| `e`   | 2.71828182845904523536   | `f64` |
-| `tau` | 6.28318530717958647692   | `f64` |
-
-These are bare identifiers (no `$` prefix). Their type is unresolved float (`float?`) and coerces to `f32` or `f64` from context (e.g. `pi * $0` where `$0 : f32` → `pi` becomes `f32`). If no context resolves the type, it remains `float?` (unresolved). In a complete program all types must be resolved — an unresolved `float?` is a compile error. Any other bare identifier that is not a built-in function name, constant, or `true`/`false` is an error.
-
-### Input References (Pin Sigils)
-
-Inputs to an expression are referenced by sigil + index. The sigil indicates the expected value category:
-
-| Syntax | Category   | Description                     |
-|--------|------------|--------------------------------|
-| `$N`   | Value      | Generic value (any category)   |
-| `%N`   | Data       | Data value (plain)             |
-| `&N`   | Reference  | Reference to a value           |
-| `^N`   | Iterator   | Iterator into a container      |
-| `@N`   | Lambda     | Callable function reference    |
-| `#N`   | Enum       | Enumeration value              |
-| `!N`   | Bang       | Trigger signal                 |
-| `~N`   | Event      | Event handle (opaque for now)  |
+| Syntax | Description |
+|--------|------------|
+| `$N` | Input pin N (any value category) |
 
 **Naming:** The first occurrence of a pin index can include a name: `$0:my_input`. Subsequent uses must use `$0` directly (no re-naming).
 
+All other values (variables, functions, constants) are accessed as plain symbols resolved through the symbol table. No sigil prefix is needed.
+
 ### Array Manipulation (Broadcasting)
 
-When an operator or built-in function is applied between a scalar and a collection type (`map`, `ordered_map`, `set`, `ordered_set`, `list`, `queue`, `vector`, `array`, `tensor`), the operation is applied element-wise:
+When an operator or function is applied between a scalar and a collection type (`map`, `ordered_map`, `set`, `ordered_set`, `list`, `queue`, `vector`, `array`, `tensor`), the operation is applied element-wise:
 
 - The result is a new collection of the same type and size
 - For maps, the operation applies to values (keys are preserved)
@@ -398,8 +559,8 @@ NanoProg uses **bidirectional type inference**:
 - In a complete program, all types must be statically resolved — no unknowns remain.
 - **No silent type conversions** except:
   - Integer upcasts within the same signedness family (`u8` → `u16` → `u32` → `u64`, `s8` → `s16` → `s32` → `s64`)
-  - **Iterator-to-reference decay**: a `^iterator<T>` automatically decays to `&T` or `T` when passed to a function. This allows passing iterators directly to functions that operate on element references (e.g. `$it.stop($it)` where `stop` expects `&osc_def` and `$it` is `^list_iterator<osc_def>`).
-- **Function call validation**: argument count and types are checked against the function signature. Generic numeric literals (`int?`, `float?`) cannot be used as struct, Named, or container types.
+  - **Iterator-to-reference decay**: a `^iterator<T>` automatically decays to `&T` or `T` when passed to a function. This allows passing iterators directly to functions that operate on element references.
+- **Function call validation**: argument count and types are checked against the function signature. Generic numeric literals cannot be used as struct, Named, or container types.
 - Connections between incompatible types are errors and render in red.
 
 ### Lambda Construction
@@ -419,8 +580,6 @@ When an `expr` node has a **lambda grab** handle (`as_lambda`):
 - Nodes reachable backward via data connections from those bang-chain ancestors
 
 When a lambda's data dependency traces back to a node in the caller scope, that dependency is a **capture** (already evaluated before the lambda was constructed), not a lambda parameter. The recursive parameter collection stops at caller-scope boundaries — it does not enter the caller's subgraph.
-
-**Example:** A `decl_local slider_id u8` node fires its bang to `iterate! $multifader`. Inside the iterate lambda body, an `expr $0:name $1()` node has `$0` connected to `decl_local`'s output and `$1` connected to another node inside the lambda. Since `decl_local` is in the caller scope (it's in the bang chain before `iterate!`), `$0` is a capture. Only `$1` (if unconnected) would be a lambda parameter.
 
 **Inbound type inference for lambdas:** If a downstream node expects a lambda of type `(u32, u32) -> u32`, the lambda's parameters are typed `u32, u32` and the output must resolve to `u32`.
 

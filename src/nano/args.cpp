@@ -233,23 +233,14 @@ void FlowNode::parse_args() {
         NodeTypeID::Void,
         NodeTypeID::DeclType, NodeTypeID::DeclVar, NodeTypeID::DeclEvent,
         NodeTypeID::DeclImport, NodeTypeID::Ffi, NodeTypeID::New,
-        NodeTypeID::EventBang, NodeTypeID::Label);
+        NodeTypeID::Decl, NodeTypeID::EventBang, NodeTypeID::Label);
 
     // Parse expression tokens
     if (!skip) {
-        if (type_id == NodeTypeID::DeclLocal) {
-            // decl_local: only the 3rd+ token (initial value) is an expression
-            auto tokens = tokenize_args(args, false);
-            if (tokens.size() >= 3) {
-                auto result = parse_expression(tokens.back());
-                if (result.root) parsed_exprs.push_back(result.root);
-            }
-        } else {
-            auto tokens = tokenize_args(args, false);
-            for (auto& tok : tokens) {
-                auto result = parse_expression(tok);
-                parsed_exprs.push_back(result.root); // may be nullptr
-            }
+        auto tokens = tokenize_args(args, false);
+        for (auto& tok : tokens) {
+            auto result = parse_expression(tok);
+            parsed_exprs.push_back(result.root); // may be nullptr
         }
     }
 

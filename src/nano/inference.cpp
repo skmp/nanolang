@@ -3,8 +3,14 @@
 std::vector<std::string> GraphInference::run(FlowGraph& graph) {
     std::vector<std::string> all_errors;
 
+    // Phase 0: Wire symbol table into inference context
+    ctx.symbol_table = &symbol_table;
+
     // Phase 1: Clear all resolved types
     clear_all(graph);
+
+    // Phase 1.5: Clear declaration entries from symbol table (keep builtins)
+    symbol_table.clear_declarations();
 
     // Phase 2: Build type registry from decl_type nodes
     build_registry(graph);
@@ -250,6 +256,7 @@ void GraphInference::build_context(FlowGraph& graph) {
 
     for (auto& node : graph.nodes) {
         if (node.type_id == NodeTypeID::DeclVar) {
+            // decl_var: register variable in var_types and symbol table
             auto tokens = tokenize_args(node.args, false);
             if (tokens.size() >= 2) {
                 // Join all tokens after the name as the type (handles "map<u32, f32>")
@@ -258,7 +265,14 @@ void GraphInference::build_context(FlowGraph& graph) {
                     if (!type_str.empty()) type_str += " ";
                     type_str += tokens[i];
                 }
-                ctx.var_types[tokens[0]] = pool.intern(type_str);
+                auto var_type = pool.intern(type_str);
+                ctx.var_types[tokens[0]] = var_type;
+                // Also register in symbol table
+                if (var_type) {
+                    auto ref_type = std::make_shared<TypeExpr>(*var_type);
+                    ref_type->category = TypeCategory::Reference;
+                    symbol_table.add(tokens[0], ref_type);
+                }
             }
         }
     }
@@ -275,6 +289,7 @@ void GraphInference::build_context(FlowGraph& graph) {
                 auto fn_type = pool.intern(type_str);
                 if (fn_type && fn_type->kind == TypeKind::Function) {
                     ctx.var_types[tokens[0]] = fn_type;
+                    symbol_table.add(tokens[0], fn_type);
                 } else {
                     node.error = "ffi: type must be a function type (got " + type_str + ")";
                 }
@@ -305,8 +320,21 @@ void GraphInference::build_context(FlowGraph& graph) {
                 struct_type->fields.push_back({f.name, f.resolved});
             }
             ctx.named_types[tokens[0]] = struct_type;
+            // Register in symbol table as type<T>
+            auto meta = std::make_shared<TypeExpr>();
+            meta->kind = TypeKind::MetaType;
+            meta->wrapped_type = struct_type;
+            symbol_table.add(tokens[0], meta);
+        } else {
+            // Type alias or function type — register via registry
+            auto resolved = registry.parsed.count(tokens[0]) ? registry.parsed[tokens[0]] : nullptr;
+            if (resolved) {
+                auto meta = std::make_shared<TypeExpr>();
+                meta->kind = TypeKind::MetaType;
+                meta->wrapped_type = resolved;
+                symbol_table.add(tokens[0], meta);
+            }
         }
-        // Type aliases (no fields) are resolved via registry.parsed
     }
 }
 
@@ -359,9 +387,36 @@ bool GraphInference::infer_expr_nodes(FlowGraph& graph) {
         bool needs_type_propagation = is_any_of(node.type_id, NodeTypeID::Dup, NodeTypeID::Select, NodeTypeID::Next, NodeTypeID::Void, NodeTypeID::Discard, NodeTypeID::Str);
         bool has_custom_output = needs_type_propagation ||
             is_any_of(node.type_id, NodeTypeID::AppendBang, NodeTypeID::Erase, NodeTypeID::EraseBang,
-            NodeTypeID::DeclLocal, NodeTypeID::Call, NodeTypeID::CallBang,
+            NodeTypeID::Call, NodeTypeID::CallBang,
             NodeTypeID::Cast);
         if (!is_expr) {
+            // DeclVar is a declaration but needs output type inference
+            if (node.type_id == NodeTypeID::DeclVar) {
+                auto tokens = tokenize_args(node.args, false);
+                if (tokens.size() < 2) {
+                    if (!node.args.empty() && node.error.empty())
+                        node.error = "decl_var requires: name type";
+                    continue;
+                }
+                if (true) {
+                    std::string type_str;
+                    for (size_t i = 1; i < tokens.size(); i++) {
+                        if (!type_str.empty()) type_str += " ";
+                        type_str += tokens[i];
+                    }
+                    TypePtr var_type = pool.intern(type_str);
+                    if (var_type && !node.outputs.empty()) {
+                        if (!node.outputs[0]->resolved_type || node.outputs[0]->resolved_type->is_generic) {
+                            auto ref_type = std::make_shared<TypeExpr>(*var_type);
+                            ref_type->category = TypeCategory::Reference;
+                            node.outputs[0]->resolved_type = ref_type;
+                            changed = true;
+                        }
+                    }
+                    ctx.var_types[tokens[0]] = var_type;
+                }
+                continue;
+            }
             if (!nt || nt->is_declaration) continue;
             if (is_any_of(node.type_id, NodeTypeID::New, NodeTypeID::EventBang)) continue;
             if (node.type_id == NodeTypeID::Label) continue;
@@ -511,60 +566,7 @@ bool GraphInference::infer_expr_nodes(FlowGraph& graph) {
             }
         }
 
-        if (node.type_id == NodeTypeID::DeclLocal) {
-            // decl_local <name> <type>
-            // Validate args: must have 2 tokens (name, type)
-            auto tokens = tokenize_args(node.args, false);
-            if (tokens.size() < 2) {
-                if (node.error.empty())
-                    node.error = "decl_local requires: name type";
-            } else {
-                // Name must not start with $
-                if (!tokens[0].empty() && tokens[0][0] == '$') {
-                    if (node.error.empty())
-                        node.error = "Local variable name should not start with $";
-                }
-                // Type must be valid
-                std::string type_str;
-                for (size_t i = 1; i < tokens.size(); i++) {
-                    if (!type_str.empty()) type_str += " ";
-                    type_str += tokens[i];
-                }
-                TypePtr local_type = pool.intern(type_str);
-                std::string err;
-                if (!registry.validate_type(type_str, err)) {
-                    if (node.error.empty())
-                        node.error = "Invalid type: " + err;
-                }
-
-                // Set output type to a reference to the declared type
-                if (local_type && !node.outputs.empty()) {
-                    if (!node.outputs[0]->resolved_type || node.outputs[0]->resolved_type->is_generic) {
-                        auto ref_type = std::make_shared<TypeExpr>(*local_type);
-                        ref_type->category = TypeCategory::Reference;
-                        node.outputs[0]->resolved_type = ref_type;
-                        changed = true;
-                    }
-                }
-
-                // Register in var_types for downstream inference
-                ctx.var_types[tokens[0]] = local_type;
-
-                // Validate initial value type compatibility using pre-parsed expression
-                if (!node.parsed_exprs.empty() && node.parsed_exprs[0]) {
-                    ctx.errors.clear();
-                    auto init_type = ctx.infer(node.parsed_exprs[0]);
-                    if (init_type && local_type &&
-                        !init_type->is_generic && !local_type->is_generic &&
-                        !types_compatible(init_type, local_type)) {
-                        if (node.error.empty())
-                            node.error = "Initial value type " +
-                                type_to_string(init_type) +
-                                " not compatible with " + type_to_string(local_type);
-                    }
-                }
-            }
-        }
+        // DeclVar output type inference is handled above (before is_declaration skip)
 
         if (node.type_id == NodeTypeID::Select) {
             // Resolve types from inline exprs or input pins

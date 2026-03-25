@@ -658,7 +658,7 @@ std::string CodeGenerator::materialize_node(FlowNode& node, std::ostringstream& 
         return var;
     }
 
-    if (node.type_id == NodeTypeID::DeclLocal) {
+    if (node.type_id == NodeTypeID::DeclVar /* was DeclLocal */) {
         // decl_local is emitted via emit_node in bang chain.
         // If materialized, the variable was already declared — just return its name.
         auto tokens = tokenize_args(node.args, false);
@@ -1940,7 +1940,7 @@ void CodeGenerator::emit_node(FlowNode& node, std::ostringstream& out, int inden
             for (auto* t : follow_bang_from(bout->id))
                 emit_node(*t, out, indent);
     }
-    else if (node.type_id == NodeTypeID::DeclLocal) {
+    else if (node.type_id == NodeTypeID::DeclVar /* was DeclLocal */) {
         // decl_local <name> <type>
         auto tokens = tokenize_args(node.args, false);
         if (tokens.size() >= 2) {

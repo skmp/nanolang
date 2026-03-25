@@ -6,6 +6,7 @@
 #include "type_utils.h"
 #include "node_types.h"
 #include "graph_index.h"
+#include "symbol_table.h"
 #include <set>
 #include <functional>
 
@@ -16,8 +17,11 @@ struct GraphInference {
     TypeRegistry registry;
     TypeInferenceContext ctx;
     GraphIndex idx;
+    SymbolTable symbol_table;
 
-    GraphInference(TypePool& p) : pool(p), ctx(p, registry) {}
+    GraphInference(TypePool& p) : pool(p), ctx(p, registry) {
+        symbol_table.populate_builtins(pool);
+    }
 
     // Run full inference on a graph. Populates resolved_type on all pins.
     // Returns collected errors (also stored on individual nodes).

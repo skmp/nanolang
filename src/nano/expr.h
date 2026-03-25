@@ -15,25 +15,42 @@ struct ExprNode;
 using ExprPtr = std::shared_ptr<ExprNode>;
 
 enum class ExprKind {
-    IntLiteral,     // 42 (type deferred)
-    F32Literal,     // 1.0f
-    F64Literal,     // 1.0
-    BoolLiteral,    // true, false
-    StringLiteral,  // "hello"
-    PinRef,         // $0, %1, &2, ^3, @4, #5, !6, ~7
-    VarRef,         // $name
+    IntLiteral,     // 42 (type deferred) — legacy, kept for backward compat
+    F32Literal,     // 1.0f — legacy
+    F64Literal,     // 1.0 — legacy
+    BoolLiteral,    // true, false — legacy
+    StringLiteral,  // "hello" — legacy
+    PinRef,         // $0, $1, ... (only $N with digits)
+    VarRef,         // $name — legacy (kept for backward compat during transition)
     BinaryOp,       // +, -, *, /, ==, !=, <, >, <=, >=, <=>
     UnaryMinus,     // -expr
     FieldAccess,    // expr.field
     Index,          // expr[expr]
     QueryIndex,     // expr?[expr]
     Slice,          // expr[start:end]
-    FuncCall,       // fn(args) — builtins and lambda calls
+    FuncCall,       // fn(args) — function/constructor/lambda calls
     Ref,            // &expr — reference/iterator creation (top-level only)
     Deref,          // *expr — dereference iterator to value (inserted by inference)
+    // --- New kinds for type system redesign ---
+    Literal,        // Unified compile-time literal (int, float, string, bool)
+    SymbolRef,      // Bare identifier — resolves via symbol table
+    StructLiteral,  // {name:value, name:value, ...} — runtime struct construction
+    StructType,     // {name:type name:type ...} — compile-time struct type
+    NamespaceAccess,// a::b — namespace resolution
 };
 
 enum class BinOp { Add, Sub, Mul, Div, Eq, Ne, Lt, Gt, Le, Ge, Spaceship };
+
+// Literal domain — the T in literal<T, V>
+enum class LiteralKind {
+    Integer,          // literal<integer<?>, V> — unresolved integer
+    Unsigned,         // literal<unsigned<?>, V> — non-negative integer
+    Signed,           // literal<signed<?>, V> — negative integer
+    F32,              // literal<f32, V>
+    F64,              // literal<f64, V>
+    String,           // literal<string, V>
+    Bool,             // literal<bool, V>
+};
 
 enum class BuiltinFunc {
     None,  // not a builtin (lambda call)
@@ -83,6 +100,15 @@ struct ExprNode {
     std::string func_name;
     BuiltinFunc builtin = BuiltinFunc::None;
 
+    // Literal (unified) — used when kind == Literal
+    LiteralKind literal_kind = LiteralKind::Integer;
+
+    // SymbolRef — used when kind == SymbolRef
+    std::string symbol_name;
+
+    // StructLiteral / StructType — field names (values/types are in children)
+    std::vector<std::string> struct_field_names;
+
     // Children (meaning varies by kind)
     std::vector<ExprPtr> children;
 };
@@ -101,6 +127,8 @@ enum class ExprTokenKind {
     Eq, Ne, Lt, Gt, Le, Ge, Spaceship,
     Dot, LBrack, RBrack, LParen, RParen,
     Colon, Question, Comma, Ampersand,
+    LBrace, RBrace,     // { }
+    ColonColon,          // ::
     Eof, Error,
 };
 
@@ -132,8 +160,9 @@ struct ExprTokenizer {
     }
 
     bool is_sigil(char c) {
-        return c == '$' || c == '%' || c == '&' || c == '^' ||
-               c == '@' || c == '#' || c == '!' || c == '~';
+        // Only $ is a pin ref sigil now. Other sigils (%, &, ^, @, #, !, ~)
+        // are no longer used for pin references — values are accessed as plain symbols.
+        return c == '$';
     }
 
     ExprToken next();
@@ -191,6 +220,7 @@ struct ExprParser {
     ExprPtr parse_unary();
     ExprPtr parse_postfix();
     ExprPtr parse_primary();
+    ExprPtr parse_struct_expr(); // { ... } — struct literal or struct type
 
     static BuiltinFunc lookup_builtin(const std::string& name);
 };
@@ -239,13 +269,16 @@ std::string expr_to_string(const ExprPtr& e);
 
 // --- Type Inference Engine ---
 
+struct SymbolTable; // forward declaration
+
 struct TypeInferenceContext {
     TypePool& pool;
     TypeRegistry& registry;
+    SymbolTable* symbol_table = nullptr; // for resolving bare identifiers
 
     // Pin types: pin_index → resolved type (for the current node's inputs)
     std::map<int, TypePtr> input_pin_types;
-    // Variable types: $name → resolved type (from decl_var nodes)
+    // Variable types: name → resolved type (from decl_var nodes)
     std::map<std::string, TypePtr> var_types;
     // Named type definitions: name → resolved struct type
     std::map<std::string, TypePtr> named_types;
