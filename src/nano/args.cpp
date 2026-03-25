@@ -9,6 +9,7 @@ std::vector<std::string> tokenize_args(const std::string& input, bool implicit_p
     std::vector<std::string> tokens;
     std::string current;
     int paren_depth = 0;
+    int brace_depth = 0;
     bool in_string = false;
     bool escape = false;
 
@@ -44,7 +45,17 @@ std::vector<std::string> tokenize_args(const std::string& input, bool implicit_p
             current += c;
             continue;
         }
-        if (c == ' ' && paren_depth == 0) {
+        if (c == '{') {
+            brace_depth++;
+            current += c;
+            continue;
+        }
+        if (c == '}') {
+            brace_depth--;
+            current += c;
+            continue;
+        }
+        if (c == ' ' && paren_depth == 0 && brace_depth == 0) {
             if (!current.empty()) {
                 tokens.push_back(current);
                 current.clear();

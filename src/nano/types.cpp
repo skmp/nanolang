@@ -511,7 +511,7 @@ std::string type_to_string(const TypePtr& t) {
             if (i > 0) s += " ";
             s += t->func_args[i].name + ":" + type_to_string(t->func_args[i].type);
         }
-        s += ") -> " + type_to_string(t->return_type);
+        s += ")->" + type_to_string(t->return_type);
         return s;
     }
     case TypeKind::Struct: {

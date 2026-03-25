@@ -100,18 +100,6 @@ struct GraphBuilder {
                 } else pn = std::to_string(i);
                 node.inputs.push_back(make_pin("", pn, pt, nullptr, il ? FlowPin::Lambda : FlowPin::Input));
             }
-        } else if (nt && nt->is_declaration) {
-            // Declaration nodes: args are names/types, not inline expressions
-            // Just create descriptor-default pins
-            for (int i = 0; i < di; i++) {
-                std::string pn; std::string pt; bool il = false;
-                if (nt->input_ports && i < nt->inputs) {
-                    pn = nt->input_ports[i].name;
-                    il = (nt->input_ports[i].kind == PortKind::Lambda);
-                    if (nt->input_ports[i].type_name) pt = nt->input_ports[i].type_name;
-                } else pn = std::to_string(i);
-                node.inputs.push_back(make_pin("", pn, pt, nullptr, il ? FlowPin::Lambda : FlowPin::Input));
-            }
         } else {
             // Non-expr: use compute_inline_args (same as serial loader)
             auto info = compute_inline_args(args, di);
@@ -163,6 +151,7 @@ struct GraphBuilder {
     std::vector<std::string> run_inference() {
         // Resolve type-based pins first (for new/event! nodes)
         resolve_type_based_pins(graph);
+        generate_shadow_nodes(graph);
         GraphInference inference(pool);
         return inference.run(graph);
     }
@@ -179,6 +168,130 @@ struct GraphBuilder {
 // ============================================================
 // Tests
 // ============================================================
+
+TEST(expr_parses_array_type) {
+    auto r = parse_expression("array<f32,48000>");
+    ASSERT(r.error.empty());
+    ASSERT(r.root != nullptr);
+    ASSERT_EQ(r.root->kind, ExprKind::SymbolRef);
+    ASSERT_EQ(r.root->symbol_name, "array<f32,48000>");
+}
+
+TEST(expr_parses_vector_type) {
+    auto r = parse_expression("vector<f32>");
+    ASSERT(r.error.empty());
+    ASSERT(r.root != nullptr);
+    ASSERT_EQ(r.root->kind, ExprKind::SymbolRef);
+    ASSERT_EQ(r.root->symbol_name, "vector<f32>");
+}
+
+TEST(expr_parses_map_type) {
+    auto r = parse_expression("map<u64,string>");
+    ASSERT(r.error.empty());
+    ASSERT(r.root != nullptr);
+    ASSERT_EQ(r.root->kind, ExprKind::SymbolRef);
+    ASSERT_EQ(r.root->symbol_name, "map<u64,string>");
+}
+
+TEST(expr_comparison_not_broken_by_type_parse) {
+    // $0<$1 should still parse as comparison, not type parameterization
+    auto r = parse_expression("$0<$1");
+    ASSERT(r.error.empty());
+    ASSERT(r.root != nullptr);
+    ASSERT_EQ(r.root->kind, ExprKind::BinaryOp);
+}
+
+TEST(expr_parses_function_type) {
+    auto r = parse_expression("(x:f32 y:f32)->f32");
+    ASSERT(r.error.empty());
+    ASSERT(r.root != nullptr);
+    ASSERT_EQ(r.root->kind, ExprKind::SymbolRef);
+    ASSERT_EQ(r.root->symbol_name, "(x:f32 y:f32)->f32");
+}
+
+TEST(expr_parses_void_function_type) {
+    auto r = parse_expression("()->void");
+    ASSERT(r.error.empty());
+    ASSERT(r.root != nullptr);
+    ASSERT_EQ(r.root->kind, ExprKind::SymbolRef);
+    ASSERT_EQ(r.root->symbol_name, "()->void");
+}
+
+TEST(expr_paren_grouping_still_works) {
+    // (1+2)*3 should still parse as grouped expression
+    auto r = parse_expression("(1+2)*3");
+    ASSERT(r.error.empty());
+    ASSERT(r.root != nullptr);
+    ASSERT_EQ(r.root->kind, ExprKind::BinaryOp);
+}
+
+TEST(expr_parses_struct_type) {
+    auto r = parse_expression("{x:f32 y:f32}");
+    ASSERT(r.error.empty());
+    ASSERT(r.root != nullptr);
+    ASSERT_EQ(r.root->kind, ExprKind::StructType);
+    ASSERT_EQ(r.root->struct_field_names.size(), (size_t)2);
+    ASSERT_EQ(r.root->struct_field_names[0], "x");
+    ASSERT_EQ(r.root->struct_field_names[1], "y");
+}
+
+TEST(expr_parses_struct_literal) {
+    auto r = parse_expression("{x:1.0f, y:2.0f}");
+    ASSERT(r.error.empty());
+    ASSERT(r.root != nullptr);
+    ASSERT_EQ(r.root->kind, ExprKind::StructLiteral);
+    ASSERT_EQ(r.root->struct_field_names.size(), (size_t)2);
+    ASSERT_EQ(r.root->struct_field_names[0], "x");
+    ASSERT_EQ(r.root->struct_field_names[1], "y");
+}
+
+TEST(expr_parses_nested_type) {
+    auto r = parse_expression("map<string,vector<f32>>");
+    ASSERT(r.error.empty());
+    ASSERT(r.root != nullptr);
+    ASSERT_EQ(r.root->kind, ExprKind::SymbolRef);
+    ASSERT_EQ(r.root->symbol_name, "map<string,vector<f32>>");
+}
+
+TEST(expr_struct_type_infers_to_metatype) {
+    GraphBuilder gb;
+    gb.add("e1", "expr", "{x:f32 y:f32}");
+    gb.run_inference();
+    auto* n = gb.find("e1");
+    ASSERT(n != nullptr);
+    ASSERT(n->outputs[0]->resolved_type != nullptr);
+    ASSERT_TYPE(n->outputs[0], "type<{x:f32 y:f32}>");
+}
+
+TEST(expr_function_type_infers_to_metatype) {
+    GraphBuilder gb;
+    gb.add("e1", "expr", "(x:f32)->f32");
+    gb.run_inference();
+    auto* n = gb.find("e1");
+    ASSERT(n != nullptr);
+    ASSERT(n->outputs[0]->resolved_type != nullptr);
+    ASSERT_TYPE(n->outputs[0], "type<(x:f32)->f32>");
+}
+
+TEST(expr_array_type_infers_to_metatype) {
+    GraphBuilder gb;
+    gb.add("e1", "expr", "array<f32,48000>");
+    gb.run_inference();
+    auto* n = gb.find("e1");
+    ASSERT(n != nullptr);
+    ASSERT(n->outputs[0]->resolved_type != nullptr);
+    ASSERT_TYPE(n->outputs[0], "type<array<f32, 48000>>");
+}
+
+TEST(expr_vector_type_infers_to_metatype) {
+    GraphBuilder gb;
+    gb.add("e1", "expr", "vector<f32>");
+    gb.run_inference();
+    auto* n = gb.find("e1");
+    ASSERT(n != nullptr);
+    ASSERT(n->outputs[0]->resolved_type != nullptr);
+    ASSERT_TYPE(n->outputs[0], "type<vector<f32>>");
+}
 
 TEST(parse_simple_int) {
     auto r = parse_expression("42");
@@ -2752,7 +2865,7 @@ TEST(decl_local_u32) {
     GraphBuilder gb;
     gb.add("dl", "decl_var", "counter u32");
     gb.run_inference();
-    ASSERT(gb.find("dl")->error.empty());
+    ASSERT(gb.find("dl")->outputs[0]->resolved_type != nullptr);
     ASSERT_EQ(gb.find("dl")->outputs[0]->resolved_type->category, TypeCategory::Reference);
 }
 
@@ -2760,7 +2873,7 @@ TEST(decl_local_string) {
     GraphBuilder gb;
     gb.add("dl", "decl_var", "name string");
     gb.run_inference();
-    ASSERT(gb.find("dl")->error.empty());
+    ASSERT(gb.find("dl")->outputs[0]->resolved_type != nullptr);
     ASSERT_EQ(gb.find("dl")->outputs[0]->resolved_type->category, TypeCategory::Reference);
     ASSERT_EQ(gb.find("dl")->outputs[0]->resolved_type->kind, TypeKind::String);
 }

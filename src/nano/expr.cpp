@@ -403,75 +403,64 @@ ExprPtr ExprParser::parse_primary() {
         return node;
     }
 
-    // Identifier: check for type expression (literal<...>) or symbol reference
+    // Identifier: check for type expression (name<...>) or symbol reference
     if (check(ExprTokenKind::Ident)) {
         std::string name = current.text;
-        // Check if this is a type expression: literal<T, V>
-        // We need to parse it from the raw source since the tokenizer has consumed 'literal'
+
+        // 'literal' keyword must be followed by <T,V>
         if (name == "literal") {
-            // Save tokenizer position to check if '<' follows
             size_t saved_pos = tokenizer.pos;
-            auto saved_tok = current;
             advance(); // consume 'literal'
-            if (check(ExprTokenKind::Lt)) {
-                // Looks like literal<...> — re-parse from the raw source using type parser
-                // Reconstruct by reading from saved position in the raw source
-                // The tokenizer.pos is now past '<', so we need to find the full literal<...> string
-                // Use the source directly from where 'literal' started
-                size_t literal_start = saved_pos - name.size(); // approximate start
-                // Better: just reconstruct from tokens
-                std::string type_str = "literal";
-                int depth = 0;
-                while (!check(ExprTokenKind::Eof)) {
-                    if (check(ExprTokenKind::Lt)) { depth++; type_str += "<"; advance(); }
-                    else if (check(ExprTokenKind::Gt)) {
-                        type_str += ">";
-                        advance();
-                        if (--depth <= 0) break;
-                    }
-                    else if (check(ExprTokenKind::Comma)) { type_str += ","; advance(); }
-                    else if (check(ExprTokenKind::String)) { type_str += "\"" + current.text + "\""; advance(); }
-                    else if (check(ExprTokenKind::Question)) { type_str += "?"; advance(); }
-                    else if (check(ExprTokenKind::Minus)) { type_str += "-"; advance(); }
-                    else { type_str += current.text; advance(); }
-                }
-                // Parse the reconstructed type string
-                std::string parse_err;
-                auto parsed_type = parse_type(type_str, parse_err);
-                if (!parsed_type || !parse_err.empty()) {
-                    if (error.empty()) error = "Invalid type expression: " + type_str + (parse_err.empty() ? "" : " (" + parse_err + ")");
-                    return make_expr(ExprKind::Literal);
-                }
-                // Create a Literal node from the parsed type
-                auto node = make_expr(ExprKind::Literal);
-                if (parsed_type->kind == TypeKind::String) {
-                    node->literal_kind = LiteralKind::String;
-                    if (parsed_type->literal_value.size() >= 2 && parsed_type->literal_value.front() == '"')
-                        node->string_value = parsed_type->literal_value.substr(1, parsed_type->literal_value.size() - 2);
-                } else if (parsed_type->kind == TypeKind::Bool) {
-                    node->literal_kind = LiteralKind::Bool;
-                    node->bool_value = (parsed_type->literal_value == "true");
-                } else if (parsed_type->kind == TypeKind::Scalar) {
-                    if (parsed_type->scalar == ScalarType::F32) {
-                        node->literal_kind = LiteralKind::F32;
-                        node->float_value = parsed_type->literal_value.empty() ? 0.0 : std::stod(parsed_type->literal_value);
-                    } else if (parsed_type->scalar == ScalarType::F64) {
-                        node->literal_kind = LiteralKind::F64;
-                        node->float_value = parsed_type->literal_value.empty() ? 0.0 : std::stod(parsed_type->literal_value);
-                    } else if (parsed_type->literal_signed) {
-                        node->literal_kind = LiteralKind::Signed;
-                        node->int_value = parsed_type->literal_value.empty() ? 0 : std::stoll(parsed_type->literal_value);
-                    } else {
-                        node->literal_kind = LiteralKind::Unsigned;
-                        node->int_value = parsed_type->literal_value.empty() ? 0 : std::stoll(parsed_type->literal_value);
-                    }
-                }
-                return node;
-            } else {
-                // 'literal' without '<' is invalid
-                if (error.empty()) error = "'literal' must be followed by '<type, value>'";
+            if (!check(ExprTokenKind::Lt)) {
+                if (error.empty()) error = "'literal' must be followed by '<type,value>'";
                 return make_expr(ExprKind::Literal);
             }
+            // Reconstruct and parse as type
+            std::string type_str = "literal";
+            int depth = 0;
+            while (!check(ExprTokenKind::Eof)) {
+                if (check(ExprTokenKind::Lt)) { depth++; type_str += "<"; advance(); }
+                else if (check(ExprTokenKind::Gt)) {
+                    type_str += ">";
+                    advance();
+                    if (--depth <= 0) break;
+                }
+                else if (check(ExprTokenKind::Comma)) { type_str += ","; advance(); }
+                else if (check(ExprTokenKind::String)) { type_str += "\"" + current.text + "\""; advance(); }
+                else if (check(ExprTokenKind::Question)) { type_str += "?"; advance(); }
+                else if (check(ExprTokenKind::Minus)) { type_str += "-"; advance(); }
+                else { type_str += current.text; advance(); }
+            }
+            std::string parse_err;
+            auto parsed_type = parse_type(type_str, parse_err);
+            if (!parsed_type || !parse_err.empty()) {
+                if (error.empty()) error = "Invalid type expression: " + type_str + (parse_err.empty() ? "" : " (" + parse_err + ")");
+                return make_expr(ExprKind::Literal);
+            }
+            auto node = make_expr(ExprKind::Literal);
+            if (parsed_type->kind == TypeKind::String) {
+                node->literal_kind = LiteralKind::String;
+                if (parsed_type->literal_value.size() >= 2 && parsed_type->literal_value.front() == '"')
+                    node->string_value = parsed_type->literal_value.substr(1, parsed_type->literal_value.size() - 2);
+            } else if (parsed_type->kind == TypeKind::Bool) {
+                node->literal_kind = LiteralKind::Bool;
+                node->bool_value = (parsed_type->literal_value == "true");
+            } else if (parsed_type->kind == TypeKind::Scalar) {
+                if (parsed_type->scalar == ScalarType::F32) {
+                    node->literal_kind = LiteralKind::F32;
+                    node->float_value = parsed_type->literal_value.empty() ? 0.0 : std::stod(parsed_type->literal_value);
+                } else if (parsed_type->scalar == ScalarType::F64) {
+                    node->literal_kind = LiteralKind::F64;
+                    node->float_value = parsed_type->literal_value.empty() ? 0.0 : std::stod(parsed_type->literal_value);
+                } else if (parsed_type->literal_signed) {
+                    node->literal_kind = LiteralKind::Signed;
+                    node->int_value = parsed_type->literal_value.empty() ? 0 : std::stoll(parsed_type->literal_value);
+                } else {
+                    node->literal_kind = LiteralKind::Unsigned;
+                    node->int_value = parsed_type->literal_value.empty() ? 0 : std::stoll(parsed_type->literal_value);
+                }
+            }
+            return node;
         }
         // true/false are literal booleans, not symbols
         if (name == "true" || name == "false") {
@@ -487,11 +476,62 @@ ExprPtr ExprParser::parse_primary() {
             advance();
             return make_expr(ExprKind::Literal); // dummy
         }
-        auto node = make_expr(ExprKind::SymbolRef);
-        node->symbol_name = name;
-        node->var_name = name; // used by decl_var name resolution
-        advance();
-        return node;
+        // Check for identifier<...> — could be a parameterized type expression
+        // Save state so we can fall back if type parse fails
+        {
+            size_t saved_pos = tokenizer.pos;
+            auto saved_tok = current;
+            std::string saved_error = error;
+            advance(); // consume identifier
+
+            bool is_type_keyword = (name == "type");
+
+            if (check(ExprTokenKind::Lt)) {
+                // Speculatively parse as type: name<params>
+                std::string type_str = name;
+                int depth = 0;
+                while (!check(ExprTokenKind::Eof)) {
+                    if (check(ExprTokenKind::Lt)) { depth++; type_str += "<"; advance(); }
+                    else if (check(ExprTokenKind::Gt)) {
+                        type_str += ">";
+                        advance();
+                        if (--depth <= 0) break;
+                    }
+                    else if (check(ExprTokenKind::Comma)) { type_str += ","; advance(); }
+                    else if (check(ExprTokenKind::String)) { type_str += "\"" + current.text + "\""; advance(); }
+                    else if (check(ExprTokenKind::Question)) { type_str += "?"; advance(); }
+                    else if (check(ExprTokenKind::Minus)) { type_str += "-"; advance(); }
+                    else { type_str += current.text; advance(); }
+                }
+
+                std::string parse_err;
+                auto parsed_type = parse_type(type_str, parse_err);
+
+                if (parsed_type && parse_err.empty()) {
+                    // Successfully parsed as parameterized type
+                    auto node = make_expr(ExprKind::SymbolRef);
+                    node->symbol_name = type_str;
+                    node->var_name = type_str;
+                    return node;
+                } else if (is_type_keyword) {
+                    // 'type<' must parse successfully
+                    if (error.empty()) error = "Invalid type expression: " + type_str;
+                    return make_expr(ExprKind::Literal); // dummy
+                } else {
+                    // Type parse failed — restore state, treat as plain identifier + comparison
+                    tokenizer.pos = saved_pos;
+                    current = saved_tok;
+                    error = saved_error;
+                    advance(); // re-consume identifier
+                }
+            }
+
+            // Plain SymbolRef (no <, or type parse failed)
+            auto node = make_expr(ExprKind::SymbolRef);
+            node->symbol_name = name;
+            node->var_name = name;
+            return node;
+        }
     }
 
     // Struct literal or struct type: { ... }
@@ -499,9 +539,62 @@ ExprPtr ExprParser::parse_primary() {
         return parse_struct_expr();
     }
 
-    // Parenthesized expression
+    // Parenthesized expression or function type: (...)->T
     if (check(ExprTokenKind::LParen)) {
-        advance();
+        // Check if this is a function type by scanning the raw source for )->
+        // saved_pos points right after the '(' in the raw source
+        size_t saved_pos = tokenizer.pos;
+        auto saved_tok = current;
+        std::string saved_error = error;
+
+        // Scan raw source for matching ')' then '->'
+        size_t paren_open = saved_pos - 1; // the '(' character position
+        int depth = 1;
+        size_t scan = saved_pos;
+        while (scan < tokenizer.src.size() && depth > 0) {
+            if (tokenizer.src[scan] == '(') depth++;
+            else if (tokenizer.src[scan] == ')') depth--;
+            scan++;
+        }
+        // scan is now past the matching ')'
+        // Check for '->' after optional whitespace
+        size_t arrow = scan;
+        while (arrow < tokenizer.src.size() && tokenizer.src[arrow] == ' ') arrow++;
+        if (arrow + 1 < tokenizer.src.size() &&
+            tokenizer.src[arrow] == '-' && tokenizer.src[arrow + 1] == '>') {
+            // It's a function type — extract the full type string from raw source
+            // Find the end: everything up to end of input or next delimiter
+            size_t end = arrow + 2;
+            // Skip whitespace after ->
+            while (end < tokenizer.src.size() && tokenizer.src[end] == ' ') end++;
+            // Collect return type (may include <> for parameterized types)
+            int angle_depth = 0;
+            while (end < tokenizer.src.size()) {
+                char c = tokenizer.src[end];
+                if (c == '<') angle_depth++;
+                else if (c == '>') { if (angle_depth > 0) angle_depth--; else break; }
+                else if (angle_depth == 0 && (c == ' ' || c == ')' || c == ',' || c == '}' || c == ']')) break;
+                end++;
+            }
+            std::string type_str = tokenizer.src.substr(paren_open, end - paren_open);
+            std::string parse_err;
+            auto parsed_type = parse_type(type_str, parse_err);
+            if (parsed_type && parse_err.empty()) {
+                // Advance tokenizer past the entire type string
+                tokenizer.pos = end;
+                advance(); // load next token
+                auto node = make_expr(ExprKind::SymbolRef);
+                node->symbol_name = type_str;
+                node->var_name = type_str;
+                return node;
+            }
+            // Failed to parse as type — fall through to restore
+        }
+
+        // Not a function type — parse as grouped expression
+        // (tokenizer state is still at saved_pos, current is still saved_tok)
+
+        advance(); // consume '('
         auto inner = parse_expr();
         if (!expect(ExprTokenKind::RParen)) return inner;
         return inner;
@@ -872,7 +965,19 @@ TypePtr TypeInferenceContext::infer(const ExprPtr& expr) {
                     return sym;
                 }
             }
-            // 3. Unknown — return undefined_symbol<name>
+            // 3. Try parsing as a type expression (e.g., "(x:f32)->f32", "vector<f32>")
+            {
+                std::string parse_err;
+                auto parsed = parse_type(expr->symbol_name, parse_err);
+                if (parsed && parse_err.empty() && parsed->kind != TypeKind::Named) {
+                    // It's a valid type — return type<T> directly (not a symbol)
+                    auto meta = std::make_shared<TypeExpr>();
+                    meta->kind = TypeKind::MetaType;
+                    meta->wrapped_type = parsed;
+                    return meta;
+                }
+            }
+            // 4. Unknown — return undefined_symbol<name>
             auto sym = std::make_shared<TypeExpr>();
             sym->kind = TypeKind::UndefinedSymbol;
             sym->symbol_name = expr->symbol_name;
@@ -923,8 +1028,30 @@ TypePtr TypeInferenceContext::infer(const ExprPtr& expr) {
         break;
     }
 
+    case ExprKind::StructType: {
+        // {name:type name:type ...} → type<{name:type ...}>
+        auto struct_type = std::make_shared<TypeExpr>();
+        struct_type->kind = TypeKind::Struct;
+        for (size_t i = 0; i < expr->struct_field_names.size(); i++) {
+            TypePtr field_type = pool.t_unknown;
+            if (i < expr->children.size() && expr->children[i]) {
+                auto child_type = decay_symbol(infer(expr->children[i]));
+                // If child resolves to type<T>, unwrap to get T
+                if (child_type && child_type->kind == TypeKind::MetaType && child_type->wrapped_type)
+                    field_type = child_type->wrapped_type;
+                else if (child_type)
+                    field_type = child_type;
+            }
+            struct_type->fields.push_back({expr->struct_field_names[i], field_type});
+        }
+        auto meta = std::make_shared<TypeExpr>();
+        meta->kind = TypeKind::MetaType;
+        meta->wrapped_type = struct_type;
+        result = meta;
+        break;
+    }
+
     case ExprKind::StructLiteral:
-    case ExprKind::StructType:
     case ExprKind::NamespaceAccess:
         // TODO: full inference for these
         result = pool.t_unknown;
