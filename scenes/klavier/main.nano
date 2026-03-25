@@ -1,63 +1,55 @@
 version = "nanoprog@1"
 
 [viewport]
-x = -1219.35
-y = -475.508
-zoom = 1.61051
+x = -1187.46
+y = -403.795
+zoom = 1.331
 
 [[node]]
 guid = "934e3b98bb914e95"
 type = "decl_type"
-args = ["osc_res", "s:f32", "e:bool"]
 position = [750.93, 375.328]
 connections = ["934e3b98bb914e95.bang0->e073eb5950485587.bang_in0"]
 
 [[node]]
 guid = "e073eb5950485587"
 type = "decl_type"
-args = ["gen_fn", "(osc:&osc_def)", "->", "osc_res"]
 position = [751.91, 422.962]
 connections = ["e073eb5950485587.bang0->fe155835bba6cd45.bang_in0"]
 
 [[node]]
 guid = "fe155835bba6cd45"
 type = "decl_type"
-args = ["stop_fn", "(osc:&osc_def)", "->", "void"]
 position = [754.325, 467.55]
 connections = ["fe155835bba6cd45.bang0->09f161f1210cec4f.bang_in0"]
 
 [[node]]
 guid = "09f161f1210cec4f"
 type = "decl_type"
-args = ["osc_def", "gen:gen_fn", "stop:stop_fn", "p:f32", "pstep:f32", "a:f32", "astep:f32"]
 position = [754.46, 510.991]
 connections = ["09f161f1210cec4f.bang0->c0fbc2b794fa65b4.bang_in0"]
 
 [[node]]
 guid = "c0fbc2b794fa65b4"
 type = "decl_type"
-args = ["key_set", "map<u8,", "^list_iterator<osc_def>>"]
 position = [754.64, 561.922]
 connections = ["c0fbc2b794fa65b4.bang0->e530be85f0c2565e.bang_in0"]
 
 [[node]]
 guid = "e530be85f0c2565e"
 type = "decl_type"
-args = ["osc_list", "list<osc_def>"]
 position = [755.57, 606.798]
 connections = ["e530be85f0c2565e.bang0->b11adccc2e0b937c.bang_in0"]
 
 [[node]]
 guid = "b11adccc2e0b937c"
 type = "decl_var"
-args = ["keys", "key_set"]
 position = [753.51, 697.467]
 connections = ["b11adccc2e0b937c.bang0->91b1885ec31bca0d.bang_in0"]
 
 [[node]]
 guid = "91b1885ec31bca0d"
 type = "decl_var"
-args = ["oscs", "osc_list"]
 position = [754.71, 742.669]
 connections = ["91b1885ec31bca0d.bang0->0e02c497002f40c2.bang_in0"]
 
@@ -80,35 +72,34 @@ guid = "c81c38e5f70d7c98"
 type = "expr"
 args = ["sin($0.p)*$1/32.f"]
 position = [1866.25, 1443.11]
-connections = ["c81c38e5f70d7c98.post_bang->f35abbba8775f1de.bang_in0", "c81c38e5f70d7c98.out0->b64eb56b2a60eda2.0", "c81c38e5f70d7c98.out0->b64eb56b2a60eda2.s"]
+connections = ["c81c38e5f70d7c98.post_bang->f35abbba8775f1de.bang_in0", "c81c38e5f70d7c98.out0->b64eb56b2a60eda2.0"]
 
 [[node]]
 guid = "445319c565ebdaa8"
 type = "store!"
-args = ["$0.astep", "0.995f"]
+args = ["$0.astep"]
 position = [1784.69, 1675.87]
-connections = ["445319c565ebdaa8.as_lambda->df6e4aa3d0d8d2bc.stop"]
 
 [[node]]
 guid = "1d7ed7a2c6bd9465"
 type = "expr"
 args = ["0"]
 position = [1776.07, 1758.84]
-connections = ["1d7ed7a2c6bd9465.out0->df6e4aa3d0d8d2bc.2", "1d7ed7a2c6bd9465.out0->df6e4aa3d0d8d2bc.p"]
+connections = ["1d7ed7a2c6bd9465.out0->df6e4aa3d0d8d2bc.2"]
 
 [[node]]
 guid = "cc68627fd36abb94"
 type = "expr"
 args = ["2*pi/$0"]
 position = [1805.57, 1828.22]
-connections = ["cc68627fd36abb94.out0->df6e4aa3d0d8d2bc.3", "cc68627fd36abb94.out0->df6e4aa3d0d8d2bc.pstep"]
+connections = ["cc68627fd36abb94.out0->df6e4aa3d0d8d2bc.3"]
 
 [[node]]
 guid = "9786d74433799f1e"
 type = "expr"
 args = ["1"]
 position = [1831.1, 1894.92]
-connections = ["9786d74433799f1e.out0->df6e4aa3d0d8d2bc.4", "9786d74433799f1e.out0->df6e4aa3d0d8d2bc.5", "9786d74433799f1e.out0->df6e4aa3d0d8d2bc.astep", "9786d74433799f1e.out0->df6e4aa3d0d8d2bc.a"]
+connections = ["9786d74433799f1e.out0->df6e4aa3d0d8d2bc.4", "9786d74433799f1e.out0->df6e4aa3d0d8d2bc.5"]
 
 [[node]]
 guid = "f35abbba8775f1de"
@@ -135,14 +126,14 @@ guid = "b64eb56b2a60eda2"
 type = "new"
 args = ["osc_res"]
 position = [1766.95, 1565.73]
-connections = ["b64eb56b2a60eda2.as_lambda->df6e4aa3d0d8d2bc.0", "b64eb56b2a60eda2.as_lambda->df6e4aa3d0d8d2bc.gen"]
+connections = ["b64eb56b2a60eda2.as_lambda->df6e4aa3d0d8d2bc.0"]
 
 [[node]]
 guid = "18cbc672fb22e68e"
 type = "expr"
 args = ["$0<0.001f"]
 position = [1923.26, 1493.73]
-connections = ["18cbc672fb22e68e.out0->b64eb56b2a60eda2.1", "18cbc672fb22e68e.out0->b64eb56b2a60eda2.e"]
+connections = ["18cbc672fb22e68e.out0->b64eb56b2a60eda2.1"]
 
 [[node]]
 guid = "e6a647578747ca01"
@@ -211,7 +202,6 @@ connections = ["b78d3f85fe8f654a.out0->a81d5e94c0631e58.1"]
 [[node]]
 guid = "e74cec1135c3a130"
 type = "decl_var"
-args = ["mixs", "f32"]
 position = [3702.59, 1442.63]
 connections = ["e74cec1135c3a130.out0->1a6c0c7662614047.0", "e74cec1135c3a130.bang0->a8da10815e6d03ff.bang_in0", "e74cec1135c3a130.out0->436d853ee8e34fa5.0", "e74cec1135c3a130.out0->1a6c0c7662614047_s1.0"]
 
@@ -223,14 +213,12 @@ position = [3738.62, 2471.6]
 [[node]]
 guid = "e22ffceeeeebc676"
 type = "decl_var"
-args = ["delay_line", "array<f32,48000>"]
-position = [1106.47, 690.426]
+position = [1107.22, 683.664]
 connections = ["e22ffceeeeebc676.bang0->d48027929dca66a0.bang_in0"]
 
 [[node]]
 guid = "d48027929dca66a0"
 type = "decl_var"
-args = ["delay_line_pos", "s32"]
 position = [1106.59, 745.558]
 connections = ["d48027929dca66a0.bang0->a250677580c18180.bang_in0"]
 
@@ -264,21 +252,19 @@ connections = ["436d853ee8e34fa5.out0->809ab9a7f7fa1b7e.value", "436d853ee8e34fa
 [[node]]
 guid = "a250677580c18180"
 type = "decl_var"
-args = ["delay_line_size", "s32"]
 position = [1106.83, 797.369]
 connections = ["a250677580c18180.bang0->20115e980dcd5b53.bang_in0"]
 
 [[node]]
 guid = "20115e980dcd5b53"
 type = "decl_event"
-args = ["start", "(args:vector<string> envs:vector<string>)", "->", "void"]
 position = [1667.98, 389.477]
 connections = ["20115e980dcd5b53.bang0->1e3de9365a34db20.bang_in0"]
 
 [[node]]
 guid = "ddaf4497489a54c2"
 type = "event!"
-args = ["~start"]
+args = ["start"]
 position = [771.53, 1196.46]
 connections = ["ddaf4497489a54c2.bang0->45df349a6ae05f56.bang_in0"]
 
@@ -292,7 +278,6 @@ connections = ["45df349a6ae05f56.bang0->f79f6fb421f321f0.bang_in0"]
 [[node]]
 guid = "0e02c497002f40c2"
 type = "decl_var"
-args = ["oscs_mutex", "mutex"]
 position = [756.636, 792.818]
 connections = ["0e02c497002f40c2.bang0->c5373cf3d77e7979.bang_in0"]
 
@@ -312,7 +297,6 @@ position = [1702.91, 641.22]
 [[node]]
 guid = "1e3de9365a34db20"
 type = "decl_import"
-args = ["std/imgui"]
 position = [1683.32, 681.704]
 connections = ["1e3de9365a34db20.bang0->9facb8e5368e52c0.bang_in0"]
 
@@ -367,14 +351,12 @@ position = [4945.95, 1939.43]
 [[node]]
 guid = "c5373cf3d77e7979"
 type = "decl_var"
-args = ["klavie_down", "(midi_key:u8 freq:f32)", "->", "void"]
 position = [757.37, 851.95]
 connections = ["c5373cf3d77e7979.bang0->48a2c13cec7e5013.bang_in0"]
 
 [[node]]
 guid = "48a2c13cec7e5013"
 type = "decl_var"
-args = ["klavie_up", "(midi_key:u8)", "->", "void"]
 position = [761, 914]
 connections = ["48a2c13cec7e5013.bang0->c17ebd09a44700e1.bang_in0"]
 
@@ -474,20 +456,17 @@ connections = ["225009e132d0e7d5.out0->a3cda7b2eaa0cc3c.if_false"]
 [[node]]
 guid = "9facb8e5368e52c0"
 type = "decl_import"
-args = ["std/gui"]
 position = [1683.99, 735]
 
 [[node]]
 guid = "c17ebd09a44700e1"
 type = "decl_var"
-args = ["audio_tick", "()", "->", "void"]
 position = [763.229, 970.563]
 connections = ["c17ebd09a44700e1.bang0->50417175624d2751.bang_in0"]
 
 [[node]]
 guid = "50417175624d2751"
 type = "decl_var"
-args = ["video_tick", "()", "->", "void"]
 position = [766.535, 1028.41]
 connections = ["50417175624d2751.bang0->decl_on_quit.bang_in0"]
 
@@ -533,7 +512,6 @@ connections = ["dcdb8bb52c9d14ef.bang0->av_window_node.bang_in0"]
 [[node]]
 guid = "decl_on_quit"
 type = "decl_var"
-args = ["on_quit", "()", "->", "void"]
 position = [766.535, 1080]
 connections = ["decl_on_quit.bang0->e22ffceeeeebc676.bang_in0"]
 
@@ -598,14 +576,647 @@ position = [748.476, 286.206]
 connections = ["f3643a745bd92067.bang0->934e3b98bb914e95.bang_in0"]
 
 [[node]]
-guid = "76aa577f764efa5d"
-type = "decl_import"
-position = [1704.29, 919.466]
+guid = "a8fa607be876e933"
+type = "expr"
+args = ["literal<string,\"abc\">"]
+position = [2220.82, 884.893]
 
 [[node]]
-guid = "179acc7c1e4443c5"
+guid = "e0f626af20202466"
+type = "decl_var"
+position = [1832.42, 1132.81]
+
+[[node]]
+guid = "123b4f69e60c60d4"
 type = "expr"
+args = ["f32"]
+position = [1555.62, 880.995]
+
+[[node]]
+guid = "d0fb3eeaa045e214"
+type = "expr"
+args = ["(x:f32)->f32"]
+position = [2155.93, 1059.06]
+
+[[node]]
+guid = "b8759d10b3529ae7"
+type = "expr"
+args = ["array<f32,48000>"]
+position = [2161.93, 1167.45]
+
+[[node]]
+guid = "934e3b98bb914e95_s0"
+type = "expr"
+shadow = true
+args = ["osc_res"]
+position = [550.93, 375.328]
+connections = ["934e3b98bb914e95_s0.out0->934e3b98bb914e95.name"]
+
+[[node]]
+guid = "934e3b98bb914e95_s1"
+type = "expr"
+shadow = true
+args = ["s:f32"]
+position = [550.93, 315.328]
+connections = ["934e3b98bb914e95_s1.out0->934e3b98bb914e95.type"]
+
+[[node]]
+guid = "934e3b98bb914e95_s2"
+type = "expr"
+shadow = true
+args = ["e:bool"]
+position = [550.93, 255.328]
+connections = ["934e3b98bb914e95_s2.out0->934e3b98bb914e95.arg2"]
+
+[[node]]
+guid = "e073eb5950485587_s0"
+type = "expr"
+shadow = true
+args = ["gen_fn"]
+position = [551.91, 422.962]
+connections = ["e073eb5950485587_s0.out0->e073eb5950485587.name"]
+
+[[node]]
+guid = "e073eb5950485587_s1"
+type = "expr"
+shadow = true
+args = ["(osc:&osc_def)"]
+position = [551.91, 362.962]
+connections = ["e073eb5950485587_s1.out0->e073eb5950485587.type"]
+
+[[node]]
+guid = "e073eb5950485587_s2"
+type = "expr"
+shadow = true
+args = ["->"]
+position = [551.91, 302.962]
+connections = ["e073eb5950485587_s2.out0->e073eb5950485587.arg2"]
+
+[[node]]
+guid = "e073eb5950485587_s3"
+type = "expr"
+shadow = true
+args = ["osc_res"]
+position = [551.91, 242.962]
+connections = ["e073eb5950485587_s3.out0->e073eb5950485587.arg3"]
+
+[[node]]
+guid = "fe155835bba6cd45_s0"
+type = "expr"
+shadow = true
+args = ["stop_fn"]
+position = [554.325, 467.55]
+connections = ["fe155835bba6cd45_s0.out0->fe155835bba6cd45.name"]
+
+[[node]]
+guid = "fe155835bba6cd45_s1"
+type = "expr"
+shadow = true
+args = ["(osc:&osc_def)"]
+position = [554.325, 407.55]
+connections = ["fe155835bba6cd45_s1.out0->fe155835bba6cd45.type"]
+
+[[node]]
+guid = "fe155835bba6cd45_s2"
+type = "expr"
+shadow = true
+args = ["->"]
+position = [554.325, 347.55]
+connections = ["fe155835bba6cd45_s2.out0->fe155835bba6cd45.arg2"]
+
+[[node]]
+guid = "fe155835bba6cd45_s3"
+type = "expr"
+shadow = true
+args = ["void"]
+position = [554.325, 287.55]
+connections = ["fe155835bba6cd45_s3.out0->fe155835bba6cd45.arg3"]
+
+[[node]]
+guid = "09f161f1210cec4f_s0"
+type = "expr"
+shadow = true
+args = ["osc_def"]
+position = [554.46, 510.991]
+connections = ["09f161f1210cec4f_s0.out0->09f161f1210cec4f.name"]
+
+[[node]]
+guid = "09f161f1210cec4f_s1"
+type = "expr"
+shadow = true
+args = ["gen:gen_fn"]
+position = [554.46, 450.991]
+connections = ["09f161f1210cec4f_s1.out0->09f161f1210cec4f.type"]
+
+[[node]]
+guid = "09f161f1210cec4f_s2"
+type = "expr"
+shadow = true
+args = ["stop:stop_fn"]
+position = [554.46, 390.991]
+connections = ["09f161f1210cec4f_s2.out0->09f161f1210cec4f.arg2"]
+
+[[node]]
+guid = "09f161f1210cec4f_s3"
+type = "expr"
+shadow = true
+args = ["p:f32"]
+position = [554.46, 330.991]
+connections = ["09f161f1210cec4f_s3.out0->09f161f1210cec4f.arg3"]
+
+[[node]]
+guid = "09f161f1210cec4f_s4"
+type = "expr"
+shadow = true
+args = ["pstep:f32"]
+position = [554.46, 270.991]
+connections = ["09f161f1210cec4f_s4.out0->09f161f1210cec4f.arg4"]
+
+[[node]]
+guid = "09f161f1210cec4f_s5"
+type = "expr"
+shadow = true
+args = ["a:f32"]
+position = [554.46, 210.991]
+connections = ["09f161f1210cec4f_s5.out0->09f161f1210cec4f.arg5"]
+
+[[node]]
+guid = "09f161f1210cec4f_s6"
+type = "expr"
+shadow = true
+args = ["astep:f32"]
+position = [554.46, 150.991]
+connections = ["09f161f1210cec4f_s6.out0->09f161f1210cec4f.arg6"]
+
+[[node]]
+guid = "c0fbc2b794fa65b4_s0"
+type = "expr"
+shadow = true
+args = ["key_set"]
+position = [554.64, 561.922]
+connections = ["c0fbc2b794fa65b4_s0.out0->c0fbc2b794fa65b4.name"]
+
+[[node]]
+guid = "c0fbc2b794fa65b4_s1"
+type = "expr"
+shadow = true
+args = ["map<u8,"]
+position = [554.64, 501.922]
+connections = ["c0fbc2b794fa65b4_s1.out0->c0fbc2b794fa65b4.type"]
+
+[[node]]
+guid = "c0fbc2b794fa65b4_s2"
+type = "expr"
+shadow = true
+args = ["^list_iterator<osc_def>>"]
+position = [554.64, 441.922]
+connections = ["c0fbc2b794fa65b4_s2.out0->c0fbc2b794fa65b4.arg2"]
+
+[[node]]
+guid = "e530be85f0c2565e_s0"
+type = "expr"
+shadow = true
+args = ["osc_list"]
+position = [555.57, 606.798]
+connections = ["e530be85f0c2565e_s0.out0->e530be85f0c2565e.name"]
+
+[[node]]
+guid = "e530be85f0c2565e_s1"
+type = "expr"
+shadow = true
+args = ["list<osc_def>"]
+position = [555.57, 546.798]
+connections = ["e530be85f0c2565e_s1.out0->e530be85f0c2565e.type"]
+
+[[node]]
+guid = "b11adccc2e0b937c_s0"
+type = "expr"
+shadow = true
+args = ["keys"]
+position = [553.51, 697.467]
+connections = ["b11adccc2e0b937c_s0.out0->b11adccc2e0b937c.name"]
+
+[[node]]
+guid = "b11adccc2e0b937c_s1"
+type = "expr"
+shadow = true
+args = ["key_set"]
+position = [553.51, 637.467]
+connections = ["b11adccc2e0b937c_s1.out0->b11adccc2e0b937c.type"]
+
+[[node]]
+guid = "91b1885ec31bca0d_s0"
+type = "expr"
+shadow = true
+args = ["oscs"]
+position = [554.71, 742.669]
+connections = ["91b1885ec31bca0d_s0.out0->91b1885ec31bca0d.name"]
+
+[[node]]
+guid = "91b1885ec31bca0d_s1"
+type = "expr"
+shadow = true
+args = ["osc_list"]
+position = [554.71, 682.669]
+connections = ["91b1885ec31bca0d_s1.out0->91b1885ec31bca0d.type"]
+
+[[node]]
+guid = "e74cec1135c3a130_s0"
+type = "expr"
+shadow = true
+args = ["mixs"]
+position = [3502.59, 1442.63]
+connections = ["e74cec1135c3a130_s0.out0->e74cec1135c3a130.name"]
+
+[[node]]
+guid = "e74cec1135c3a130_s1"
+type = "expr"
+shadow = true
+args = ["f32"]
+position = [3502.59, 1382.63]
+connections = ["e74cec1135c3a130_s1.out0->e74cec1135c3a130.type"]
+
+[[node]]
+guid = "e22ffceeeeebc676_s0"
+type = "expr"
+shadow = true
+args = ["delay_line"]
+position = [907.22, 683.664]
+connections = ["e22ffceeeeebc676_s0.out0->e22ffceeeeebc676.name"]
+
+[[node]]
+guid = "e22ffceeeeebc676_s1"
+type = "expr"
+shadow = true
+args = ["array<f32,48000>"]
+position = [907.22, 623.664]
+connections = ["e22ffceeeeebc676_s1.out0->e22ffceeeeebc676.type"]
+
+[[node]]
+guid = "d48027929dca66a0_s0"
+type = "expr"
+shadow = true
+args = ["delay_line_pos"]
+position = [906.59, 745.558]
+connections = ["d48027929dca66a0_s0.out0->d48027929dca66a0.name"]
+
+[[node]]
+guid = "d48027929dca66a0_s1"
+type = "expr"
+shadow = true
+args = ["s32"]
+position = [906.59, 685.558]
+connections = ["d48027929dca66a0_s1.out0->d48027929dca66a0.type"]
+
+[[node]]
+guid = "a250677580c18180_s0"
+type = "expr"
+shadow = true
+args = ["delay_line_size"]
+position = [906.83, 797.369]
+connections = ["a250677580c18180_s0.out0->a250677580c18180.name"]
+
+[[node]]
+guid = "a250677580c18180_s1"
+type = "expr"
+shadow = true
+args = ["s32"]
+position = [906.83, 737.369]
+connections = ["a250677580c18180_s1.out0->a250677580c18180.type"]
+
+[[node]]
+guid = "20115e980dcd5b53_s0"
+type = "expr"
+shadow = true
+args = ["start"]
+position = [1467.98, 389.477]
+connections = ["20115e980dcd5b53_s0.out0->20115e980dcd5b53.name"]
+
+[[node]]
+guid = "20115e980dcd5b53_s1"
+type = "expr"
+shadow = true
+args = ["(args:vector<string> envs:vector<string>)"]
+position = [1467.98, 329.477]
+connections = ["20115e980dcd5b53_s1.out0->20115e980dcd5b53.type"]
+
+[[node]]
+guid = "20115e980dcd5b53_s2"
+type = "expr"
+shadow = true
+args = ["->"]
+position = [1467.98, 269.477]
+connections = ["20115e980dcd5b53_s2.out0->20115e980dcd5b53.arg2"]
+
+[[node]]
+guid = "20115e980dcd5b53_s3"
+type = "expr"
+shadow = true
+args = ["void"]
+position = [1467.98, 209.477]
+connections = ["20115e980dcd5b53_s3.out0->20115e980dcd5b53.arg3"]
+
+[[node]]
+guid = "0e02c497002f40c2_s0"
+type = "expr"
+shadow = true
+args = ["oscs_mutex"]
+position = [556.636, 792.818]
+connections = ["0e02c497002f40c2_s0.out0->0e02c497002f40c2.name"]
+
+[[node]]
+guid = "0e02c497002f40c2_s1"
+type = "expr"
+shadow = true
+args = ["mutex"]
+position = [556.636, 732.818]
+connections = ["0e02c497002f40c2_s1.out0->0e02c497002f40c2.type"]
+
+[[node]]
+guid = "1e3de9365a34db20_s0"
+type = "expr"
+shadow = true
 args = ["\"std/imgui\""]
-position = [1722.3, 855.511]
-connections = ["179acc7c1e4443c5.out0->76aa577f764efa5d.name"]
+position = [1483.32, 681.704]
+connections = ["1e3de9365a34db20_s0.out0->1e3de9365a34db20.path"]
+
+[[node]]
+guid = "c5373cf3d77e7979_s0"
+type = "expr"
+shadow = true
+args = ["klavie_down"]
+position = [557.37, 851.95]
+connections = ["c5373cf3d77e7979_s0.out0->c5373cf3d77e7979.name"]
+
+[[node]]
+guid = "c5373cf3d77e7979_s1"
+type = "expr"
+shadow = true
+args = ["(midi_key:u8 freq:f32)"]
+position = [557.37, 791.95]
+connections = ["c5373cf3d77e7979_s1.out0->c5373cf3d77e7979.type"]
+
+[[node]]
+guid = "c5373cf3d77e7979_s2"
+type = "expr"
+shadow = true
+args = ["->"]
+position = [557.37, 731.95]
+connections = ["c5373cf3d77e7979_s2.out0->c5373cf3d77e7979.init"]
+
+[[node]]
+guid = "c5373cf3d77e7979_s3"
+type = "expr"
+shadow = true
+args = ["void"]
+position = [557.37, 671.95]
+connections = ["c5373cf3d77e7979_s3.out0->c5373cf3d77e7979.arg3"]
+
+[[node]]
+guid = "48a2c13cec7e5013_s0"
+type = "expr"
+shadow = true
+args = ["klavie_up"]
+position = [561, 914]
+connections = ["48a2c13cec7e5013_s0.out0->48a2c13cec7e5013.name"]
+
+[[node]]
+guid = "48a2c13cec7e5013_s1"
+type = "expr"
+shadow = true
+args = ["(midi_key:u8)"]
+position = [561, 854]
+connections = ["48a2c13cec7e5013_s1.out0->48a2c13cec7e5013.type"]
+
+[[node]]
+guid = "48a2c13cec7e5013_s2"
+type = "expr"
+shadow = true
+args = ["->"]
+position = [561, 794]
+connections = ["48a2c13cec7e5013_s2.out0->48a2c13cec7e5013.init"]
+
+[[node]]
+guid = "48a2c13cec7e5013_s3"
+type = "expr"
+shadow = true
+args = ["void"]
+position = [561, 734]
+connections = ["48a2c13cec7e5013_s3.out0->48a2c13cec7e5013.arg3"]
+
+[[node]]
+guid = "9facb8e5368e52c0_s0"
+type = "expr"
+shadow = true
+args = ["\"std/gui\""]
+position = [1483.99, 735]
+connections = ["9facb8e5368e52c0_s0.out0->9facb8e5368e52c0.path"]
+
+[[node]]
+guid = "c17ebd09a44700e1_s0"
+type = "expr"
+shadow = true
+args = ["audio_tick"]
+position = [563.229, 970.563]
+connections = ["c17ebd09a44700e1_s0.out0->c17ebd09a44700e1.name"]
+
+[[node]]
+guid = "c17ebd09a44700e1_s1"
+type = "expr"
+shadow = true
+args = ["()"]
+position = [563.229, 910.563]
+connections = ["c17ebd09a44700e1_s1.out0->c17ebd09a44700e1.type"]
+
+[[node]]
+guid = "c17ebd09a44700e1_s2"
+type = "expr"
+shadow = true
+args = ["->"]
+position = [563.229, 850.563]
+connections = ["c17ebd09a44700e1_s2.out0->c17ebd09a44700e1.init"]
+
+[[node]]
+guid = "c17ebd09a44700e1_s3"
+type = "expr"
+shadow = true
+args = ["void"]
+position = [563.229, 790.563]
+connections = ["c17ebd09a44700e1_s3.out0->c17ebd09a44700e1.arg3"]
+
+[[node]]
+guid = "50417175624d2751_s0"
+type = "expr"
+shadow = true
+args = ["video_tick"]
+position = [566.535, 1028.41]
+connections = ["50417175624d2751_s0.out0->50417175624d2751.name"]
+
+[[node]]
+guid = "50417175624d2751_s1"
+type = "expr"
+shadow = true
+args = ["()"]
+position = [566.535, 968.41]
+connections = ["50417175624d2751_s1.out0->50417175624d2751.type"]
+
+[[node]]
+guid = "50417175624d2751_s2"
+type = "expr"
+shadow = true
+args = ["->"]
+position = [566.535, 908.41]
+connections = ["50417175624d2751_s2.out0->50417175624d2751.init"]
+
+[[node]]
+guid = "50417175624d2751_s3"
+type = "expr"
+shadow = true
+args = ["void"]
+position = [566.535, 848.41]
+connections = ["50417175624d2751_s3.out0->50417175624d2751.arg3"]
+
+[[node]]
+guid = "decl_on_quit_s0"
+type = "expr"
+shadow = true
+args = ["on_quit"]
+position = [566.535, 1080]
+connections = ["decl_on_quit_s0.out0->decl_on_quit.name"]
+
+[[node]]
+guid = "decl_on_quit_s1"
+type = "expr"
+shadow = true
+args = ["()"]
+position = [566.535, 1020]
+connections = ["decl_on_quit_s1.out0->decl_on_quit.type"]
+
+[[node]]
+guid = "decl_on_quit_s2"
+type = "expr"
+shadow = true
+args = ["->"]
+position = [566.535, 960]
+connections = ["decl_on_quit_s2.out0->decl_on_quit.init"]
+
+[[node]]
+guid = "decl_on_quit_s3"
+type = "expr"
+shadow = true
+args = ["void"]
+position = [566.535, 900]
+connections = ["decl_on_quit_s3.out0->decl_on_quit.arg3"]
+
+[[node]]
+guid = "445319c565ebdaa8_s1"
+type = "expr"
+shadow = true
+args = ["0.995f"]
+position = [1584.69, 1615.87]
+connections = ["445319c565ebdaa8_s1.out0->445319c565ebdaa8.value"]
+
+[[node]]
+guid = "16264210160b2d14"
+type = "expr"
+args = ["array"]
+position = [1865.69, 854.982]
+connections = ["16264210160b2d14.out0->1680d2daeb0c8be1.0"]
+
+[[node]]
+guid = "1680d2daeb0c8be1"
+type = "expr"
+args = ["$0<$1,$2>"]
+position = [1891.23, 990.97]
+connections = ["1680d2daeb0c8be1.out0->e0f626af20202466.type"]
+
+[[node]]
+guid = "4b7be926df7149f8"
+type = "expr"
+args = ["f32"]
+position = [1918.28, 898.558]
+connections = ["4b7be926df7149f8.out0->1680d2daeb0c8be1.1"]
+
+[[node]]
+guid = "2304b4205e44a6ad"
+type = "expr"
+args = ["1"]
+position = [1965.61, 936.876]
+connections = ["2304b4205e44a6ad.out0->1680d2daeb0c8be1.2"]
+
+[[node]]
+guid = "90dd534c6a74519c"
+type = "expr"
+args = ["myass"]
+position = [1749.22, 1038.66]
+connections = ["90dd534c6a74519c.out0->e0f626af20202466.name"]
+
+[[node]]
+guid = "7837ca36997a9a3d"
+type = "decl_var"
+position = [1419.58, 1130.03]
+
+[[node]]
+guid = "7837ca36997a9a3d_s0"
+type = "expr"
+shadow = true
+args = ["myass"]
+position = [1060.74, 1004.35]
+connections = ["7837ca36997a9a3d_s0.out0->7837ca36997a9a3d.name"]
+
+[[node]]
+guid = "7837ca36997a9a3d_s1"
+type = "expr"
+shadow = true
+args = ["f32"]
+position = [1060.74, 944.346]
+connections = ["7837ca36997a9a3d_s1.out0->7837ca36997a9a3d.type"]
+
+[[node]]
+guid = "7837ca36997a9a3d_s0"
+type = "expr"
+shadow = true
+args = ["\"myass\""]
+position = [1060.74, 1004.35]
+connections = ["7837ca36997a9a3d_s0.out0->7837ca36997a9a3d.name"]
+
+[[node]]
+guid = "7837ca36997a9a3d_s1"
+type = "expr"
+shadow = true
+args = ["f32"]
+position = [1060.74, 944.346]
+connections = ["7837ca36997a9a3d_s1.out0->7837ca36997a9a3d.type"]
+
+[[node]]
+guid = "7837ca36997a9a3d_s0"
+type = "expr"
+shadow = true
+args = ["myass"]
+position = [1060.74, 1004.35]
+connections = ["7837ca36997a9a3d_s0.out0->7837ca36997a9a3d.name"]
+
+[[node]]
+guid = "7837ca36997a9a3d_s1"
+type = "expr"
+shadow = true
+args = ["f32"]
+position = [1060.74, 944.346]
+connections = ["7837ca36997a9a3d_s1.out0->7837ca36997a9a3d.type"]
+
+[[node]]
+guid = "7837ca36997a9a3d_s0"
+type = "expr"
+shadow = true
+args = ["myass"]
+position = [1060.74, 1004.35]
+connections = ["7837ca36997a9a3d_s0.out0->7837ca36997a9a3d.name"]
+
+[[node]]
+guid = "7837ca36997a9a3d_s1"
+type = "expr"
+shadow = true
+args = ["array<f32,48000>"]
+position = [1060.74, 944.346]
+connections = ["7837ca36997a9a3d_s1.out0->7837ca36997a9a3d.type"]
 
