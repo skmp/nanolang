@@ -384,6 +384,162 @@ TEST(expr_type_apply_with_pin_param) {
     ASSERT_TYPE(n->outputs[0], "type<array<f32, 48000>>");
 }
 
+TEST(expr_type_apply_invalid_string_param) {
+    // array<f32,"a"> — string is not a valid type parameter
+    GraphBuilder gb;
+    gb.add("a", "expr", "array");
+    gb.add("s", "expr", "\"a\"");
+    gb.add("e", "expr", "$0<f32,$1>", 2);
+    gb.link("a.out0", "e.0");
+    gb.link("s.out0", "e.1");
+    gb.run_inference();
+    auto* n = gb.find("e");
+    ASSERT(n != nullptr);
+    ASSERT(!n->error.empty());
+    ASSERT_CONTAINS(n->error.c_str(), "must be a type or integer");
+}
+
+// --- Container type parameterization validation ---
+
+TEST(expr_type_apply_vector_wrong_param_count) {
+    // vector<f32,u32> — too many params
+    GraphBuilder gb;
+    gb.add("v", "expr", "vector");
+    gb.add("e", "expr", "$0<f32,u32>", 1);
+    gb.link("v.out0", "e.0");
+    gb.run_inference();
+    ASSERT(!gb.find("e")->error.empty());
+    ASSERT_CONTAINS(gb.find("e")->error.c_str(), "requires 1 type parameter");
+}
+
+TEST(expr_type_apply_vector_int_param) {
+    // vector<42> — integer is not a type
+    GraphBuilder gb;
+    gb.add("v", "expr", "vector");
+    gb.add("e", "expr", "$0<42>", 1);
+    gb.link("v.out0", "e.0");
+    gb.run_inference();
+    ASSERT(!gb.find("e")->error.empty());
+    ASSERT_CONTAINS(gb.find("e")->error.c_str(), "must be a type");
+}
+
+TEST(expr_type_apply_map_wrong_param_count) {
+    // map<f32> — too few params
+    GraphBuilder gb;
+    gb.add("m", "expr", "map");
+    gb.add("e", "expr", "$0<f32>", 1);
+    gb.link("m.out0", "e.0");
+    gb.run_inference();
+    ASSERT(!gb.find("e")->error.empty());
+    ASSERT_CONTAINS(gb.find("e")->error.c_str(), "requires 2 type parameter");
+}
+
+TEST(expr_type_apply_map_int_key) {
+    // map<42,f32> — integer key not a type
+    GraphBuilder gb;
+    gb.add("m", "expr", "map");
+    gb.add("e", "expr", "$0<42,f32>", 1);
+    gb.link("m.out0", "e.0");
+    gb.run_inference();
+    ASSERT(!gb.find("e")->error.empty());
+    ASSERT_CONTAINS(gb.find("e")->error.c_str(), "must be a type");
+}
+
+// --- Array type parameterization validation ---
+
+TEST(expr_type_apply_array_no_dims) {
+    // array<f32> — missing dimensions
+    GraphBuilder gb;
+    gb.add("a", "expr", "array");
+    gb.add("e", "expr", "$0<f32>", 1);
+    gb.link("a.out0", "e.0");
+    gb.run_inference();
+    ASSERT(!gb.find("e")->error.empty());
+    ASSERT_CONTAINS(gb.find("e")->error.c_str(), "at least 2 parameters");
+}
+
+TEST(expr_type_apply_array_zero_dim) {
+    // array<f32,0> — dimension can't be zero
+    GraphBuilder gb;
+    gb.add("a", "expr", "array");
+    gb.add("e", "expr", "$0<f32,0>", 1);
+    gb.link("a.out0", "e.0");
+    gb.run_inference();
+    ASSERT(!gb.find("e")->error.empty());
+    ASSERT_CONTAINS(gb.find("e")->error.c_str(), "must be positive");
+}
+
+TEST(expr_type_apply_array_string_dim) {
+    // array<f32,"a"> — string is not a dimension
+    GraphBuilder gb;
+    gb.add("a", "expr", "array");
+    gb.add("s", "expr", "\"a\"");
+    gb.add("e", "expr", "$0<f32,$1>", 2);
+    gb.link("a.out0", "e.0");
+    gb.link("s.out0", "e.1");
+    gb.run_inference();
+    ASSERT(!gb.find("e")->error.empty());
+}
+
+TEST(expr_type_apply_array_int_element) {
+    // array<0,10> — first param must be type, not integer
+    GraphBuilder gb;
+    gb.add("a", "expr", "array");
+    gb.add("e", "expr", "$0<0,10>", 1);
+    gb.link("a.out0", "e.0");
+    gb.run_inference();
+    ASSERT(!gb.find("e")->error.empty());
+    ASSERT_CONTAINS(gb.find("e")->error.c_str(), "must be a type");
+}
+
+TEST(expr_type_apply_array_string_element) {
+    // array<"a",10> — string is not a type
+    GraphBuilder gb;
+    gb.add("a", "expr", "array");
+    gb.add("s", "expr", "\"a\"");
+    gb.add("e", "expr", "$0<$1,10>", 2);
+    gb.link("a.out0", "e.0");
+    gb.link("s.out0", "e.1");
+    gb.run_inference();
+    ASSERT(!gb.find("e")->error.empty());
+}
+
+// --- Tensor type parameterization validation ---
+
+TEST(expr_type_apply_tensor_ok) {
+    GraphBuilder gb;
+    gb.add("t", "expr", "tensor");
+    gb.add("e", "expr", "$0<f32>", 1);
+    gb.link("t.out0", "e.0");
+    gb.run_inference();
+    auto* n = gb.find("e");
+    ASSERT(n != nullptr);
+    ASSERT(n->error.empty());
+    ASSERT_TYPE(n->outputs[0], "type<tensor<f32>>");
+}
+
+TEST(expr_type_apply_tensor_wrong_param_count) {
+    // tensor<f32,u32> — too many params
+    GraphBuilder gb;
+    gb.add("t", "expr", "tensor");
+    gb.add("e", "expr", "$0<f32,u32>", 1);
+    gb.link("t.out0", "e.0");
+    gb.run_inference();
+    ASSERT(!gb.find("e")->error.empty());
+    ASSERT_CONTAINS(gb.find("e")->error.c_str(), "requires 1 type parameter");
+}
+
+TEST(expr_type_apply_tensor_int_param) {
+    // tensor<42> — integer is not a type
+    GraphBuilder gb;
+    gb.add("t", "expr", "tensor");
+    gb.add("e", "expr", "$0<42>", 1);
+    gb.link("t.out0", "e.0");
+    gb.run_inference();
+    ASSERT(!gb.find("e")->error.empty());
+    ASSERT_CONTAINS(gb.find("e")->error.c_str(), "must be a type");
+}
+
 TEST(expr_type_apply_parse) {
     // $0<f32> should parse as TypeApply, not comparison
     auto r = parse_expression("$0<f32>");

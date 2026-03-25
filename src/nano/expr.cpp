@@ -1122,22 +1122,94 @@ TypePtr TypeInferenceContext::infer(const ExprPtr& expr) {
             if (angle != std::string::npos) base_name = base_name.substr(0, angle);
         }
 
-        // Build parameterized type string: base_name<param1,param2,...>
-        std::string type_str = base_name + "<";
+        // Classify each parameter as type or integer literal
+        struct Param { bool is_type = false; bool is_int = false; bool is_deferred = false; std::string str; int64_t int_val = 0; TypePtr type; };
+        std::vector<Param> params;
+        bool params_valid = true;
+        size_t num_params = expr->children.size() - 1;
+
         for (size_t i = 1; i < expr->children.size(); i++) {
-            if (i > 1) type_str += ",";
-            auto param_type = decay_symbol(infer(expr->children[i]));
-            if (param_type && param_type->kind == TypeKind::MetaType && param_type->wrapped_type) {
-                // Type parameter — use inner type name
-                type_str += type_to_string(param_type->wrapped_type);
-            } else if (param_type && !param_type->literal_value.empty()) {
-                // Literal value — use the value directly (for array dimensions etc.)
-                type_str += param_type->literal_value;
-            } else if (param_type) {
-                type_str += type_to_string(param_type);
+            Param p;
+            p.type = decay_symbol(infer(expr->children[i]));
+            if (p.type && p.type->kind == TypeKind::MetaType && p.type->wrapped_type) {
+                p.is_type = true;
+                p.str = type_to_string(p.type->wrapped_type);
+            } else if (p.type && is_numeric(p.type) && !p.type->literal_value.empty()) {
+                p.is_int = true;
+                p.str = p.type->literal_value;
+                p.int_val = std::stoll(p.type->literal_value);
+            } else if (!p.type || p.type->is_generic || p.type->kind == TypeKind::Void) {
+                p.is_deferred = true;
+                p.str = "?";
             } else {
-                type_str += "?";
+                add_error("Type parameter " + std::to_string(i) + " must be a type or integer, got " + type_to_string(p.type));
+                params_valid = false;
+                break;
             }
+            params.push_back(p);
+        }
+
+        if (!params_valid) { result = pool.t_unknown; break; }
+
+        // Validate parameters per base type kind
+        auto validate_all_types = [&](const char* name, size_t expected) -> bool {
+            if (num_params != expected) {
+                add_error(std::string(name) + " requires " + std::to_string(expected) + " type parameter(s), got " + std::to_string(num_params));
+                return false;
+            }
+            for (size_t i = 0; i < params.size(); i++) {
+                if (params[i].is_deferred) continue;
+                if (!params[i].is_type) {
+                    add_error(std::string(name) + " parameter " + std::to_string(i + 1) + " must be a type, got " + params[i].str);
+                    return false;
+                }
+            }
+            return true;
+        };
+
+        auto validate_array = [&]() -> bool {
+            if (num_params < 2) {
+                add_error("array requires at least 2 parameters (element type + dimensions), got " + std::to_string(num_params));
+                return false;
+            }
+            if (!params[0].is_deferred && !params[0].is_type) {
+                add_error("array first parameter must be a type, got " + params[0].str);
+                return false;
+            }
+            for (size_t i = 1; i < params.size(); i++) {
+                if (params[i].is_deferred) continue;
+                if (!params[i].is_int) {
+                    add_error("array dimension " + std::to_string(i) + " must be a positive integer, got " + params[i].str);
+                    return false;
+                }
+                if (params[i].int_val <= 0) {
+                    add_error("array dimension " + std::to_string(i) + " must be positive, got " + std::to_string(params[i].int_val));
+                    return false;
+                }
+            }
+            return true;
+        };
+
+        auto validate_tensor = [&]() -> bool {
+            return validate_all_types("tensor", 1);
+        };
+
+        if (inner->kind == TypeKind::Container) {
+            bool is_map_like = (inner->container == ContainerKind::Map || inner->container == ContainerKind::OrderedMap);
+            if (!validate_all_types(base_name.c_str(), is_map_like ? 2 : 1)) {
+                result = pool.t_unknown; break;
+            }
+        } else if (inner->kind == TypeKind::Array) {
+            if (!validate_array()) { result = pool.t_unknown; break; }
+        } else if (inner->kind == TypeKind::Tensor) {
+            if (!validate_tensor()) { result = pool.t_unknown; break; }
+        }
+
+        // Build parameterized type string
+        std::string type_str = base_name + "<";
+        for (size_t i = 0; i < params.size(); i++) {
+            if (i > 0) type_str += ",";
+            type_str += params[i].str;
         }
         type_str += ">";
 
