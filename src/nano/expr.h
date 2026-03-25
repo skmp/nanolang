@@ -30,6 +30,7 @@ enum class ExprKind {
     StructLiteral,  // {name:value, name:value, ...} — runtime struct construction
     StructType,     // {name:type name:type ...} — compile-time struct type
     NamespaceAccess,// a::b — namespace resolution
+    TypeApply,      // expr<params> — type parameterization (children[0]=base, children[1..]=params)
 };
 
 enum class BinOp { Add, Sub, Mul, Div, Eq, Ne, Lt, Gt, Le, Ge, Spaceship };

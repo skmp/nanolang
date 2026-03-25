@@ -343,6 +343,57 @@ TEST(expr_builtin_funcs_are_symbols) {
     }
 }
 
+TEST(expr_type_apply_array) {
+    // $0<f32,48000> where $0 = array → type<array<f32, 48000>>
+    GraphBuilder gb;
+    gb.add("a", "expr", "array");
+    gb.add("e", "expr", "$0<f32,48000>", 1);
+    gb.link("a.out0", "e.0");
+    gb.run_inference();
+    auto* n = gb.find("e");
+    ASSERT(n != nullptr);
+    ASSERT(n->outputs[0]->resolved_type != nullptr);
+    ASSERT_TYPE(n->outputs[0], "type<array<f32, 48000>>");
+}
+
+TEST(expr_type_apply_vector) {
+    // $0<f32> where $0 = vector → type<vector<f32>>
+    GraphBuilder gb;
+    gb.add("v", "expr", "vector");
+    gb.add("e", "expr", "$0<f32>", 1);
+    gb.link("v.out0", "e.0");
+    gb.run_inference();
+    auto* n = gb.find("e");
+    ASSERT(n != nullptr);
+    ASSERT(n->outputs[0]->resolved_type != nullptr);
+    ASSERT_TYPE(n->outputs[0], "type<vector<f32>>");
+}
+
+TEST(expr_type_apply_with_pin_param) {
+    // $0<f32,$1> where $0 = array, $1 = 48000 → type<array<f32, 48000>>
+    GraphBuilder gb;
+    gb.add("a", "expr", "array");
+    gb.add("sz", "expr", "48000");
+    gb.add("e", "expr", "$0<f32,$1>", 2);
+    gb.link("a.out0", "e.0");
+    gb.link("sz.out0", "e.1");
+    gb.run_inference();
+    auto* n = gb.find("e");
+    ASSERT(n != nullptr);
+    ASSERT(n->outputs[0]->resolved_type != nullptr);
+    ASSERT_TYPE(n->outputs[0], "type<array<f32, 48000>>");
+}
+
+TEST(expr_type_apply_parse) {
+    // $0<f32> should parse as TypeApply, not comparison
+    auto r = parse_expression("$0<f32>");
+    ASSERT(r.error.empty());
+    ASSERT(r.root != nullptr);
+    ASSERT_EQ(r.root->kind, ExprKind::TypeApply);
+    ASSERT_EQ(r.root->children.size(), (size_t)2);
+    ASSERT_EQ(r.root->children[0]->kind, ExprKind::PinRef);
+}
+
 TEST(expr_builtin_constants_are_symbols) {
     const char* names[] = {"pi","e","tau"};
     for (auto name : names) {

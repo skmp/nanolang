@@ -332,6 +332,42 @@ ExprPtr ExprParser::parse_postfix() {
             advance();
             left = node;
         }
+        else if (check(ExprTokenKind::Lt) && left &&
+                 (left->kind == ExprKind::PinRef || left->kind == ExprKind::SymbolRef)) {
+            // Speculatively try type parameterization: expr<params>
+            // Save state for fallback to comparison
+            size_t saved_pos = tokenizer.pos;
+            auto saved_tok = current;
+            std::string saved_error = error;
+
+            advance(); // consume '<'
+            std::vector<ExprPtr> params;
+            bool ok = true;
+
+            // Parse comma-separated expressions inside <>
+            // Each param is parsed via parse_expr() but we stop at ',' or '>'
+            while (!check(ExprTokenKind::Gt) && !check(ExprTokenKind::Eof)) {
+                auto param = parse_additive(); // use additive to avoid consuming > as comparison
+                if (!param || !error.empty()) { ok = false; break; }
+                params.push_back(param);
+                if (check(ExprTokenKind::Comma)) { advance(); continue; }
+                if (!check(ExprTokenKind::Gt)) { ok = false; break; }
+            }
+
+            if (ok && check(ExprTokenKind::Gt)) {
+                advance(); // consume '>'
+                auto node = make_expr(ExprKind::TypeApply);
+                node->children.push_back(left);
+                for (auto& p : params) node->children.push_back(p);
+                left = node;
+            } else {
+                // Restore — not a type application, fall back to comparison
+                tokenizer.pos = saved_pos;
+                current = saved_tok;
+                error = saved_error;
+                break; // exit postfix loop, let comparison handle <
+            }
+        }
         else if (check(ExprTokenKind::LParen)) {
             // Function/lambda call
             advance();
@@ -860,6 +896,15 @@ std::string expr_to_string(const ExprPtr& e) {
     }
     case ExprKind::NamespaceAccess:
         return expr_to_string(e->children[0]) + "::" + e->field_name;
+    case ExprKind::TypeApply: {
+        std::string s = expr_to_string(e->children[0]) + "<";
+        for (size_t i = 1; i < e->children.size(); i++) {
+            if (i > 1) s += ",";
+            s += expr_to_string(e->children[i]);
+        }
+        s += ">";
+        return s;
+    }
     }
     return "?";
 }
@@ -1048,6 +1093,65 @@ TypePtr TypeInferenceContext::infer(const ExprPtr& expr) {
         meta->kind = TypeKind::MetaType;
         meta->wrapped_type = struct_type;
         result = meta;
+        break;
+    }
+
+    case ExprKind::TypeApply: {
+        // expr<params> — type parameterization
+        auto base = decay_symbol(infer(expr->children[0]));
+        if (!base || base->kind != TypeKind::MetaType || !base->wrapped_type) {
+            // Base not resolved to a type yet — defer (don't error, allow re-inference)
+            if (base && !base->is_generic && base->kind != TypeKind::Void)
+                add_error("Type parameterization requires a type, got " + type_to_string(base));
+            result = pool.t_unknown;
+            break;
+        }
+        // Get the base type name from the wrapped type
+        auto& inner = base->wrapped_type;
+        std::string base_name;
+        if (inner->kind == TypeKind::Container) {
+            static const char* cnames[] = {"map","ordered_map","set","ordered_set","list","queue","vector"};
+            base_name = cnames[(int)inner->container];
+        } else if (inner->kind == TypeKind::Array) {
+            base_name = "array";
+        } else if (inner->kind == TypeKind::Tensor) {
+            base_name = "tensor";
+        } else {
+            base_name = type_to_string(inner);
+            auto angle = base_name.find('<');
+            if (angle != std::string::npos) base_name = base_name.substr(0, angle);
+        }
+
+        // Build parameterized type string: base_name<param1,param2,...>
+        std::string type_str = base_name + "<";
+        for (size_t i = 1; i < expr->children.size(); i++) {
+            if (i > 1) type_str += ",";
+            auto param_type = decay_symbol(infer(expr->children[i]));
+            if (param_type && param_type->kind == TypeKind::MetaType && param_type->wrapped_type) {
+                // Type parameter — use inner type name
+                type_str += type_to_string(param_type->wrapped_type);
+            } else if (param_type && !param_type->literal_value.empty()) {
+                // Literal value — use the value directly (for array dimensions etc.)
+                type_str += param_type->literal_value;
+            } else if (param_type) {
+                type_str += type_to_string(param_type);
+            } else {
+                type_str += "?";
+            }
+        }
+        type_str += ">";
+
+        // Parse the constructed type string
+        auto parameterized = pool.intern(type_str);
+        if (parameterized && parameterized->kind != TypeKind::Named) {
+            auto meta = std::make_shared<TypeExpr>();
+            meta->kind = TypeKind::MetaType;
+            meta->wrapped_type = parameterized;
+            result = meta;
+        } else {
+            add_error("Failed to parameterize type: " + type_str);
+            result = pool.t_unknown;
+        }
         break;
     }
 
