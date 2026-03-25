@@ -343,7 +343,8 @@ TEST(infer_f32_literal) {
     GraphBuilder gb;
     gb.add("1", "expr", "1.0f");
     gb.run_inference();
-    ASSERT_TYPE(gb.find("1")->outputs[0].get(), "f32");
+    auto ts = type_to_string(gb.find("1")->outputs[0]->resolved_type);
+    ASSERT_CONTAINS(ts.c_str(), "literal<f32,");
 }
 
 TEST(infer_var_ref) {
@@ -392,11 +393,12 @@ TEST(infer_propagation) {
     gb.add("b", "expr", "$0+$1", 2);
     gb.link("a.out0", "b.0");
     gb.run_inference();
-    // b's input 0 should have f32 from connection
+    // b's input 0 should have literal<f32, ...> from connection (literals flow as-is)
     auto* b = gb.find("b");
     ASSERT(b != nullptr);
     ASSERT(b->inputs[0]->resolved_type != nullptr);
-    ASSERT_TYPE(b->inputs[0].get(), "f32");
+    auto ts = type_to_string(b->inputs[0]->resolved_type);
+    ASSERT_CONTAINS(ts.c_str(), "literal<f32,");
 }
 
 TEST(infer_field_access) {
@@ -603,14 +605,14 @@ TEST(expr_multi_output) {
 
 TEST(expr_multi_output_mixed) {
     GraphBuilder gb;
-    // expr "1.0f $0 true" should have 3 outputs: f32, value, bool
+    // expr "1.0f $0 true" should have 3 outputs: literal<f32,...>, value, literal<bool,...>
     gb.add("e", "expr", "1.0f $0 true", 1, 3);
     gb.run_inference();
     auto* n = gb.find("e");
     ASSERT(n != nullptr);
     ASSERT_EQ(n->outputs.size(), (size_t)3);
-    ASSERT_TYPE(n->outputs[0].get(), "f32");
-    ASSERT_TYPE(n->outputs[2].get(), "bool");
+    ASSERT_CONTAINS(type_to_string(n->outputs[0]->resolved_type).c_str(), "literal<f32,");
+    ASSERT_CONTAINS(type_to_string(n->outputs[2]->resolved_type).c_str(), "literal<bool,");
 }
 
 TEST(expr_multi_output_with_parens) {
@@ -1309,7 +1311,7 @@ TEST(dup_propagates_type_from_connection) {
     auto* n = gb.find("d");
     ASSERT(n != nullptr);
     ASSERT(n->error.empty());
-    ASSERT_TYPE(n->outputs[0].get(), "f32");
+    ASSERT_CONTAINS(type_to_string(n->outputs[0]->resolved_type).c_str(), "literal<f32,");
 }
 
 TEST(dup_propagates_type_from_inline) {
@@ -1343,7 +1345,7 @@ TEST(dup_chain_propagation) {
     gb.link("src.out0", "d1.value");
     gb.link("d1.out0", "d2.value");
     gb.run_inference();
-    ASSERT_TYPE(gb.find("d2")->outputs[0].get(), "f32");
+    ASSERT_CONTAINS(type_to_string(gb.find("d2")->outputs[0]->resolved_type).c_str(), "literal<f32,");
 }
 
 // --- select! validation tests ---
@@ -5152,7 +5154,7 @@ TEST(literal_f64) {
     auto* n = gb.find("e1");
     ASSERT(n != nullptr);
     auto ts = type_to_string(n->outputs[0]->resolved_type);
-    ASSERT_CONTAINS(ts.c_str(), "literal<float<?>,");
+    ASSERT_CONTAINS(ts.c_str(), "literal<f64,");
 }
 
 // ============================================================
@@ -5205,6 +5207,55 @@ TEST(parse_literal_f32) {
     ASSERT(t != nullptr);
     ASSERT(err.empty());
     ASSERT_EQ(type_to_string(t), "literal<f32, 3.14f>");
+}
+
+// ============================================================
+// Operations on literals produce runtime (non-literal) types
+// ============================================================
+
+TEST(literal_add_strips_literal) {
+    // 0+1 should produce unsigned<?>, not literal<...>
+    GraphBuilder gb;
+    gb.add("e1", "expr", "0+1");
+    GraphInference gi(gb.pool);
+    gi.run(gb.graph);
+    auto* n = gb.find("e1");
+    ASSERT(n != nullptr);
+    auto ts = type_to_string(n->outputs[0]->resolved_type);
+    ASSERT_EQ(ts, "unsigned<?>");
+}
+
+TEST(literal_mul_strips_literal) {
+    // 2.0f*3.0f should produce f32, not literal<f32, ...>
+    GraphBuilder gb;
+    gb.add("e1", "expr", "2.0f*3.0f");
+    GraphInference gi(gb.pool);
+    gi.run(gb.graph);
+    auto* n = gb.find("e1");
+    ASSERT(n != nullptr);
+    ASSERT_EQ(type_to_string(n->outputs[0]->resolved_type), "f32");
+}
+
+TEST(literal_builtin_strips_literal) {
+    // sin(1.0f) should produce f32, not literal<f32, ...>
+    GraphBuilder gb;
+    gb.add("e1", "expr", "sin(1.0f)");
+    GraphInference gi(gb.pool);
+    gi.run(gb.graph);
+    auto* n = gb.find("e1");
+    ASSERT(n != nullptr);
+    ASSERT_EQ(type_to_string(n->outputs[0]->resolved_type), "f32");
+}
+
+TEST(literal_select_strips_literal) {
+    // select true 1.0f 2.0f should produce f32, not literal<f32, ...>
+    GraphBuilder gb;
+    gb.add("s", "select", "true 1.0f 2.0f");
+    gb.run_inference();
+    auto* n = gb.find("s");
+    ASSERT(n != nullptr);
+    ASSERT(n->error.empty());
+    ASSERT_TYPE(n->outputs[0].get(), "f32");
 }
 
 // ============================================================

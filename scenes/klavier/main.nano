@@ -609,9 +609,3 @@ args = ["\"std/imgui\""]
 position = [1722.3, 855.511]
 connections = ["179acc7c1e4443c5.out0->76aa577f764efa5d.name"]
 
-[[node]]
-guid = "aefdee0b930d27ce"
-type = "expr"
-args = ["literal<string,\"std/imgui\">"]
-position = [2083.67, 851.786]
-

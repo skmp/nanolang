@@ -445,7 +445,7 @@ std::string type_to_string(const TypePtr& t) {
                 domain = "unsigned<?>";
             if (!t->literal_value.empty())
                 return prefix + "literal<" + domain + ", " + t->literal_value + ">";
-            return prefix + "literal<" + domain + ">";
+            return prefix + domain;
         }
         return prefix + "?";
     }

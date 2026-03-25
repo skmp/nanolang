@@ -1140,17 +1140,17 @@ TypePtr TypeInferenceContext::infer_scalar_binop(const TypePtr& left_t, const Ty
     }
 
     // Arithmetic: +, -, *, /
+    // Operations on literals produce runtime values (strip literal annotations)
     if (left_t->is_generic && right_t->is_generic) {
-        // If either is a float literal, result is float literal
         if (is_float(left_t) || is_float(right_t))
-            return left_t; // preserve the literal type with value
-        return left_t; // preserve the literal type with value
+            return strip_literal(left_t);
+        return strip_literal(left_t);
     }
-    if (left_t->is_generic) return right_t; // generic literal adopts other's type
-    if (right_t->is_generic) return left_t;
+    if (left_t->is_generic) return strip_literal(right_t);
+    if (right_t->is_generic) return strip_literal(left_t);
 
-    if (left_t.get() == right_t.get()) return left_t; // same singleton
-    if (types_compatible(left_t, right_t)) return left_t;
+    if (left_t.get() == right_t.get()) return strip_literal(left_t);
+    if (types_compatible(left_t, right_t)) return strip_literal(left_t);
 
     add_error("Cannot apply arithmetic between " + type_to_string(left_t) + " and " + type_to_string(right_t));
     return pool.t_unknown;
@@ -1319,6 +1319,8 @@ TypePtr TypeInferenceContext::infer_builtin_call(const ExprPtr& expr) {
     for (size_t i = 1; i < expr->children.size(); i++)
         arg_types.push_back(infer(expr->children[i]));
 
+    // All builtin results strip literal annotations — operations produce runtime values
+    auto result = [&]() -> TypePtr {
     switch (expr->builtin) {
     case BuiltinFunc::Sin: case BuiltinFunc::Cos:
     case BuiltinFunc::Exp: case BuiltinFunc::Log: {
@@ -1396,6 +1398,8 @@ TypePtr TypeInferenceContext::infer_builtin_call(const ExprPtr& expr) {
 
     default: return pool.t_unknown;
     }
+    }();
+    return strip_literal(result);
 }
 
 void TypeInferenceContext::resolve_int_literals(const ExprPtr& expr, const TypePtr& expected) {

@@ -611,6 +611,8 @@ bool GraphInference::infer_expr_nodes(FlowGraph& graph) {
             else if (true_type) result_type = true_type;
             else result_type = false_type;
 
+            // Select is a runtime operation — strip literal annotations
+            if (result_type) result_type = strip_literal(result_type);
             if (result_type && !node.outputs.empty()) {
                 if (!node.outputs[0]->resolved_type || node.outputs[0]->resolved_type->is_generic) {
                     if (node.outputs[0]->resolved_type != result_type) {

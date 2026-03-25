@@ -232,6 +232,16 @@ inline bool is_float(const TypePtr& t) {
     return t->scalar == ScalarType::F32 || t->scalar == ScalarType::F64;
 }
 
+// Strip literal_value from a type — used when operations consume literals
+// and produce runtime values. Returns the same pointer if no literal_value.
+inline TypePtr strip_literal(const TypePtr& t) {
+    if (!t || (t->literal_value.empty() && !t->literal_signed)) return t;
+    auto r = std::make_shared<TypeExpr>(*t);
+    r->literal_value.clear();
+    r->literal_signed = false;
+    return r;
+}
+
 inline bool is_collection(const TypePtr& t) {
     if (!t) return false;
     return t->kind == TypeKind::Container || t->kind == TypeKind::Array || t->kind == TypeKind::Tensor;
