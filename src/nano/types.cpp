@@ -445,9 +445,21 @@ std::string type_to_string(const TypePtr& t) {
                 domain = "unsigned<?>";
             if (!t->literal_value.empty())
                 return prefix + "literal<" + domain + "," + t->literal_value + ">";
-            return prefix + domain;
+            return prefix + "literal<" + domain + ",?>";
         }
         return prefix + "?";
+    }
+    // Unvalued literal: type is known but value isn't provided yet (input pins)
+    if (t->is_unvalued_literal) {
+        switch (t->kind) {
+        case TypeKind::String: return prefix + "literal<string,?>";
+        case TypeKind::Bool:   return prefix + "literal<bool,?>";
+        case TypeKind::Scalar: {
+            static const char* names[] = {"u8","s8","u16","s16","u32","s32","u64","s64","f32","f64"};
+            return prefix + "literal<" + names[(int)t->scalar] + ",?>";
+        }
+        default: return prefix + "literal<?,?>";
+        }
     }
     switch (t->kind) {
     case TypeKind::Void: return prefix + "void";

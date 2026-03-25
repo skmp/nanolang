@@ -84,7 +84,8 @@ struct FuncArg {
 struct TypeExpr {
     TypeKind kind = TypeKind::Void;
     TypeCategory category = TypeCategory::Data;
-    bool is_generic = false; // true for unresolved int literals, unknown types, type variables
+    bool is_generic = false;          // true for unresolved type parameters (e.g., 0 could be u8/u32/f32, vector<?>)
+    bool is_unvalued_literal = false;  // true for literals whose value isn't provided yet (e.g., decl_import pin: literal<string,?>)
 
     // Scalar
     ScalarType scalar = ScalarType::U8;

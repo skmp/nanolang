@@ -20,42 +20,78 @@ Value categories are part of the type system but are not indicated by prefix sig
 
 ### Literal Type
 
-`literal<T, V>` is a unified compile-time value type, parameterized by a type domain `T` and a compile-time value `V`. All compile-time constants — numbers, booleans, strings, symbols, and types — are represented as literals.
+`literal<T,V>` is a unified compile-time value type, parameterized by a type domain `T` and a compile-time value `V`. All compile-time constants — numbers, booleans, and strings — are represented as literals. The canonical format uses no spaces: `literal<T,V>`.
 
-| Expression | Type | Decays to |
+| Expression | Type | Notes |
 |---|---|---|
-| `0` | `literal<unsigned<?>, 0>` | Concrete unsigned type from context |
-| `-1` | `literal<signed<?>, -1>` | Concrete signed type from context |
-| `42` | `literal<integer<?>, 42>` | Concrete integer type from context |
-| `3.14f` | `literal<f32, 3.14>` | `f32` |
-| `3.14` | `literal<f64, 3.14>` | `f64` |
-| `true` | `literal<symbol, true>` | `bool` (via symbol table) |
-| `false` | `literal<symbol, false>` | `bool` (via symbol table) |
-| `"hello"` | `literal<string, "hello">` | `string` |
-| `sin` | `literal<symbol, sin>` | `(float<T:?>) -> float<T>` (via symbol table) |
-| `pi` | `literal<symbol, pi>` | `float<?>` (via symbol table) |
-| `f32` | `literal<symbol, f32>` | `type<f32>` (via symbol table) |
-| `vector` | `literal<symbol, vector>` | `type<vector<?>>` (via symbol table) |
-| `myvar` | `literal<undefined_symbol, myvar>` | Resolved by context or errors on evaluation |
+| `0` | `literal<unsigned<?>,0>` | Type-generic: resolves to concrete unsigned type from context |
+| `-1` | `literal<signed<?>,-1>` | Type-generic: resolves to concrete signed type from context |
+| `42` | `literal<unsigned<?>,42>` | Type-generic: resolves to concrete unsigned type from context |
+| `3.14f` | `literal<f32,3.140000f>` | Concrete f32 literal |
+| `3.14` | `literal<f64,3.140000>` | Concrete f64 literal |
+| `true` | `literal<bool,true>` | Parsed directly as a boolean literal |
+| `false` | `literal<bool,false>` | Parsed directly as a boolean literal |
+| `"hello"` | `literal<string,"hello">` | String literal |
 
-Literals are compile-time only values. They must be resolved (decayed) before codegen. An unresolved literal at codegen time is a compile error.
+`true` and `false` are parsed as boolean literals by the expression parser — they are not symbols.
+
+Bare identifiers (`sin`, `pi`, `myvar`, etc.) produce **symbol types**, not literals — see [Symbol Types](#symbol-types).
+
+#### Literal Typing
+
+Literal types have two flags:
+
+- **`is_generic`** — The **type** is unresolved (e.g., `0` could be `u8`, `u16`, `u32`, `f32`, etc.). Resolved via backpropagation from context.
+- **`is_unvalued_literal`** — The **value** is not yet provided (used for input pins that expect a literal). Displayed as `literal<T,?>` (e.g., `literal<string,?>`).
+
+| Example | `is_generic` | `is_unvalued_literal` | Display |
+|---|---|---|---|
+| `0` (unresolved int) | true | false | `literal<unsigned<?>,0>` |
+| `1.0f` (concrete) | false | false | `literal<f32,1.000000f>` |
+| input pin expecting string | false | true | `literal<string,?>` |
+| `vector<?>` | true | false | `vector<?>` |
 
 #### Literal Decay
 
-Literals decay to their resolved types when used in a typed context:
+Literals decay to their resolved types when consumed by operations:
 
-- `literal<unsigned<?>, 0>` in a context expecting `u32` → decays to `u32` (value 0)
-- `literal<symbol, sin>` in a call context → decays to `(f32) -> f32` (or `(f64) -> f64` depending on context)
-- `literal<symbol, pi>` in a context expecting `f32` → decays to `f32` (value 3.14159...)
+- **Operations** (binary ops, function calls, `select`, builtins) on literals produce **non-literal runtime types**. `0 + 1` produces `literal<unsigned<?>,?>`, not a literal. `sin(1.0f)` produces `f32`, not `literal<f32,...>`.
+- **Connections and passthrough** (dup, wire connections) preserve literal types — literals flow as-is through wires.
+- **Type-generic literals** (`unsigned<?>`, `float<?>`) resolve via backpropagation when a concrete type is known from context.
 
 Integer literals coerce to `f32` or `f64` from context, but only if the value can be represented exactly (f32: |v| <= 2^24 = 16777216, f64: |v| <= 2^53). Values that exceed these limits produce an error.
 
+#### Literal Syntax in Expressions
+
+`literal<T,V>` can be typed directly in expression nodes:
+
+```
+expr literal<string,"abc">
+expr literal<unsigned<?>,42>
+expr literal<signed<?>,-5>
+expr literal<bool,true>
+```
+
+This produces the same result as the shorthand forms (`"abc"`, `42`, `-5`, `true`).
+
+`literal`, `symbol`, and `undefined_symbol` are **reserved keywords** in the expression parser — they cannot be used as identifiers.
+
 ### Symbol Types
 
-There are two symbol types used within `literal<T, V>`:
+Bare identifiers in expressions produce **symbol types**, not literals. Symbols are first-class values that carry both a name and a decay type.
 
-- **`symbol`** — A defined symbol found in the symbol table. Has a known decay type.
-- **`undefined_symbol`** — A bare identifier not (yet) in the symbol table. Valid to pass around at compile time (e.g., as a name input to `decl_var`). Errors if something tries to **evaluate** it (emit runtime code).
+- **`symbol<name,type>`** — A defined symbol found in the symbol table. `name` is the symbol name, `type` is the decay type (what it resolves to when consumed). Example: `expr sin` produces `symbol<sin,(f32)->f32>`. `expr myvar` (where `myvar` is declared as `f32`) produces `symbol<myvar,f32>`.
+- **`undefined_symbol<name>`** — A bare identifier not (yet) in the symbol table. Valid to pass around at compile time (e.g., as a name input to `decl_var`). Does not produce an error at inference time. Errors only if something tries to **evaluate** it (emit runtime code).
+
+#### Symbol Decay
+
+Symbols decay automatically when **consumed** by operations:
+
+- **Operations** (binary ops, function calls, builtins, store, select, field access, indexing, unary ops) decay symbols to their wrapped type before processing.
+- **Connections** decay symbols when propagating through wires — the receiving pin gets the decayed type.
+- **Non-expr nodes** (store!, iterate!, append!, etc.) decay all symbol types from inline expressions before validation.
+- **Expr node outputs** preserve symbol types — `expr sin` outputs `symbol<sin,(f32)->f32>`, not the decayed function type.
+- **Type utility functions** (`is_numeric`, `is_float`, `is_collection`, `types_compatible`, etc.) auto-decay symbols transparently.
 
 #### Symbol Table
 
@@ -361,7 +397,7 @@ These nodes live on the compile-time bang chain rooted at `decl`. They define ty
 - **`decl_import <module>`** — Import declarations from a module.
   - Inputs: bang, string literal (module path, e.g., `"std/imgui"`)
   - Outputs: bang
-  - The module path is a string literal, not a symbol — the module doesn't exist in the symbol table before the import.
+  - The module path is a string literal, not a symbol — the module doesn't exist in the symbol table before the import. The input pin type is `literal<string,?>` (an unvalued string literal).
   - Populates the symbol table with all exported symbols from the module.
 
 - **`ffi <name> <fn_type>`** — Declare an external (FFI) function.
@@ -520,17 +556,19 @@ Any expression that resolves to a callable type can be called: `expr(arg1, arg2,
 
 - **Symbols that decay to functions:** `sin($0)`, `rand(0, 100)`
 - **Pin references to lambdas:** `$0($1)`
-- **Symbols connected via wires:** `expr sin` outputs `literal<symbol, sin>`, which can be wired to another node's `$0` input, then called as `$0($1)` — equivalent to `sin($1)`.
+- **Symbols connected via wires:** `expr sin` outputs `symbol<sin,(f32)->f32>`, which can be wired to another node's `$0` input, then called as `$0($1)` — equivalent to `sin($1)`.
 
 The result type is the return type of the function/lambda. Bangs are lambdas that take no arguments and return void.
 
 ### Input References
 
-Inputs to an expression are referenced by `$N` where `N` is the pin index:
+Inputs to an expression are referenced by `$N` where `N` is a numeric pin index:
 
 | Syntax | Description |
 |--------|------------|
 | `$N` | Input pin N (any value category) |
+
+Only numeric indices are valid. `$name` syntax is **not supported** and produces a parse error — use bare names instead (resolved via the symbol table).
 
 **Naming:** The first occurrence of a pin index can include a name: `$0:my_input`. Subsequent uses must use `$0` directly (no re-naming).
 

@@ -388,7 +388,7 @@ TEST(infer_pi_constant) {
     ASSERT(n->error.empty());
     // pi is symbol<pi,float<?>>
     ASSERT(n->outputs[0]->resolved_type != nullptr);
-    ASSERT_TYPE(n->outputs[0].get(), "symbol<pi,float<?>>");
+    ASSERT_TYPE(n->outputs[0].get(), "symbol<pi,literal<float<?>,?>>");
 }
 
 TEST(infer_propagation) {
@@ -5369,7 +5369,7 @@ TEST(literal_add_strips_literal) {
     auto* n = gb.find("e1");
     ASSERT(n != nullptr);
     auto ts = type_to_string(n->outputs[0]->resolved_type);
-    ASSERT_EQ(ts, "unsigned<?>");
+    ASSERT_EQ(ts, "literal<unsigned<?>,?>");
 }
 
 TEST(literal_mul_strips_literal) {
