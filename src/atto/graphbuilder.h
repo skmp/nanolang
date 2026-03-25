@@ -1,7 +1,6 @@
 #pragma once
 #include "model.h"
 #include "types.h"
-#include "args.h"
 #include "node_types.h"
 #include <string>
 #include <vector>
@@ -11,9 +10,29 @@
 #include <iostream>
 #include <algorithm>
 #include <stdexcept>
+#include <cstdio>
 
 using NodeId = std::string;
 using BuilderError = std::string;
+
+// ─── v2 argument types (independent of legacy args.h) ───
+
+struct ArgNet2 { std::string id; };                     // "$id" or "$unconnected"
+struct ArgNumber2 { double value; bool is_float; };     // 42, 3.14
+struct ArgString2 { std::string value; };               // "hello\"world"
+struct ArgExpr2 { std::string expr; };                  // expression (contains $N, @N, operators, etc.)
+
+using FlowArg2 = std::variant<ArgNet2, ArgNumber2, ArgString2, ArgExpr2>;
+using ParsedArgs2 = std::vector<FlowArg2>;
+
+// Parse pre-split expressions into ParsedArgs2.
+using ParseResult = std::variant<std::shared_ptr<ParsedArgs2>, std::string>;
+ParseResult parse_args_v2(const std::vector<std::string>& exprs, bool is_expr = false);
+
+// Reconstruct a space-separated args string from ParsedArgs2
+std::string reconstruct_args_str(const ParsedArgs2& args);
+
+// ─── Builder types ───
 
 struct FlowNodeBuilder;
 struct NetBuilder;
@@ -29,13 +48,8 @@ struct NetBuilder {
     BuilderEntryWeak source;
     std::vector<BuilderEntryWeak> destinations;
 
-    // Remove expired weak refs, throw if any live ref is not a FlowNodeBuilder
     void compact();
-
-    // compact + check if net has no live source and no live destinations
     bool unused();
-
-    // Throw if any live weak ref is not a FlowNodeBuilder (or null)
     void validate() const;
 };
 
@@ -47,7 +61,6 @@ struct FlowNodeBuilder {
     bool shadow = false;
     std::string error;
 
-    // Reconstruct args string (for legacy code)
     std::string args_str() const;
 };
 
@@ -57,20 +70,15 @@ struct GraphBuilder {
     TypePool pool;
     std::map<NodeId, BuilderEntryPtr> entries;
 
-    // Add a node
     FlowNodeBuilder& add_node(NodeId id, NodeTypeID type, std::shared_ptr<ParsedArgs2> args);
 
-    // Get or create a net — throws if name exists as a node, or if for_source and source already set
     std::pair<const NodeId&, BuilderEntryPtr> find_or_create_net(const NodeId& name, bool for_source = false);
 
-    // Find any entry by id
     BuilderEntryPtr find(const NodeId& id);
 
-    // Find typed — throws if id exists but is wrong type
     std::pair<const NodeId&, BuilderEntryPtr> find_node(const NodeId& id);
     std::pair<const NodeId&, BuilderEntryPtr> find_net(const NodeId& name);
 
-    // Remove unused nets
     void compact();
 };
 

@@ -1,8 +1,6 @@
 #include "graphbuilder.h"
-#include "args.h"
-#include "expr.h"
-#include "node_types.h"
 #include <sstream>
+#include <cctype>
 
 // ─── TOML helpers ───
 
@@ -83,6 +81,70 @@ void NetBuilder::validate() const {
     validate_weak_is_node(source);
     for (auto& d : destinations)
         validate_weak_is_node(d);
+}
+
+// ─── v2 parse/reconstruct ───
+
+static FlowArg2 parse_token_v2(const std::string& tok) {
+    if (tok.empty()) return ArgString2{""};
+
+    // Net reference: $name (non-numeric)
+    if (tok[0] == '$' && tok.size() >= 2 && !std::isdigit(tok[1])) {
+        return ArgNet2{tok};
+    }
+
+    // String literal
+    if (tok.front() == '"' && tok.back() == '"' && tok.size() >= 2) {
+        return ArgString2{tok.substr(1, tok.size() - 2)};
+    }
+
+    // Number
+    bool is_float = false;
+    bool is_number = true;
+    for (size_t i = 0; i < tok.size(); i++) {
+        char c = tok[i];
+        if (c == '.' && !is_float) { is_float = true; continue; }
+        if (c == 'f' && i == tok.size() - 1) { is_float = true; continue; }
+        if (c == '-' && i == 0) continue;
+        if (c < '0' || c > '9') { is_number = false; break; }
+    }
+    if (is_number && !tok.empty()) {
+        return ArgNumber2{std::stod(tok), is_float};
+    }
+
+    // Expression (anything else)
+    return ArgExpr2{tok};
+}
+
+ParseResult parse_args_v2(const std::vector<std::string>& exprs, bool is_expr) {
+    auto result = std::make_shared<ParsedArgs2>();
+    for (auto& expr : exprs) {
+        result->push_back(parse_token_v2(expr));
+    }
+    return result;
+}
+
+std::string reconstruct_args_str(const ParsedArgs2& args) {
+    std::string result;
+    for (auto& a : args) {
+        if (!result.empty()) result += " ";
+        std::visit([&](auto& v) {
+            using T = std::decay_t<decltype(v)>;
+            if constexpr (std::is_same_v<T, ArgNet2>) result += v.id;
+            else if constexpr (std::is_same_v<T, ArgNumber2>) {
+                if (v.is_float) {
+                    char buf[64];
+                    snprintf(buf, sizeof(buf), "%g", v.value);
+                    result += buf;
+                } else {
+                    result += std::to_string((long long)v.value);
+                }
+            }
+            else if constexpr (std::is_same_v<T, ArgString2>) result += "\"" + v.value + "\"";
+            else if constexpr (std::is_same_v<T, ArgExpr2>) result += v.expr;
+        }, a);
+    }
+    return result;
 }
 
 // ─── FlowNodeBuilder ───
@@ -167,8 +229,7 @@ BuilderResult Deserializer::parse_node(
         if (args.size() != 1)
             throw std::invalid_argument("Label/Error node requires exactly 1 argument, got " + std::to_string(args.size()));
         nb.parsed_args = std::make_shared<ParsedArgs2>();
-        nb.parsed_args->args.push_back(ArgString{args[0]});
-        nb.parsed_args->has_any_args = true;
+        nb.parsed_args->push_back(ArgString2{args[0]});
         return std::pair{id, std::move(nb)};
     }
 
@@ -204,8 +265,7 @@ FlowNodeBuilder& Deserializer::parse_or_error(
     FlowNodeBuilder nb;
     nb.type_id = NodeTypeID::Error;
     nb.parsed_args = std::make_shared<ParsedArgs2>();
-    nb.parsed_args->args.push_back(ArgString{type + " " + args_joined});
-    nb.parsed_args->has_any_args = true;
+    nb.parsed_args->push_back(ArgString2{type + " " + args_joined});
     nb.error = error_msg;
     auto entry = std::make_shared<BuilderEntry>(std::move(nb));
     gb.entries[id] = entry;
