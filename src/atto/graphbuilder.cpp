@@ -85,12 +85,13 @@ void NetBuilder::validate() const {
 
 // ─── v2 parse/reconstruct ───
 
-static FlowArg2 parse_token_v2(const std::string& tok) {
+static FlowArg2 parse_token_v2(GraphBuilder& gb, const std::string& tok) {
     if (tok.empty()) return ArgString2{""};
 
     // Net reference: $name (non-numeric)
     if (tok[0] == '$' && tok.size() >= 2 && !std::isdigit(tok[1])) {
-        return ArgNet2{tok};
+        auto [id, entry] = gb.find_or_create_net(tok, false);
+        return ArgNet2{NodeId(id), entry};
     }
 
     // String literal
@@ -116,10 +117,11 @@ static FlowArg2 parse_token_v2(const std::string& tok) {
     return ArgExpr2{tok};
 }
 
-ParseResult parse_args_v2(const std::vector<std::string>& exprs, bool is_expr) {
+ParseResult parse_args_v2(const std::shared_ptr<GraphBuilder>& gb,
+                          const std::vector<std::string>& exprs, bool is_expr) {
     auto result = std::make_shared<ParsedArgs2>();
     for (auto& expr : exprs) {
-        result->push_back(parse_token_v2(expr));
+        result->push_back(parse_token_v2(*gb, expr));
     }
     return result;
 }
@@ -130,7 +132,7 @@ std::string reconstruct_args_str(const ParsedArgs2& args) {
         if (!result.empty()) result += " ";
         std::visit([&](auto& v) {
             using T = std::decay_t<decltype(v)>;
-            if constexpr (std::is_same_v<T, ArgNet2>) result += v.id;
+            if constexpr (std::is_same_v<T, ArgNet2>) result += v.first;
             else if constexpr (std::is_same_v<T, ArgNumber2>) {
                 if (v.is_float) {
                     char buf[64];
@@ -165,7 +167,7 @@ FlowNodeBuilder& GraphBuilder::add_node(NodeId id, NodeTypeID type, std::shared_
     return nb;
 }
 
-std::pair<const NodeId&, BuilderEntryPtr> GraphBuilder::find_or_create_net(const NodeId& name, bool for_source) {
+std::pair<NodeId, BuilderEntryPtr> GraphBuilder::find_or_create_net(const NodeId& name, bool for_source) {
     auto [id, ptr] = find_net(name); // throws if name exists as a node
     if (ptr) {
         if (for_source && !std::get<NetBuilder>(*ptr).source.expired())
@@ -184,7 +186,7 @@ BuilderEntryPtr GraphBuilder::find(const NodeId& id) {
     return (it != entries.end()) ? it->second : nullptr;
 }
 
-std::pair<const NodeId&, BuilderEntryPtr> GraphBuilder::find_node(const NodeId& id) {
+std::pair<NodeId, BuilderEntryPtr> GraphBuilder::find_node(const NodeId& id) {
     auto it = entries.find(id);
     if (it == entries.end()) return {id, nullptr};
     if (!std::holds_alternative<FlowNodeBuilder>(*it->second))
@@ -192,7 +194,7 @@ std::pair<const NodeId&, BuilderEntryPtr> GraphBuilder::find_node(const NodeId& 
     return {it->first, it->second};
 }
 
-std::pair<const NodeId&, BuilderEntryPtr> GraphBuilder::find_net(const NodeId& name) {
+std::pair<NodeId, BuilderEntryPtr> GraphBuilder::find_net(const NodeId& name) {
     auto it = entries.find(name);
     if (it == entries.end()) return {name, nullptr};
     if (!std::holds_alternative<NetBuilder>(*it->second))
@@ -214,6 +216,7 @@ void GraphBuilder::compact() {
 // ─── Deserializer ───
 
 BuilderResult Deserializer::parse_node(
+    const std::shared_ptr<GraphBuilder>& gb,
     const NodeId& id, const std::string& type, const std::vector<std::string>& args) {
 
     NodeTypeID type_id = node_type_id_from_string(type.c_str());
@@ -235,7 +238,7 @@ BuilderResult Deserializer::parse_node(
 
     bool is_expr = is_any_of(type_id, NodeTypeID::Expr, NodeTypeID::ExprBang);
 
-    auto parse_result = parse_args_v2(args, is_expr);
+    auto parse_result = parse_args_v2(gb, args, is_expr);
     if (auto* err = std::get_if<std::string>(&parse_result)) {
         return BuilderError(*err);
     }
@@ -245,14 +248,14 @@ BuilderResult Deserializer::parse_node(
 }
 
 FlowNodeBuilder& Deserializer::parse_or_error(
-    GraphBuilder& gb,
+    const std::shared_ptr<GraphBuilder>& gb,
     const NodeId& id, const std::string& type, const std::vector<std::string>& args) {
 
-    auto result = parse_node(id, type, args);
+    auto result = parse_node(gb, id, type, args);
 
     if (auto* p = std::get_if<std::pair<NodeId, FlowNodeBuilder>>(&result)) {
         auto entry = std::make_shared<BuilderEntry>(std::move(p->second));
-        gb.entries[p->first] = entry;
+        gb->entries[p->first] = entry;
         return std::get<FlowNodeBuilder>(*entry);
     }
 
@@ -268,7 +271,7 @@ FlowNodeBuilder& Deserializer::parse_or_error(
     nb.parsed_args->push_back(ArgString2{type + " " + args_joined});
     nb.error = error_msg;
     auto entry = std::make_shared<BuilderEntry>(std::move(nb));
-    gb.entries[id] = entry;
+    gb->entries[id] = entry;
     return std::get<FlowNodeBuilder>(*entry);
 }
 
@@ -303,7 +306,7 @@ Deserializer::ParseAttoResult Deserializer::parse_atto(std::istream& f) {
             cur_id = "$auto-" + generate_guid();
         }
 
-        auto& nb = parse_or_error(*gb, cur_id, cur_type, cur_args);
+        auto& nb = parse_or_error(gb, cur_id, cur_type, cur_args);
         nb.position = {cur_x, cur_y};
         nb.shadow = cur_shadow;
 
