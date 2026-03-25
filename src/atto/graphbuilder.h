@@ -6,8 +6,12 @@
 #include <string>
 #include <vector>
 #include <memory>
+#include <variant>
+#include <iostream>
 
 using NodeId = std::string;
+using BuilderError = std::string;
+using BuilderResult = std::variant<std::shared_ptr<struct FlowNodeBuilder>, BuilderError>;
 
 // A node under construction — holds structured parsed args instead of raw string.
 struct FlowNodeBuilder {
@@ -36,8 +40,17 @@ struct GraphBuilder {
 
 // Deserializer: parses raw strings into FlowNodeBuilder, with error fallback.
 struct Deserializer {
-    // Parse a node from raw strings. On failure, returns an Error node builder.
-    static std::shared_ptr<FlowNodeBuilder> parse_node(
+    // Parse a node from pre-split args. Returns builder on success, error string on failure.
+    static BuilderResult parse_node(
+        const NodeId& id, const std::string& type, const std::vector<std::string>& args);
+
+    // Parse a node and add to graph. On failure, creates an Error node instead.
+    // Always returns a valid FlowNodeBuilder (added to gb).
+    static std::shared_ptr<FlowNodeBuilder> parse_or_error(
         const std::shared_ptr<GraphBuilder>& gb,
-        const NodeId& id, const std::string& type, const std::string& args_str);
+        const NodeId& id, const std::string& type, const std::vector<std::string>& args);
+
+    // Parse an instrument@atto:0 stream into a GraphBuilder.
+    using ParseAttoResult = std::variant<std::shared_ptr<GraphBuilder>, BuilderError>;
+    static ParseAttoResult parse_atto(std::istream& f);
 };
