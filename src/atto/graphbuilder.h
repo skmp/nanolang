@@ -6,33 +6,38 @@
 #include <string>
 #include <vector>
 #include <memory>
-#include <stdexcept>
+
+using NodeId = std::string;
+
+// A node under construction — holds structured parsed args instead of raw string.
+struct FlowNodeBuilder {
+    NodeId id;
+    NodeTypeID type_id = NodeTypeID::Unknown;
+    std::shared_ptr<ParsedArgs> parsed_args;
+    Vec2 position = {0, 0};
+    bool shadow = false;
+    std::string error;
+
+    // Reconstruct args string (for legacy code)
+    std::string args_str() const;
+};
 
 struct GraphBuilder {
-    FlowGraph graph;
     TypePool pool;
+    std::vector<std::shared_ptr<FlowNodeBuilder>> builders;
 
-    // Primary add: takes pre-parsed args (must not be null — throws on null)
-    FlowNode& add(const std::string& id, NodeTypeID type, std::unique_ptr<ParsedArgs> args,
-                  int num_inputs = -1, int num_outputs = -1);
+    // Add a pre-built node
+    std::shared_ptr<FlowNodeBuilder> add(NodeId id, NodeTypeID type, std::shared_ptr<ParsedArgs> args);
 
     void link(const std::string& from, const std::string& to);
 
-    FlowNode* find(const std::string& id);
-    FlowPin* find_pin(const std::string& pin_id);
-
-    std::vector<std::string> run_inference();
-    std::vector<std::string> run_full_pipeline();
+    std::shared_ptr<FlowNodeBuilder> find(const NodeId& id);
 };
 
-// Deserializer: string-based node creation with error handling.
-// Wraps GraphBuilder, handles split/parse/error-fallback.
+// Deserializer: parses raw strings into FlowNodeBuilder, with error fallback.
 struct Deserializer {
-    GraphBuilder* builder;
-
-    explicit Deserializer(GraphBuilder* b) : builder(b) {}
-
-    // Add a node from raw strings. On parse failure, creates an Error node.
-    FlowNode& add(const std::string& id, const std::string& type, const std::string& args_str,
-                  int num_inputs = -1, int num_outputs = -1);
+    // Parse a node from raw strings. On failure, returns an Error node builder.
+    static std::shared_ptr<FlowNodeBuilder> parse_node(
+        const std::shared_ptr<GraphBuilder>& gb,
+        const NodeId& id, const std::string& type, const std::string& args_str);
 };
