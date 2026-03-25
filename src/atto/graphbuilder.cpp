@@ -65,7 +65,7 @@ std::string FlowNodeBuilder::args_str() const {
 
 // ─── GraphBuilder ───
 
-std::shared_ptr<FlowNodeBuilder> GraphBuilder::add(NodeId id, NodeTypeID type, std::shared_ptr<ParsedArgs> args) {
+std::shared_ptr<FlowNodeBuilder> GraphBuilder::add(NodeId id, NodeTypeID type, std::shared_ptr<ParsedArgs2> args) {
     auto nb = std::make_shared<FlowNodeBuilder>();
     nb->id = std::move(id);
     nb->type_id = type;
@@ -101,7 +101,7 @@ BuilderResult Deserializer::parse_node(
         auto nb = std::make_shared<FlowNodeBuilder>();
         nb->id = id;
         nb->type_id = type_id;
-        nb->parsed_args = std::make_shared<ParsedArgs>();
+        nb->parsed_args = std::make_shared<ParsedArgs2>();
         nb->parsed_args->args.push_back(ArgString{args[0]});
         nb->parsed_args->has_any_args = true;
         return nb;
@@ -115,7 +115,7 @@ BuilderResult Deserializer::parse_node(
         return BuilderError(*err);
     }
 
-    auto parsed = std::get<std::shared_ptr<ParsedArgs>>(std::move(parse_result));
+    auto parsed = std::get<std::shared_ptr<ParsedArgs2>>(std::move(parse_result));
 
     auto nb = std::make_shared<FlowNodeBuilder>();
     nb->id = id;
@@ -145,7 +145,7 @@ std::shared_ptr<FlowNodeBuilder> Deserializer::parse_or_error(
     auto nb = std::make_shared<FlowNodeBuilder>();
     nb->id = id;
     nb->type_id = NodeTypeID::Error;
-    nb->parsed_args = std::make_shared<ParsedArgs>();
+    nb->parsed_args = std::make_shared<ParsedArgs2>();
     nb->parsed_args->args.push_back(ArgString{type + " " + args_joined});
     nb->parsed_args->has_any_args = true;
     nb->error = error_msg;

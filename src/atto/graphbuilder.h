@@ -17,7 +17,7 @@ using BuilderResult = std::variant<std::shared_ptr<struct FlowNodeBuilder>, Buil
 struct FlowNodeBuilder {
     NodeId id;
     NodeTypeID type_id = NodeTypeID::Unknown;
-    std::shared_ptr<ParsedArgs> parsed_args;
+    std::shared_ptr<ParsedArgs2> parsed_args;
     Vec2 position = {0, 0};
     bool shadow = false;
     std::string error;
@@ -31,7 +31,7 @@ struct GraphBuilder {
     std::vector<std::shared_ptr<FlowNodeBuilder>> builders;
 
     // Add a pre-built node
-    std::shared_ptr<FlowNodeBuilder> add(NodeId id, NodeTypeID type, std::shared_ptr<ParsedArgs> args);
+    std::shared_ptr<FlowNodeBuilder> add(NodeId id, NodeTypeID type, std::shared_ptr<ParsedArgs2> args);
 
     void link(const std::string& from, const std::string& to);
 

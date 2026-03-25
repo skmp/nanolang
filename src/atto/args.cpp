@@ -339,47 +339,44 @@ SplitResult split_args(const std::string& args_str) {
     return result;
 }
 
-// ─── parse_args_v2: parse pre-split expressions ───
+// ─── parse_args_v2: parse pre-split expressions into ParsedArgs2 ───
+
+static FlowArg2 parse_token_v2(const std::string& tok) {
+    if (tok.empty()) return ArgString{""};
+
+    // Net reference: $name (non-numeric)
+    if (tok[0] == '$' && tok.size() >= 2 && !std::isdigit(tok[1])) {
+        return ArgNet{tok};
+    }
+
+    // String literal
+    if (tok.front() == '"' && tok.back() == '"' && tok.size() >= 2) {
+        return ArgString{tok.substr(1, tok.size() - 2)};
+    }
+
+    // Number
+    bool is_float = false;
+    bool is_number = true;
+    for (size_t i = 0; i < tok.size(); i++) {
+        char c = tok[i];
+        if (c == '.' && !is_float) { is_float = true; continue; }
+        if (c == 'f' && i == tok.size() - 1) { is_float = true; continue; }
+        if (c == '-' && i == 0) continue;
+        if (c < '0' || c > '9') { is_number = false; break; }
+    }
+    if (is_number && !tok.empty()) {
+        return ArgNumber{std::stod(tok), is_float};
+    }
+
+    // Expression (anything else — contains $N, @N, operators, function calls, etc.)
+    return ArgExpr{tok, -1, -1};
+}
 
 ParseResult parse_args_v2(const std::vector<std::string>& exprs, bool is_expr) {
-    auto result = std::make_shared<ParsedArgs>();
-
-    auto register_slot = [&](int index, bool is_lambda) {
-        result->slots[index] = is_lambda;
-        result->max_slot = std::max(result->max_slot, index);
-    };
-
-    // Scan all expressions for $N and @N refs
-    for (auto& expr : exprs) {
-        for (size_t i = 0; i < expr.size(); i++) {
-            if ((expr[i] == '$' || expr[i] == '@') && i + 1 < expr.size() &&
-                expr[i + 1] >= '0' && expr[i + 1] <= '9') {
-                bool is_lambda = (expr[i] == '@');
-                int n = 0;
-                size_t j = i + 1;
-                while (j < expr.size() && expr[j] >= '0' && expr[j] <= '9') {
-                    n = n * 10 + (expr[j] - '0');
-                    j++;
-                }
-                register_slot(n, is_lambda);
-            }
-        }
-    }
-
-    // Validate: no gaps in slot indices
-    if (result->max_slot >= 0 && (int)result->slots.size() != result->max_slot + 1) {
-        std::string missing;
-        for (int i = 0; i <= result->max_slot; i++) {
-            if (result->slots.find(i) == result->slots.end()) {
-                if (!missing.empty()) missing += ", ";
-                missing += "$" + std::to_string(i);
-            }
-        }
-        return std::string("Missing pin reference(s): " + missing);
-    }
+    auto result = std::make_shared<ParsedArgs2>();
 
     for (auto& expr : exprs) {
-        result->args.push_back(parse_token(expr));
+        result->args.push_back(parse_token_v2(expr));
     }
     result->has_any_args = !exprs.empty();
 
@@ -388,16 +385,13 @@ ParseResult parse_args_v2(const std::vector<std::string>& exprs, bool is_expr) {
 
 // ─── reconstruct_args_str ───
 
-std::string reconstruct_args_str(const ParsedArgs& args) {
+std::string reconstruct_args_str(const ParsedArgs2& args) {
     std::string result;
     for (auto& a : args.args) {
         if (!result.empty()) result += " ";
         std::visit([&](auto& v) {
             using T = std::decay_t<decltype(v)>;
-            if constexpr (std::is_same_v<T, ArgPortRef>) result += "$" + std::to_string(v.index);
-            else if constexpr (std::is_same_v<T, ArgLambdaRef>) result += "@" + std::to_string(v.index);
-            else if constexpr (std::is_same_v<T, ArgVariable>) result += v.name;
-            else if constexpr (std::is_same_v<T, ArgEnum>) result += "#" + v.enum_name + "." + v.value_name;
+            if constexpr (std::is_same_v<T, ArgNet>) result += v.id;
             else if constexpr (std::is_same_v<T, ArgNumber>) {
                 if (v.is_float) {
                     char buf[64];

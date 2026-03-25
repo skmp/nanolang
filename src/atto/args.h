@@ -18,6 +18,17 @@ struct ArgExpr { std::string expr; int max_port; int max_lambda; }; // expressio
 
 using FlowArg = std::variant<ArgPortRef, ArgLambdaRef, ArgVariable, ArgEnum, ArgNumber, ArgString, ArgExpr>;
 
+// v2 argument types
+struct ArgNet { std::string id; };                   // "$id" or "$unconnected"
+
+using FlowArg2 = std::variant<ArgNet, ArgNumber, ArgString, ArgExpr>;
+
+struct ParsedArgs2 {
+    std::vector<FlowArg2> args;
+    bool has_any_args = false;
+};
+
+// Legacy
 struct ParsedArgs {
     std::vector<FlowArg> args;
 
@@ -77,10 +88,10 @@ ParsedArgs parse_args(const std::string& args_str, bool is_expr = false);
 using SplitResult = std::variant<std::vector<std::string>, std::string>;
 SplitResult split_args(const std::string& args_str);
 
-// Parse pre-split expressions into ParsedArgs.
-// Returns shared_ptr<ParsedArgs> on success, or error string on failure.
-using ParseResult = std::variant<std::shared_ptr<ParsedArgs>, std::string>;
+// Parse pre-split expressions into ParsedArgs2.
+// Returns shared_ptr<ParsedArgs2> on success, or error string on failure.
+using ParseResult = std::variant<std::shared_ptr<ParsedArgs2>, std::string>;
 ParseResult parse_args_v2(const std::vector<std::string>& exprs, bool is_expr = false);
 
-// Reconstruct a space-separated args string from a ParsedArgs
-std::string reconstruct_args_str(const ParsedArgs& args);
+// Reconstruct a space-separated args string from ParsedArgs2
+std::string reconstruct_args_str(const ParsedArgs2& args);
