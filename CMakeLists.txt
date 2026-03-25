@@ -25,6 +25,7 @@ add_library(attolang STATIC
     src/atto/graph_index.cpp
     src/atto/shadow.cpp
     src/atto/symbol_table.cpp
+    src/atto/graphbuilder.cpp
 )
 target_include_directories(attolang PUBLIC
     ${CMAKE_CURRENT_SOURCE_DIR}/src
