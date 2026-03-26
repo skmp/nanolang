@@ -29,8 +29,10 @@ static struct {
 
     // Hit testing
     float pin_hit_radius_mul = 2.5f;
-    float wire_hit_threshold = 60.0f;
-    float dismiss_radius = 20.0f;  // click within this of empty space/wire dismisses selection
+    float wire_hit_threshold = 30.0f;
+    float node_hit_threshold_mul = 6.f;  // multiplied by pin_radius * zoom
+    float dismiss_radius = 20.0f;
+    float pin_priority_bias = 1e6f;       // pins always win over nodes/wires when within threshold
 
     // Canvas colors
     ImU32 col_bg          = IM_COL32(30, 30, 40, 255);
@@ -841,96 +843,111 @@ void Editor2Pane::draw_net(ImDrawList*, const NetBuilderPtr&, ImVec2) {
 Editor2Pane::HoverItem Editor2Pane::detect_hover(
     ImVec2 mouse, ImVec2 canvas_origin, const std::vector<WireInfo>& drawn_wires)
 {
-    // Priority: pins (most specific) > nodes > wires (least specific)
-    // But detection order: wires, nodes, pins — last match wins (most specific)
+    // Smallest distance wins across wires, nodes, and pins
+    auto d2 = [](ImVec2 a, ImVec2 b) { return std::sqrt((a.x-b.x)*(a.x-b.x) + (a.y-b.y)*(a.y-b.y)); };
 
+    float best_dist = 1e18f;
     HoverItem result = std::monostate{};
 
-    // 1. Wires (lowest priority)
-    {
-        float wire_thresh = S.wire_hit_threshold * canvas_zoom_;
-        float best_dist = wire_thresh;
-        const WireInfo* best_wire = nullptr;
-        for (auto& w : drawn_wires) {
-            float d = point_to_bezier_dist(mouse, w.p0, w.p1, w.p2, w.p3);
-            if (d < best_dist) {
-                best_dist = d;
-                if (w.entry()) best_wire = &w;
-            }
+    // Pins get a large bias so they always win over nodes/wires when within threshold
+    float pin_bias = S.pin_priority_bias;
+
+    auto try_candidate = [&](float dist, HoverItem candidate) {
+        if (dist < best_dist) {
+            best_dist = dist;
+            result = std::move(candidate);
         }
-        if (best_wire)
-            result = best_wire->entry();
+    };
+
+    // Wires
+    float wire_thresh = S.wire_hit_threshold * canvas_zoom_;
+    for (auto& w : drawn_wires) {
+        float d = point_to_bezier_dist(mouse, w.p0, w.p1, w.p2, w.p3);
+        if (d < wire_thresh)
+            try_candidate(d, w.entry());
     }
 
-    // 2. Nodes (overrides wire if hit)
-    FlowNodeBuilderPtr hit_node = nullptr;
+    // Nodes — distance from mouse to nearest edge of node rect
     for (auto it = gb_->entries.rbegin(); it != gb_->entries.rend(); ++it) {
         auto node = it->second->as_Node();
         if (!node) continue;
         auto layout = compute_node_layout(node, canvas_origin, canvas_zoom_);
-        if (mouse.x >= layout.pos.x && mouse.x <= layout.pos.x + layout.width &&
-            mouse.y >= layout.pos.y && mouse.y <= layout.pos.y + layout.height) {
-            hit_node = node;
-            result = BuilderEntryPtr(node);
-            break;
+
+        // Distance from mouse to nearest point on node outline
+        float nd;
+        bool inside = mouse.x >= layout.pos.x && mouse.x <= layout.pos.x + layout.width &&
+                      mouse.y >= layout.pos.y && mouse.y <= layout.pos.y + layout.height;
+        if (inside) {
+            // Inside: distance to nearest edge
+            float dl_ = mouse.x - layout.pos.x;
+            float dr = layout.pos.x + layout.width - mouse.x;
+            float dt = mouse.y - layout.pos.y;
+            float db = layout.pos.y + layout.height - mouse.y;
+            nd = std::min({dl_, dr, dt, db});
+        } else {
+            float cx = std::clamp(mouse.x, layout.pos.x, layout.pos.x + layout.width);
+            float cy = std::clamp(mouse.y, layout.pos.y, layout.pos.y + layout.height);
+            nd = d2(mouse, {cx, cy});
         }
+        if (nd < S.pin_radius * canvas_zoom_ * S.node_hit_threshold_mul)
+            try_candidate(nd, BuilderEntryPtr(node));
     }
 
-    // 3. Pins on hit node (overrides node if hit)
-    if (hit_node) {
-        auto* nt = find_node_type2(hit_node->type_id);
-        if (nt) {
-            auto layout = compute_node_layout(hit_node, canvas_origin, canvas_zoom_);
-            float pr = S.pin_radius * canvas_zoom_;
-            float hit_r = pr * S.pin_hit_radius_mul;
-            float hit_r2 = hit_r * hit_r;
-            auto d2 = [](ImVec2 a, ImVec2 b) { return (a.x-b.x)*(a.x-b.x) + (a.y-b.y)*(a.y-b.y); };
-            auto pm = PinMapping::build(hit_node, nt);
+    // Pins — check all nodes, find closest pin globally
+    for (auto it = gb_->entries.rbegin(); it != gb_->entries.rend(); ++it) {
+        auto node = it->second->as_Node();
+        if (!node) continue;
+        auto* nt = find_node_type2(node->type_id);
+        if (!nt) continue;
+        auto layout = compute_node_layout(node, canvas_origin, canvas_zoom_);
+        float pin_thresh = S.pin_radius * canvas_zoom_ * S.pin_hit_radius_mul;
+        auto pm = PinMapping::build(node, nt);
 
-            // Input pins
-            for (int i = 0; i < pm.total(); i++) {
-                if (pm.is_add_diamond(i) || pm.is_absent_optional(i)) continue;
-                ImVec2 pp = layout.input_pin_pos(i);
-                if (d2(mouse, pp) < hit_r2) {
-                    if (pm.is_base(i)) {
-                        int port = pm.port_index(i);
-                        if (hit_node->parsed_args && port < hit_node->parsed_args->size())
-                            result = (*hit_node->parsed_args)[port];
-                    } else if (pm.is_va(i)) {
-                        int vi = -(pm.port_index(i) + 1);
-                        if (hit_node->parsed_va_args && vi < hit_node->parsed_va_args->size())
-                            result = (*hit_node->parsed_va_args)[vi];
-                    } else if (pm.is_remap(i)) {
-                        int ri = pm.remap_index(i);
-                        if (ri < (int)hit_node->remaps.size())
-                            result = hit_node->remaps[ri];
-                    }
-                    return result;
+        // Input pins
+        for (int i = 0; i < pm.total(); i++) {
+            if (pm.is_add_diamond(i) || pm.is_absent_optional(i)) continue;
+            float pd = d2(mouse, layout.input_pin_pos(i));
+            if (pd < pin_thresh) {
+                FlowArg2Ptr pin_arg = nullptr;
+                if (pm.is_base(i)) {
+                    int port = pm.port_index(i);
+                    if (node->parsed_args && port < node->parsed_args->size())
+                        pin_arg = (*node->parsed_args)[port];
+                } else if (pm.is_va(i)) {
+                    int vi = -(pm.port_index(i) + 1);
+                    if (node->parsed_va_args && vi < node->parsed_va_args->size())
+                        pin_arg = (*node->parsed_va_args)[vi];
+                } else if (pm.is_remap(i)) {
+                    int ri = pm.remap_index(i);
+                    if (ri < (int)node->remaps.size())
+                        pin_arg = node->remaps[ri];
                 }
+                if (pin_arg) try_candidate(pd - pin_bias, pin_arg);
             }
+        }
 
-            // Output pins
-            for (int i = 0; i < layout.num_out; i++) {
-                ImVec2 pp = layout.output_pin_pos(i);
-                if (d2(mouse, pp) < hit_r2) {
-                    if (i < (int)hit_node->outputs.size() && hit_node->outputs[i])
-                        result = hit_node->outputs[i];
-                    return result;
-                }
-            }
+        // Output pins
+        for (int i = 0; i < layout.num_out; i++) {
+            float pd = d2(mouse, layout.output_pin_pos(i));
+            if (pd < pin_thresh && i < (int)node->outputs.size() && node->outputs[i])
+                try_candidate(pd - pin_bias, node->outputs[i]);
+        }
 
-            // Lambda grab → node itself
-            if (nt->is_flow() && d2(mouse, layout.lambda_grab_pos()) < hit_r2)
-                return BuilderEntryPtr(hit_node);
+        // Lambda grab → node itself (pin-level priority)
+        if (nt->is_flow()) {
+            float pd = d2(mouse, layout.lambda_grab_pos());
+            if (pd < pin_thresh)
+                try_candidate(pd - pin_bias, BuilderEntryPtr(node));
+        }
 
-            // Side-bang → first output
-            if (nt->is_flow()) {
-                ImVec2 bp = {layout.pos.x + layout.width, layout.pos.y + layout.height * 0.5f};
-                if (d2(mouse, bp) < hit_r2) {
-                    if (hit_node->outputs.empty() || !hit_node->outputs[0])
-                        throw std::logic_error("Flow node '" + hit_node->id() + "' missing side-bang output[0]");
-                    return hit_node->outputs[0];
-                }
+        // Side-bang → first output (pin-level priority)
+        if (nt->is_flow()) {
+            ImVec2 bp = {layout.pos.x + layout.width, layout.pos.y + layout.height * 0.5f};
+            float pd = d2(mouse, bp);
+            if (pd < pin_thresh) {
+                if (node->outputs.empty() || !node->outputs[0])
+                    throw std::logic_error("Flow node '" + node->id() + "' missing side-bang output[0]");
+                try_candidate(pd - pin_bias, node->outputs[0]);
             }
         }
     }
