@@ -675,6 +675,21 @@ Deserializer::ParseAttoResult Deserializer::parse_atto(std::istream& f) {
                 nb.remaps.push_back({"$unconnected", unconnected});
         }
 
+        // Trim trailing $unconnected optional ports from parsed_args
+        {
+            auto* trim_nt = find_node_type2(nb.type_id);
+            if (trim_nt && nb.parsed_args) {
+                while (!nb.parsed_args->empty()) {
+                    int idx = (int)nb.parsed_args->size() - 1;
+                    if (idx >= trim_nt->num_inputs) break;
+                    if (!trim_nt->input_ports[idx].optional) break;
+                    auto* an = std::get_if<ArgNet2>(&nb.parsed_args->back());
+                    if (!an || an->first != "$unconnected") break;
+                    nb.parsed_args->pop_back();
+                }
+            }
+        }
+
         cur_id.clear(); cur_type.clear(); cur_args.clear();
         cur_inputs.clear(); cur_outputs.clear();
         cur_x = 0; cur_y = 0; cur_shadow = false;

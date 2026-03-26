@@ -71,7 +71,7 @@ static inline ImVec2 v2mul(ImVec2 a, float s) { return {a.x * s, a.y * s}; }
 // Sections: base_args ArgNet2, va_args ArgNet2, [+diamond], remaps
 struct PinMapping {
     std::vector<int> pin_to_port;   // visible pin idx → port index in parsed_args/descriptor
-    int base_count = 0;             // visible base pins (ArgNet2 in parsed_args)
+    int base_count = 0;             // visible base pins (ArgNet2 in parsed_args + absent optionals)
     int va_count = 0;               // visible va_args pins (ArgNet2 in parsed_va_args)
     int add_pin_pos = -1;           // position of +diamond (-1 if none)
     bool has_va = false;
@@ -79,11 +79,22 @@ struct PinMapping {
     static PinMapping build(const FlowNodeBuilder& node, const NodeType2* nt) {
         PinMapping m;
         m.has_va = nt && nt->va_args != nullptr;
+        int parsed_size = node.parsed_args ? (int)node.parsed_args->size() : 0;
+
         // Base args: track which parsed_args indices are ArgNet2
         if (node.parsed_args) {
-            for (int i = 0; i < (int)node.parsed_args->size(); i++) {
+            for (int i = 0; i < parsed_size; i++) {
                 if (std::holds_alternative<ArgNet2>((*node.parsed_args)[i])) {
                     m.pin_to_port.push_back(i);
+                    m.base_count++;
+                }
+            }
+        }
+        // Absent trailing optional ports: show as pins beyond parsed_args
+        if (nt) {
+            for (int i = parsed_size; i < nt->num_inputs; i++) {
+                if (nt->input_ports[i].optional) {
+                    m.pin_to_port.push_back(-3000 - i); // sentinel for absent optional at port i
                     m.base_count++;
                 }
             }
@@ -111,6 +122,8 @@ struct PinMapping {
 
     int total() const { return (int)pin_to_port.size(); }
     bool is_base(int pin) const { return pin < base_count; }
+    bool is_absent_optional(int pin) const { return pin < base_count && pin_to_port[pin] <= -3000; }
+    int absent_port_index(int pin) const { return -(pin_to_port[pin] + 3000); }
     bool is_va(int pin) const { return pin >= base_count && pin < base_count + va_count; }
     bool is_add_diamond(int pin) const { return pin == add_pin_pos; }
     bool is_remap(int pin) const { return pin >= base_count + va_count + (has_va ? 1 : 0); }
@@ -339,6 +352,7 @@ void Editor2Pane::draw() {
         auto dst_pm = PinMapping::build(dst_node, dst_nt);
         for (int i = 0; i < dst_pm.total(); i++) {
             if (dst_pm.is_add_diamond(i)) continue;
+            if (dst_pm.is_absent_optional(i)) continue;
             if (dst_pm.is_base(i)) {
                 int port = dst_pm.port_index(i);
                 if (dst_node.parsed_args && port < (int)dst_node.parsed_args->size()) {
@@ -511,7 +525,12 @@ void Editor2Pane::draw_node(ImDrawList* dl, const NodeId& id, const FlowNodeBuil
         bool is_va = pm.is_va(i);
         bool is_optional = false;
 
-        if (pm.is_base(i)) {
+        if (pm.is_absent_optional(i)) {
+            int port = pm.absent_port_index(i);
+            if (nt->input_ports && port < nt->num_inputs)
+                kind = nt->input_ports[port].kind;
+            is_optional = true;
+        } else if (pm.is_base(i)) {
             int port = pm.port_index(i);
             if (nt->input_ports && port < nt->num_inputs) {
                 kind = nt->input_ports[port].kind;
@@ -584,7 +603,11 @@ void Editor2Pane::draw_node(ImDrawList* dl, const NodeId& id, const FlowNodeBuil
 
     // Helper to get input pin name using PinMapping
     auto get_input_pin_name = [&](int i) -> const char* {
-        if (pm.is_base(i)) {
+        if (pm.is_absent_optional(i)) {
+            int port = pm.absent_port_index(i);
+            if (nt->input_ports && port < nt->num_inputs)
+                return nt->input_ports[port].name;
+        } else if (pm.is_base(i)) {
             int port = pm.port_index(i);
             if (nt->input_ports && port < nt->num_inputs)
                 return nt->input_ports[port].name;
@@ -602,6 +625,7 @@ void Editor2Pane::draw_node(ImDrawList* dl, const NodeId& id, const FlowNodeBuil
     enum class PinShape2 { Circle, Square, Diamond, TriangleDown, TriangleLeft };
     auto get_input_pin_shape = [&](int i) -> PinShape2 {
         if (pm.is_add_diamond(i)) return PinShape2::Diamond;
+        if (pm.is_absent_optional(i)) return PinShape2::Diamond;
         if (pm.is_base(i)) {
             int port = pm.port_index(i);
             if (nt->input_ports && port < nt->num_inputs) {
