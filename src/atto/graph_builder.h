@@ -259,6 +259,7 @@ struct FlowNodeBuilder: BuilderEntry {
     Outputs outputs;
     Vec2 position = {0, 0};
     bool shadow = false;
+    bool is_the_empty = false;          // true for the special $empty sentinel node
     std::string error;
 
     std::string args_str() const;
@@ -276,7 +277,10 @@ struct GraphBuilder : std::enable_shared_from_this<GraphBuilder> {
 
     std::shared_ptr<FlowNodeBuilder> add_node(NodeId id, NodeTypeID type, std::shared_ptr<ParsedArgs2> args);
 
-    void ensure_unconnected();
+    // Sentinel accessors (created once, cached)
+    FlowNodeBuilderPtr empty_node();    // the $empty sentinel node
+    NetBuilderPtr unconnected_net();    // the $unconnected sentinel net
+    void ensure_sentinels();            // create both if not yet created
 
     std::pair<NodeId, BuilderEntryPtr> find_or_create_net(const NodeId& name, bool for_source = false);
 
@@ -307,6 +311,8 @@ struct GraphBuilder : std::enable_shared_from_this<GraphBuilder> {
 private:
     bool dirty_ = false;
     std::vector<FlowArg2Ptr> pins_;
+    FlowNodeBuilderPtr empty_;
+    NetBuilderPtr unconnected_;
 };
 
 // ─── Parse/reconstruct helpers ───

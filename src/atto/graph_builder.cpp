@@ -264,16 +264,35 @@ std::shared_ptr<FlowNodeBuilder> GraphBuilder::add_node(NodeId id, NodeTypeID ty
     return nb;
 }
 
-void GraphBuilder::ensure_unconnected() {
-    if (entries.count("$unconnected")) return;
-    auto net = std::make_shared<NetBuilder>(shared_from_this());
-    net->is_the_unconnected(true);
-    net->auto_wire(true);
-    net->id("$unconnected");
-    entries["$unconnected"] = net;
+FlowNodeBuilderPtr GraphBuilder::empty_node() {
+    ensure_sentinels();
+    return empty_;
+}
+
+NetBuilderPtr GraphBuilder::unconnected_net() {
+    ensure_sentinels();
+    return unconnected_;
+}
+
+void GraphBuilder::ensure_sentinels() {
+    if (!unconnected_) {
+        unconnected_ = std::make_shared<NetBuilder>(shared_from_this());
+        unconnected_->is_the_unconnected(true);
+        unconnected_->auto_wire(true);
+        unconnected_->id("$unconnected");
+        entries["$unconnected"] = unconnected_;
+    }
+    if (!empty_) {
+        empty_ = std::make_shared<FlowNodeBuilder>(shared_from_this());
+        empty_->is_the_empty = true;
+        empty_->id("$empty");
+        entries["$empty"] = empty_;
+    }
 }
 
 std::pair<NodeId, BuilderEntryPtr> GraphBuilder::find_or_create_net(const NodeId& name, bool for_source) {
+    if (name == "$unconnected" || name == "$empty")
+        throw std::logic_error("find_or_create_net: use unconnected_net()/empty_node() for sentinel '" + name + "'");
     auto it = entries.find(name);
     if (it != entries.end()) {
         if (auto net = it->second->as_Net()) {
@@ -291,6 +310,8 @@ std::pair<NodeId, BuilderEntryPtr> GraphBuilder::find_or_create_net(const NodeId
 }
 
 BuilderEntryPtr GraphBuilder::find(const NodeId& id) {
+    if (id == "$unconnected" || id == "$empty")
+        throw std::logic_error("find: use unconnected_net()/empty_node() for sentinel '" + id + "'");
     auto it = entries.find(id);
     return (it != entries.end()) ? it->second : nullptr;
 }
@@ -437,7 +458,7 @@ Deserializer::ParseAttoResult Deserializer::parse_atto(std::istream& f) {
     }
 
     auto gb = std::make_shared<GraphBuilder>();
-    gb->ensure_unconnected();
+    gb->ensure_sentinels();
 
     bool in_node = false;
     std::string cur_id, cur_type;
@@ -505,7 +526,7 @@ Deserializer::ParseAttoResult Deserializer::parse_atto(std::istream& f) {
                     // (it's implicit from NodeKind2::Flow)
                     if (!is_post_bang) {
                         while ((int)nb.outputs.size() <= i)
-                            nb.outputs.push_back(gb->build_arg_net("$unconnected", gb->find("$unconnected")));
+                            nb.outputs.push_back(gb->build_arg_net("$unconnected", gb->unconnected_net()));
                         nb.outputs[i] = std::move(arg);
                     }
                 }
@@ -539,7 +560,7 @@ Deserializer::ParseAttoResult Deserializer::parse_atto(std::istream& f) {
                 // Map to new descriptor order
                 if (new_nt) {
                     nb.outputs.resize(new_nt->num_outputs);
-                    auto unconnected = gb->find("$unconnected");
+                    auto unconnected = gb->unconnected_net();
                     for (int i = 0; i < new_nt->num_outputs; i++) {
                         const char* name = new_nt->output_ports[i].name;
                         auto it = out_net_map.find(name);
@@ -569,8 +590,7 @@ Deserializer::ParseAttoResult Deserializer::parse_atto(std::istream& f) {
             // Helper: resolve net/node name to ArgNet2 and register destination
             auto resolve_net = [&](const std::string& net_name) -> FlowArg2Ptr {
                 if (net_name.empty()) {
-                    auto [resolved, ptr] = gb->find_or_create_net("$unconnected");
-                    return gb->build_arg_net(resolved, ptr);
+                    return gb->build_arg_net("$unconnected", gb->unconnected_net());
                 }
                 // Strip -as_lambda suffix → resolve to node entry directly
                 std::string resolved_name = net_name;
@@ -605,7 +625,7 @@ Deserializer::ParseAttoResult Deserializer::parse_atto(std::istream& f) {
                         // $N remap
                         int remap_idx = i - bang_offset;
                         while ((int)nb.remaps.size() <= remap_idx)
-                            nb.remaps.push_back(gb->build_arg_net("$unconnected", gb->find("$unconnected")));
+                            nb.remaps.push_back(gb->build_arg_net("$unconnected", gb->unconnected_net()));
                         nb.remaps[remap_idx] = std::move(arg);
                     }
                 }
@@ -752,7 +772,7 @@ Deserializer::ParseAttoResult Deserializer::parse_atto(std::istream& f) {
 
         // Ensure remaps are sized to rewrite_input_count (from $N refs in expressions)
         if (nb.parsed_args && nb.parsed_args->rewrite_input_count > (int)nb.remaps.size()) {
-            auto unconnected = gb->find("$unconnected");
+            auto unconnected = gb->unconnected_net();
             while ((int)nb.remaps.size() < nb.parsed_args->rewrite_input_count)
                 nb.remaps.push_back(gb->build_arg_net("$unconnected", unconnected));
         }
@@ -834,7 +854,7 @@ Deserializer::ParseAttoResult Deserializer::parse_atto(std::istream& f) {
     }
 
     // ─── Fold shadow nodes into parents ───
-    auto unconnected_entry = gb->find("$unconnected");
+    auto unconnected_entry = gb->unconnected_net();
 
     // Collect shadow ids
     std::vector<NodeId> shadow_ids;
