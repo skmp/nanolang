@@ -63,12 +63,17 @@ struct FlowArg2 : std::enable_shared_from_this<FlowArg2> {
     void port(const PortDesc2* p) { port_ = p; }
     bool is_remap() const { return port_ == nullptr; }
     unsigned remap_idx() const;      // throws if !is_remap()
-    unsigned input_pin_idx() const;  // throws if is_remap(); looks in parsed_args + parsed_va_args
+    unsigned input_pin_idx() const;  // throws if is_remap(); looks in parsed_args
+    unsigned input_pin_va_idx() const;  // throws if is_remap(); looks in parsed_va_args
+    
     unsigned output_pin_idx() const; // throws if is_remap(); looks in outputs
+    unsigned output_pin_va_idx() const; // throws if is_remap(); looks in outputs_va_args
 
     const std::shared_ptr<GraphBuilder>& owner() const;
 
     // Computed name: "node.port_name" or "node.va_name[idx]" etc.
+    std::string fq_name() const;
+    // only port_name or va_name[idx]
     std::string name() const;
 
 protected:

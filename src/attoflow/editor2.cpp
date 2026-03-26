@@ -825,7 +825,7 @@ void Editor2Pane::draw_node(ImDrawList* dl, const FlowNodeBuilderPtr& node,
                     ImGui::BeginTooltip();
                     ImGui::SetWindowFontScale(S.tooltip_scale);
                     if (hovered_pin->port())
-                        ImGui::Text("%s", hovered_pin->port()->name);
+                        ImGui::Text("%s", hovered_pin->name().c_str());
                     else if (pm.is_remap(i)) {
                         int ri = pm.remap_index(i);
                         ImGui::Text("$%d", ri);
@@ -861,7 +861,7 @@ void Editor2Pane::draw_node(ImDrawList* dl, const FlowNodeBuilderPtr& node,
                     ImGui::BeginTooltip();
                     ImGui::SetWindowFontScale(S.tooltip_scale);
                     if (hovered_pin->port())
-                        ImGui::Text("%s", hovered_pin->port()->name);
+                        ImGui::Text("%s", hovered_pin->name().c_str());
                     else
                         ImGui::Text("out%d", i);
                     ImGui::EndTooltip();

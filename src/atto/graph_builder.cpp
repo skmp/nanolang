@@ -110,18 +110,24 @@ std::shared_ptr<ArgExpr2> FlowArg2::as_expr() {
 }
 
 std::string FlowArg2::name() const {
-    std::string prefix = node_->id();
-
     if (!is_remap()) {
-        prefix = prefix + "." + port_->name;
+        std::string prefix = port_->name;
         if (port_->va_args) {
-            return prefix + "[" + std::to_string(input_pin_idx()) + "]";
+            if (port_->position == PortPosition2::Input) {
+                return prefix + "[" + std::to_string(input_pin_va_idx()) + "]";
+            } else {
+                return prefix + "[" + std::to_string(output_pin_va_idx()) + "]";
+            }
         } else {
             return prefix;
         }
     } else {
-        return prefix + ".remaps[" + std::to_string(remap_idx())  + "]";
+        return "remaps[" + std::to_string(remap_idx())  + "]";
     }
+}
+
+std::string FlowArg2::fq_name() const {
+    return node_->id() + "." + name();
 }
 
 unsigned FlowArg2::remap_idx() const {
@@ -150,6 +156,17 @@ unsigned FlowArg2::input_pin_idx() const {
     throw std::logic_error("FlowArg2::input_pin_idx(): arg not found in node inputs");
 }
 
+unsigned FlowArg2::input_pin_va_idx() const {
+    if (is_remap()) throw std::logic_error("FlowArg2::input_pin_va_idx(): is a remap (no port)");
+    auto n = node();
+    auto self = const_cast<FlowArg2*>(this)->shared_from_this();
+    if (n->parsed_va_args) {
+        for (unsigned i = 0; i < (unsigned)n->parsed_va_args->size(); i++)
+            if ((*n->parsed_va_args)[i] == self) return i;
+    }
+    throw std::logic_error("FlowArg2::input_pin_va_idx(): arg not found in node inputs");
+}
+
 unsigned FlowArg2::output_pin_idx() const {
     if (is_remap()) throw std::logic_error("FlowArg2::output_pin_idx(): is a remap (no port)");
     auto n = node();
@@ -157,6 +174,16 @@ unsigned FlowArg2::output_pin_idx() const {
     for (unsigned i = 0; i < (unsigned)n->outputs.size(); i++)
         if (n->outputs[i] == self) return i;
     throw std::logic_error("FlowArg2::output_pin_idx(): arg not found in node outputs");
+}
+
+
+unsigned FlowArg2::output_pin_va_idx() const {
+    if (is_remap()) throw std::logic_error("FlowArg2::output_pin_va_idx(): is a remap (no port)");
+    auto n = node();
+    auto self = const_cast<FlowArg2*>(this)->shared_from_this();
+    for (unsigned i = 0; i < (unsigned)n->outputs_va_args.size(); i++)
+        if (n->outputs_va_args[i] == self) return i;
+    throw std::logic_error("FlowArg2::output_pin_va_idx(): arg not found in node outputs");
 }
 
 // ─── Dirty-tracked setters ───
@@ -1107,8 +1134,11 @@ Deserializer::ParseAttoResult Deserializer::parse_atto(std::istream& f) {
 
         if ((int)node.parsed_args->size() > fixed_args) {
             node.parsed_va_args = std::make_shared<ParsedArgs2>();
-            for (int i = fixed_args; i < (int)node.parsed_args->size(); i++)
-                node.parsed_va_args->push_back(std::move((*node.parsed_args)[i]));
+            for (int i = fixed_args; i < (int)node.parsed_args->size(); i++) {
+                auto arg = std::move((*node.parsed_args)[i]);
+                arg->port(nt->input_ports_va_args);
+                node.parsed_va_args->push_back(std::move(arg));
+            }
             node.parsed_args->resize(fixed_args);
         }
     }
