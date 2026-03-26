@@ -57,24 +57,55 @@ static std::vector<std::string> parse_toml_array(const std::string& val) {
     return result;
 }
 
-// ─── Dirty-tracked setters ───
+// ─── FlowArg2 base ───
 
-static void maybe_dirty(GraphBuilder* gb) { if (gb) gb->mark_dirty(); }
 static void maybe_dirty(const std::shared_ptr<GraphBuilder>& gb) { if (gb) gb->mark_dirty(); }
 
-void ArgNet2::id(const NodeId& v)     { id_ = v; maybe_dirty(owner_); }
-void ArgNet2::entry(std::shared_ptr<BuilderEntry> v) { entry_ = std::move(v); maybe_dirty(owner_); }
-void ArgNumber2::value(double v)       { value_ = v; maybe_dirty(owner_); }
-void ArgNumber2::is_float(bool v)      { is_float_ = v; maybe_dirty(owner_); }
-void ArgString2::value(const std::string& v) { value_ = v; maybe_dirty(owner_); }
-void ArgExpr2::expr(const std::string& v)    { expr_ = v; maybe_dirty(owner_); }
+void FlowArg2::mark_dirty() { maybe_dirty(owner_); }
+
+std::shared_ptr<ArgNet2> FlowArg2::as_net() {
+    return kind_ == ArgKind::Net ? std::dynamic_pointer_cast<ArgNet2>(shared_from_this()) : nullptr;
+}
+std::shared_ptr<ArgNumber2> FlowArg2::as_number() {
+    return kind_ == ArgKind::Number ? std::dynamic_pointer_cast<ArgNumber2>(shared_from_this()) : nullptr;
+}
+std::shared_ptr<ArgString2> FlowArg2::as_string() {
+    return kind_ == ArgKind::String ? std::dynamic_pointer_cast<ArgString2>(shared_from_this()) : nullptr;
+}
+std::shared_ptr<ArgExpr2> FlowArg2::as_expr() {
+    return kind_ == ArgKind::Expr ? std::dynamic_pointer_cast<ArgExpr2>(shared_from_this()) : nullptr;
+}
+
+std::string FlowArg2::name() const {
+    // Build: "node_name.port_name" or "node_name.va_name[idx]"
+    std::string prefix;
+    auto n = node_.lock();
+    if (n) prefix = n->id();
+    else prefix = "$empty";
+
+    if (port_) {
+        // TODO: Check if this is a va_arg by looking at the node's va_args
+        // For now, just use port name
+        return prefix + "." + port_->name;
+    }
+    return prefix + ".?";
+}
+
+// ─── Dirty-tracked setters ───
+
+void ArgNet2::net_id(const NodeId& v)     { net_id_ = v; mark_dirty(); }
+void ArgNet2::entry(std::shared_ptr<BuilderEntry> v) { entry_ = std::move(v); mark_dirty(); }
+void ArgNumber2::value(double v)       { value_ = v; mark_dirty(); }
+void ArgNumber2::is_float(bool v)      { is_float_ = v; mark_dirty(); }
+void ArgString2::value(const std::string& v) { value_ = v; mark_dirty(); }
+void ArgExpr2::expr(const std::string& v)    { expr_ = v; mark_dirty(); }
 
 // ─── ParsedArgs2 ───
 
 void ParsedArgs2::push_back(FlowArg2Ptr arg) { items_.push_back(std::move(arg)); maybe_dirty(owner); }
 void ParsedArgs2::pop_back()                 { items_.pop_back(); maybe_dirty(owner); }
 void ParsedArgs2::resize(int n) {
-    while ((int)items_.size() < n) items_.push_back(std::make_shared<FlowArg2>());
+    // Can't create default FlowArg2 (abstract), just truncate if shrinking
     items_.resize(n);
     maybe_dirty(owner);
 }
@@ -112,18 +143,18 @@ void NetBuilder::validate() const {
 
 // ─── v2 parse/reconstruct ───
 
-static FlowArg2 parse_token_v2(GraphBuilder& gb, const std::string& tok) {
-    if (tok.empty()) return ArgString2{""};
+static FlowArg2Ptr parse_token_v2(GraphBuilder& gb, const std::string& tok) {
+    if (tok.empty()) return gb.build_arg_string("");
 
     // Net reference: $name (non-numeric)
     if (tok[0] == '$' && tok.size() >= 2 && !std::isdigit(tok[1])) {
         auto [id, entry] = gb.find_or_create_net(tok, false);
-        return ArgNet2{NodeId(id), entry};
+        return gb.build_arg_net(NodeId(id), entry);
     }
 
     // String literal
     if (tok.front() == '"' && tok.back() == '"' && tok.size() >= 2) {
-        return ArgString2{tok.substr(1, tok.size() - 2)};
+        return gb.build_arg_string(tok.substr(1, tok.size() - 2));
     }
 
     // Number
@@ -137,11 +168,11 @@ static FlowArg2 parse_token_v2(GraphBuilder& gb, const std::string& tok) {
         if (c < '0' || c > '9') { is_number = false; break; }
     }
     if (is_number && !tok.empty()) {
-        return ArgNumber2{std::stod(tok), is_float};
+        return gb.build_arg_number(std::stod(tok), is_float);
     }
 
     // Expression (anything else)
-    return ArgExpr2{tok};
+    return gb.build_arg_expr(tok);
 }
 
 ParseResult parse_args_v2(const std::shared_ptr<GraphBuilder>& gb,
@@ -189,22 +220,20 @@ ParseResult parse_args_v2(const std::shared_ptr<GraphBuilder>& gb,
 std::string reconstruct_args_str(const ParsedArgs2& args) {
     std::string result;
     for (auto& a : args) {
+        if (!a) continue;
         if (!result.empty()) result += " ";
-        std::visit([&](auto& v) {
-            using T = std::decay_t<decltype(v)>;
-            if constexpr (std::is_same_v<T, ArgNet2>) result += v.first();
-            else if constexpr (std::is_same_v<T, ArgNumber2>) {
-                if (v.is_float()) {
-                    char buf[64];
-                    snprintf(buf, sizeof(buf), "%g", v.value());
-                    result += buf;
-                } else {
-                    result += std::to_string((long long)v.value());
-                }
+        if (auto n = a->as_net()) result += n->first();
+        else if (auto num = a->as_number()) {
+            if (num->is_float()) {
+                char buf[64];
+                snprintf(buf, sizeof(buf), "%g", num->value());
+                result += buf;
+            } else {
+                result += std::to_string((long long)num->value());
             }
-            else if constexpr (std::is_same_v<T, ArgString2>) result += "\"" + v.value() + "\"";
-            else if constexpr (std::is_same_v<T, ArgExpr2>) result += v.expr();
-        }, a);
+        }
+        else if (auto s = a->as_string()) result += "\"" + s->value() + "\"";
+        else if (auto e = a->as_expr()) result += e->expr();
     }
     return result;
 }
@@ -311,22 +340,22 @@ bool GraphBuilder::rename(const BuilderEntryPtr& entry, const NodeId& new_id) {
 }
 
 FlowArg2Ptr GraphBuilder::build_arg_net(NodeId id, BuilderEntryPtr entry) {
-    auto p = std::make_shared<FlowArg2>(ArgNet2{std::move(id), std::move(entry), shared_from_this()});
+    auto p = std::shared_ptr<ArgNet2>(new ArgNet2{std::move(id), std::move(entry), shared_from_this()});
     pins_.push_back(p);
     return p;
 }
 FlowArg2Ptr GraphBuilder::build_arg_number(double value, bool is_float) {
-    auto p = std::make_shared<FlowArg2>(ArgNumber2{value, is_float, shared_from_this()});
+    auto p = std::shared_ptr<ArgNumber2>(new ArgNumber2{value, is_float, shared_from_this()});
     pins_.push_back(p);
     return p;
 }
 FlowArg2Ptr GraphBuilder::build_arg_string(std::string value) {
-    auto p = std::make_shared<FlowArg2>(ArgString2{std::move(value), shared_from_this()});
+    auto p = std::shared_ptr<ArgString2>(new ArgString2{std::move(value), shared_from_this()});
     pins_.push_back(p);
     return p;
 }
 FlowArg2Ptr GraphBuilder::build_arg_expr(std::string expr) {
-    auto p = std::make_shared<FlowArg2>(ArgExpr2{std::move(expr), shared_from_this()});
+    auto p = std::shared_ptr<ArgExpr2>(new ArgExpr2{std::move(expr), shared_from_this()});
     pins_.push_back(p);
     return p;
 }
