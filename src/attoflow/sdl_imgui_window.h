@@ -43,7 +43,7 @@ struct SdlImGuiWindow {
         ImGuiIO& io = ImGui::GetIO();
         io.ConfigFlags |= ImGuiConfigFlags_NavEnableKeyboard;
         ImFontConfig font_cfg;
-        font_cfg.SizePixels = 17.0f * dpi_scale;
+        font_cfg.SizePixels = 22.0f * dpi_scale;
         io.Fonts->AddFontDefault(&font_cfg);
         io.FontGlobalScale = 1.0f / dpi_scale;
         ImGui::StyleColorsDark();
@@ -68,7 +68,7 @@ struct SdlImGuiWindow {
             ImGuiIO& io = ImGui::GetIO();
             io.Fonts->Clear();
             ImFontConfig font_cfg;
-            font_cfg.SizePixels = 17.0f * dpi_scale;
+            font_cfg.SizePixels = 22.0f * dpi_scale;
             io.Fonts->AddFontDefault(&font_cfg);
             io.FontGlobalScale = 1.0f / dpi_scale;
             ImGui_ImplSDLRenderer3_DestroyFontsTexture();
