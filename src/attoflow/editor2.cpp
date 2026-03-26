@@ -82,18 +82,7 @@ static float point_to_bezier_dist(ImVec2 p, ImVec2 p0, ImVec2 p1, ImVec2 p2, ImV
     return std::sqrt(min_d2);
 }
 
-// Stored wire info for hover hit-testing
-struct WireInfo {
-    BuilderEntryPtr entry_;            // the net entry (null for lambda wires)
-
-    ImVec2 p0, p1, p2, p3;       // bezier control points
-    NodeId src_id, dst_id;        // source and destination node IDs
-    NodeId net_id;                // net name
-
-    BuilderEntryPtr entry() { return entry_; }
-    const BuilderEntryPtr entry() const { return entry_; }
-    bool is_lambda() const { return entry_->is(IdCategory::Node); };
-};
+// WireInfo defined in editor2.h
 
 static inline ImVec2 v2add(ImVec2 a, ImVec2 b) { return {a.x + b.x, a.y + b.y}; }
 static inline ImVec2 v2sub(ImVec2 a, ImVec2 b) { return {a.x - b.x, a.y - b.y}; }
@@ -413,75 +402,22 @@ void Editor2Pane::draw() {
 
     dl->PopClipRect();
 
-    // ─── Determine hover item (node or wire) ───
-    hover_item_.reset();
+    // ─── Hover detection + effects ───
     if (canvas_hovered) {
         ImVec2 mouse = ImGui::GetIO().MousePos;
-
-        // Check nodes first (they have priority over wires)
-        for (auto it = gb_->entries.rbegin(); it != gb_->entries.rend(); ++it) {
-            auto node = it->second->as_Node();
-            if (!node) continue;
-            auto layout = compute_node_layout(node, canvas_origin, canvas_zoom_);
-            if (mouse.x >= layout.pos.x && mouse.x <= layout.pos.x + layout.width &&
-                mouse.y >= layout.pos.y && mouse.y <= layout.pos.y + layout.height) {
-                hover_item_ = node;
-                break;
-            }
-        }
-
-        // If no node hit, check wires
-        if (hover_item_.expired()) {
-            float wire_thresh = S.wire_hit_threshold * canvas_zoom_;
-            float best_dist = wire_thresh;
-            const WireInfo* best_wire_info = nullptr;
-            for (auto& w : drawn_wires) {
-                float d = point_to_bezier_dist(mouse, w.p0, w.p1, w.p2, w.p3);
-                if (d < best_dist) {
-                    best_dist = d;
-                    if (w.entry()) best_wire_info = &w;
-                }
-            }
-
-            if (best_wire_info) {
-                hover_item_ = best_wire_info->entry();
-                auto hover_entry = best_wire_info->entry();
-                float th = (S.wire_thickness + 2.0f) * canvas_zoom_;
-
-                // Highlight ALL wires sharing the same entry (same net or same lambda node)
-                for (auto& w : drawn_wires) {
-                    if (w.entry() == hover_entry) {
-                        dl->AddBezierCubic(w.p0, w.p1, w.p2, w.p3, S.col_pin_hover, th);
-                    }
-                }
-
-                // For lambdas, also highlight the source node
-                if (best_wire_info->is_lambda()) {
-                    auto src = hover_entry->as_Node();
-                    if (src) {
-                        auto src_layout = compute_node_layout(src, canvas_origin, canvas_zoom_);
-                        dl->AddRect(src_layout.pos,
-                            {src_layout.pos.x + src_layout.width, src_layout.pos.y + src_layout.height},
-                            S.col_pin_hover, S.node_rounding * canvas_zoom_, 0, S.highlight_thickness);
-                    }
-                }
-
-                // Tooltip
-                ImGui::BeginTooltip();
-                ImGui::SetWindowFontScale(S.tooltip_scale);
-                if (best_wire_info->is_lambda())
-                    ImGui::Text("lambda: %s", best_wire_info->src_id.c_str());
-                else
-                    ImGui::Text("net: %s", best_wire_info->net_id.c_str());
-                ImGui::Text("src: %s", best_wire_info->src_id.c_str());
-                ImGui::Text("dst: %s", best_wire_info->dst_id.c_str());
-                ImGui::EndTooltip();
-            }
-        }
+        hover_item_ = detect_hover(mouse, canvas_origin, drawn_wires);
+    } else {
+        hover_item_ = std::monostate{};
     }
+    draw_hover_effects(dl, canvas_origin, drawn_wires, hover_item_);
 
-    auto hover_locked = hover_item_.lock();
-    auto hover_node = hover_locked ? hover_locked->as_Node() : nullptr;
+    // Extract hover node from variant
+    FlowNodeBuilderPtr hover_node = nullptr;
+    if (auto* ep = std::get_if<BuilderEntryPtr>(&hover_item_)) {
+        if (*ep) hover_node = (*ep)->as_Node();
+    } else if (auto* pin = std::get_if<FlowArg2Ptr>(&hover_item_)) {
+        hover_node = (*pin)->node();
+    }
 
     // ─── Selection + dragging with left mouse ───
     if (canvas_hovered && ImGui::IsMouseClicked(ImGuiMouseButton_Left)) {
@@ -639,15 +575,23 @@ void Editor2Pane::draw_node(ImDrawList* dl, const FlowNodeBuilderPtr& node,
     if (!args.empty()) display += " " + args;
 
     bool selected = selected_nodes_.count(node);
-    bool hovered = (hover_item_.lock() == node);
+    // node_hovered = hover_item_ is this node directly (not a pin on it)
+    bool node_hovered = false;
+    if (auto* ep = std::get_if<BuilderEntryPtr>(&hover_item_))
+        node_hovered = (*ep == node);
+
+    // pin_hovered_on_this_node = hover_item_ is a pin belonging to this node
+    bool pin_hovered_on_this = false;
+    if (auto* pin = std::get_if<FlowArg2Ptr>(&hover_item_))
+        pin_hovered_on_this = ((*pin)->node() == node);
     bool has_error = !node->error.empty();
 
     ImU32 col = has_error ? S.col_node_err : (selected ? S.col_node_sel : S.col_node);
     dl->AddRectFilled(layout.pos, {layout.pos.x + layout.width, layout.pos.y + layout.height},
                       col, S.node_rounding * canvas_zoom_);
     dl->AddRect(layout.pos, {layout.pos.x + layout.width, layout.pos.y + layout.height},
-                hovered ? S.col_pin_hover : S.col_node_border, S.node_rounding * canvas_zoom_,
-                0, hovered ? S.highlight_thickness : 1.0f);
+                node_hovered ? S.col_pin_hover : S.col_node_border, S.node_rounding * canvas_zoom_,
+                0, node_hovered ? S.highlight_thickness : 1.0f);
 
     // Text
     float font_size = ImGui::GetFontSize() * canvas_zoom_;
@@ -741,142 +685,121 @@ void Editor2Pane::draw_node(ImDrawList* dl, const FlowNodeBuilderPtr& node,
             {gp.x - pr, gp.y},
             {gp.x + pr, gp.y + pr},
             lc);
+        // Outline when node is hovered (not pin)
+        if (node_hovered) {
+            float ho = S.highlight_offset * canvas_zoom_;
+            dl->AddTriangle(
+                {gp.x + pr + ho, gp.y - pr - ho},
+                {gp.x - pr - ho, gp.y},
+                {gp.x + pr + ho, gp.y + pr + ho},
+                S.col_pin_hover, S.highlight_thickness);
+        }
 
         // Side-bang (square, middle-right)
         ImVec2 bp = {layout.pos.x + layout.width, layout.pos.y + layout.height * 0.5f};
         dl->AddRectFilled({bp.x - pr, bp.y - pr}, {bp.x + pr, bp.y + pr}, S.col_pin_bang);
     }
 
-    // Pin hover: highlight + tooltip
-    ImVec2 mouse = ImGui::GetMousePos();
-    float hit_r = pr * S.pin_hit_radius_mul;
-    auto dist2 = [](ImVec2 a, ImVec2 b) { return (a.x-b.x)*(a.x-b.x) + (a.y-b.y)*(a.y-b.y); };
-    float hit_r2 = hit_r * hit_r;
+    // Pin/node hover visuals driven by hover_item_
+    if (!node_hovered && !pin_hovered_on_this) return;
+
     float ho = S.highlight_offset * canvas_zoom_;
     ImU32 COL_HOVER = S.col_pin_hover;
-
-    // Helper to get input pin name using PinMapping
-    auto get_input_pin_name = [&](int i) -> const char* {
-        if (pm.is_absent_optional(i)) {
-            int port = pm.absent_port_index(i);
-            if (auto* pd = nt->input_port(port)) return pd->name;
-        } else if (pm.is_base(i)) {
-            int port = pm.port_index(i);
-            if (auto* pd = nt->input_port(port)) return pd->name;
-        } else if (pm.is_va(i)) {
-            return nt->va_args ? nt->va_args->name : "va";
-        } else if (pm.is_remap(i)) {
-            static char remap_buf[16];
-            snprintf(remap_buf, sizeof(remap_buf), "$%d", pm.remap_index(i));
-            return remap_buf;
-        }
-        return "?";
-    };
-
-    // Helper to get input pin shape for highlight
-    enum class PinShape2 { Circle, Square, Diamond, TriangleDown, TriangleLeft };
-    auto get_input_pin_shape = [&](int i) -> PinShape2 {
-        if (pm.is_add_diamond(i)) return PinShape2::Diamond;
-        if (pm.is_absent_optional(i)) return PinShape2::Diamond;
-        if (pm.is_base(i)) {
-            int port = pm.port_index(i);
-            if (auto* pd = nt->input_port(port)) {
-                if (pd->kind == PortKind2::BangTrigger) return PinShape2::Square;
-                if (pd->kind == PortKind2::Lambda) return PinShape2::TriangleDown;
-                if (pd->optional) return PinShape2::Diamond;
-            }
-        } else if (pm.is_va(i)) {
-            return PinShape2::Diamond;
-        }
-        return PinShape2::Circle;
-    };
-
     float ht = S.highlight_thickness;
+
+    enum class PinShape2 { Circle, Square, Diamond, TriangleDown, TriangleLeft };
     auto draw_highlight = [&](ImVec2 pos, PinShape2 shape) {
         switch (shape) {
-        case PinShape2::Circle:
-            dl->AddCircle(pos, pr + ho, COL_HOVER, 0, ht);
-            break;
-        case PinShape2::Square:
-            dl->AddRect({pos.x - pr - ho, pos.y - pr - ho}, {pos.x + pr + ho, pos.y + pr + ho}, COL_HOVER, 0, 0, ht);
-            break;
-        case PinShape2::Diamond:
-            dl->AddQuad({pos.x, pos.y - pr - ho}, {pos.x + pr + ho, pos.y}, {pos.x, pos.y + pr + ho}, {pos.x - pr - ho, pos.y}, COL_HOVER, ht);
-            break;
-        case PinShape2::TriangleDown:
-            dl->AddTriangle({pos.x - pr - ho, pos.y - pr - ho}, {pos.x + pr + ho, pos.y - pr - ho}, {pos.x, pos.y + pr + ho}, COL_HOVER, ht);
-            break;
-        case PinShape2::TriangleLeft:
-            dl->AddTriangle({pos.x + pr + ho, pos.y - pr - ho}, {pos.x - pr - ho, pos.y}, {pos.x + pr + ho, pos.y + pr + ho}, COL_HOVER, ht);
-            break;
+        case PinShape2::Circle:    dl->AddCircle(pos, pr + ho, COL_HOVER, 0, ht); break;
+        case PinShape2::Square:    dl->AddRect({pos.x-pr-ho,pos.y-pr-ho},{pos.x+pr+ho,pos.y+pr+ho}, COL_HOVER, 0, 0, ht); break;
+        case PinShape2::Diamond:   dl->AddQuad({pos.x,pos.y-pr-ho},{pos.x+pr+ho,pos.y},{pos.x,pos.y+pr+ho},{pos.x-pr-ho,pos.y}, COL_HOVER, ht); break;
+        case PinShape2::TriangleDown: dl->AddTriangle({pos.x-pr-ho,pos.y-pr-ho},{pos.x+pr+ho,pos.y-pr-ho},{pos.x,pos.y+pr+ho}, COL_HOVER, ht); break;
+        case PinShape2::TriangleLeft: dl->AddTriangle({pos.x+pr+ho,pos.y-pr-ho},{pos.x-pr-ho,pos.y},{pos.x+pr+ho,pos.y+pr+ho}, COL_HOVER, ht); break;
         }
     };
 
-    bool pin_hovered = false;
-    // Check input pins
-    for (int i = 0; i < layout.num_in; i++) {
-        ImVec2 pp = layout.input_pin_pos(i);
-        if (dist2(mouse, pp) < hit_r2) {
-            draw_highlight(pp, pm.is_add_diamond(i) ? PinShape2::Diamond : get_input_pin_shape(i));
-            ImGui::BeginTooltip();
-            ImGui::SetWindowFontScale(S.tooltip_scale);
-            if (pm.is_add_diamond(i)) {
-                const char* va_name = nt->va_args ? nt->va_args->name : "arg";
-                ImGui::Text("add %s", va_name);
-            } else {
-                ImGui::Text("%s", get_input_pin_name(i));
+    // Get the hovered pin (if any)
+    FlowArg2Ptr hovered_pin = nullptr;
+    if (auto* pp = std::get_if<FlowArg2Ptr>(&hover_item_))
+        hovered_pin = *pp;
+
+    if (hovered_pin) {
+        // Find which visual pin matches and highlight it
+        // Input pins
+        for (int i = 0; i < pm.total(); i++) {
+            if (pm.is_add_diamond(i) || pm.is_absent_optional(i)) continue;
+            FlowArg2Ptr pin_arg = nullptr;
+            if (pm.is_base(i)) {
+                int port = pm.port_index(i);
+                if (node->parsed_args && port < node->parsed_args->size())
+                    pin_arg = (*node->parsed_args)[port];
+            } else if (pm.is_va(i)) {
+                int vi = -(pm.port_index(i) + 1);
+                if (node->parsed_va_args && vi < node->parsed_va_args->size())
+                    pin_arg = (*node->parsed_va_args)[vi];
+            } else if (pm.is_remap(i)) {
+                int ri = pm.remap_index(i);
+                if (ri < (int)node->remaps.size()) pin_arg = node->remaps[ri];
             }
-            ImGui::EndTooltip();
-            pin_hovered = true;
-            break;
+            if (pin_arg == hovered_pin) {
+                ImVec2 pp = layout.input_pin_pos(i);
+                auto shape = pm.is_va(i) ? PinShape2::Diamond : PinShape2::Circle;
+                if (pm.is_base(i)) {
+                    if (auto* pd = nt->input_port(pm.port_index(i))) {
+                        if (pd->kind == PortKind2::BangTrigger) shape = PinShape2::Square;
+                        else if (pd->kind == PortKind2::Lambda) shape = PinShape2::TriangleDown;
+                        else if (pd->optional) shape = PinShape2::Diamond;
+                    }
+                }
+                draw_highlight(pp, shape);
+                if (draw_tooltips_) {
+                    ImGui::BeginTooltip();
+                    ImGui::SetWindowFontScale(S.tooltip_scale);
+                    if (hovered_pin->port())
+                        ImGui::Text("%s", hovered_pin->port()->name);
+                    else if (pm.is_remap(i)) {
+                        int ri = pm.remap_index(i);
+                        ImGui::Text("$%d", ri);
+                    }
+                    ImGui::EndTooltip();
+                }
+                return;
+            }
         }
-    }
-    // Check output pins
-    if (!pin_hovered) {
+        // Output pins
         for (int i = 0; i < layout.num_out; i++) {
-            ImVec2 pp = layout.output_pin_pos(i);
-            if (dist2(mouse, pp) < hit_r2) {
+            if (i < (int)node->outputs.size() && node->outputs[i] == hovered_pin) {
+                ImVec2 pp = layout.output_pin_pos(i);
                 PortKind2 kind = (nt->output_ports && i < nt->num_outputs) ? nt->output_ports[i].kind : PortKind2::Data;
                 draw_highlight(pp, kind == PortKind2::BangNext ? PinShape2::Square : PinShape2::Circle);
-                const char* name = (nt->output_ports && i < nt->num_outputs) ? nt->output_ports[i].name : "out";
-                ImGui::BeginTooltip();
-                ImGui::SetWindowFontScale(S.tooltip_scale);
-                ImGui::Text("%s", name);
-                ImGui::EndTooltip();
-                pin_hovered = true;
-                break;
+                if (draw_tooltips_) {
+                    ImGui::BeginTooltip();
+                    ImGui::SetWindowFontScale(S.tooltip_scale);
+                    if (hovered_pin->port())
+                        ImGui::Text("%s", hovered_pin->port()->name);
+                    else
+                        ImGui::Text("out%d", i);
+                    ImGui::EndTooltip();
+                }
+                return;
             }
         }
-    }
-    // Check lambda grab
-    if (!pin_hovered && nt->is_flow()) {
-        ImVec2 gp = layout.lambda_grab_pos();
-        if (dist2(mouse, gp) < hit_r2) {
-            draw_highlight(gp, PinShape2::TriangleLeft);
-            ImGui::BeginTooltip();
-            ImGui::SetWindowFontScale(S.tooltip_scale);
-            ImGui::Text("as_lambda");
-            ImGui::EndTooltip();
-            pin_hovered = true;
-        }
-    }
-    // Check side-bang
-    if (!pin_hovered && nt->is_flow()) {
-        ImVec2 bp = {layout.pos.x + layout.width, layout.pos.y + layout.height * 0.5f};
-        if (dist2(mouse, bp) < hit_r2) {
+        // Side-bang
+        if (nt->is_flow() && !node->outputs.empty() && node->outputs[0] == hovered_pin) {
+            ImVec2 bp = {layout.pos.x + layout.width, layout.pos.y + layout.height * 0.5f};
             draw_highlight(bp, PinShape2::Square);
-            ImGui::BeginTooltip();
-            ImGui::SetWindowFontScale(S.tooltip_scale);
-            ImGui::Text("post_bang");
-            ImGui::EndTooltip();
-            pin_hovered = true;
+            if (draw_tooltips_) {
+                ImGui::BeginTooltip();
+                ImGui::SetWindowFontScale(S.tooltip_scale);
+                ImGui::Text("post_bang");
+                ImGui::EndTooltip();
+            }
+            return;
         }
     }
 
-    // Node tooltip (when hovering body, not a pin)
-    if (!pin_hovered &&
-        mouse.x >= layout.pos.x && mouse.x <= layout.pos.x + layout.width &&
-        mouse.y >= layout.pos.y && mouse.y <= layout.pos.y + layout.height) {
+    // Node body tooltip (when node is hovered directly, not a pin)
+    if (node_hovered && draw_tooltips_) {
         ImGui::BeginTooltip();
         ImGui::SetWindowFontScale(S.tooltip_scale);
         ImGui::Text("id: %s", node->id().c_str());
@@ -911,4 +834,168 @@ void Editor2Pane::draw_node(ImDrawList* dl, const FlowNodeBuilderPtr& node,
 
 void Editor2Pane::draw_net(ImDrawList*, const NetBuilderPtr&, ImVec2) {
     // Unused — wires drawn per-node in draw()
+}
+
+// ─── Hover detection ───
+
+Editor2Pane::HoverItem Editor2Pane::detect_hover(
+    ImVec2 mouse, ImVec2 canvas_origin, const std::vector<WireInfo>& drawn_wires)
+{
+    // Priority: pins (most specific) > nodes > wires (least specific)
+    // But detection order: wires, nodes, pins — last match wins (most specific)
+
+    HoverItem result = std::monostate{};
+
+    // 1. Wires (lowest priority)
+    {
+        float wire_thresh = S.wire_hit_threshold * canvas_zoom_;
+        float best_dist = wire_thresh;
+        const WireInfo* best_wire = nullptr;
+        for (auto& w : drawn_wires) {
+            float d = point_to_bezier_dist(mouse, w.p0, w.p1, w.p2, w.p3);
+            if (d < best_dist) {
+                best_dist = d;
+                if (w.entry()) best_wire = &w;
+            }
+        }
+        if (best_wire)
+            result = best_wire->entry();
+    }
+
+    // 2. Nodes (overrides wire if hit)
+    FlowNodeBuilderPtr hit_node = nullptr;
+    for (auto it = gb_->entries.rbegin(); it != gb_->entries.rend(); ++it) {
+        auto node = it->second->as_Node();
+        if (!node) continue;
+        auto layout = compute_node_layout(node, canvas_origin, canvas_zoom_);
+        if (mouse.x >= layout.pos.x && mouse.x <= layout.pos.x + layout.width &&
+            mouse.y >= layout.pos.y && mouse.y <= layout.pos.y + layout.height) {
+            hit_node = node;
+            result = BuilderEntryPtr(node);
+            break;
+        }
+    }
+
+    // 3. Pins on hit node (overrides node if hit)
+    if (hit_node) {
+        auto* nt = find_node_type2(hit_node->type_id);
+        if (nt) {
+            auto layout = compute_node_layout(hit_node, canvas_origin, canvas_zoom_);
+            float pr = S.pin_radius * canvas_zoom_;
+            float hit_r = pr * S.pin_hit_radius_mul;
+            float hit_r2 = hit_r * hit_r;
+            auto d2 = [](ImVec2 a, ImVec2 b) { return (a.x-b.x)*(a.x-b.x) + (a.y-b.y)*(a.y-b.y); };
+            auto pm = PinMapping::build(hit_node, nt);
+
+            // Input pins
+            for (int i = 0; i < pm.total(); i++) {
+                if (pm.is_add_diamond(i) || pm.is_absent_optional(i)) continue;
+                ImVec2 pp = layout.input_pin_pos(i);
+                if (d2(mouse, pp) < hit_r2) {
+                    if (pm.is_base(i)) {
+                        int port = pm.port_index(i);
+                        if (hit_node->parsed_args && port < hit_node->parsed_args->size())
+                            result = (*hit_node->parsed_args)[port];
+                    } else if (pm.is_va(i)) {
+                        int vi = -(pm.port_index(i) + 1);
+                        if (hit_node->parsed_va_args && vi < hit_node->parsed_va_args->size())
+                            result = (*hit_node->parsed_va_args)[vi];
+                    } else if (pm.is_remap(i)) {
+                        int ri = pm.remap_index(i);
+                        if (ri < (int)hit_node->remaps.size())
+                            result = hit_node->remaps[ri];
+                    }
+                    return result;
+                }
+            }
+
+            // Output pins
+            for (int i = 0; i < layout.num_out; i++) {
+                ImVec2 pp = layout.output_pin_pos(i);
+                if (d2(mouse, pp) < hit_r2) {
+                    if (i < (int)hit_node->outputs.size() && hit_node->outputs[i])
+                        result = hit_node->outputs[i];
+                    return result;
+                }
+            }
+
+            // Lambda grab → node itself
+            if (nt->is_flow() && d2(mouse, layout.lambda_grab_pos()) < hit_r2)
+                return BuilderEntryPtr(hit_node);
+
+            // Side-bang → first output
+            if (nt->is_flow()) {
+                ImVec2 bp = {layout.pos.x + layout.width, layout.pos.y + layout.height * 0.5f};
+                if (d2(mouse, bp) < hit_r2) {
+                    if (hit_node->outputs.empty() || !hit_node->outputs[0])
+                        throw std::logic_error("Flow node '" + hit_node->id() + "' missing side-bang output[0]");
+                    return hit_node->outputs[0];
+                }
+            }
+        }
+    }
+
+    return result;
+}
+
+// ─── Hover effects + tooltips ───
+
+void Editor2Pane::draw_hover_effects(
+    ImDrawList* dl, ImVec2 canvas_origin,
+    const std::vector<WireInfo>& drawn_wires, const HoverItem& hover)
+{
+    if (std::holds_alternative<std::monostate>(hover)) return;
+
+    float th_wire = (S.wire_thickness + 2.0f) * canvas_zoom_;
+
+    // Determine what's hovered
+    FlowNodeBuilderPtr hover_node = nullptr;
+    BuilderEntryPtr hover_entry = nullptr;
+    FlowArg2Ptr hover_pin = nullptr;
+
+    if (auto* ep = std::get_if<BuilderEntryPtr>(&hover)) {
+        hover_entry = *ep;
+        hover_node = hover_entry ? hover_entry->as_Node() : nullptr;
+    } else if (auto* pp = std::get_if<FlowArg2Ptr>(&hover)) {
+        hover_pin = *pp;
+    }
+
+    // Node hovered: highlight lambda wires capturing it
+    if (hover_node) {
+        for (auto& w : drawn_wires) {
+            if (w.is_lambda() && w.entry() == hover_node)
+                dl->AddBezierCubic(w.p0, w.p1, w.p2, w.p3, S.col_pin_hover, th_wire);
+        }
+    }
+
+    // Wire/net hovered: highlight all wires in the same net + lambda source node
+    if (hover_entry && hover_entry->as_Net()) {
+        for (auto& w : drawn_wires) {
+            if (w.entry() == hover_entry)
+                dl->AddBezierCubic(w.p0, w.p1, w.p2, w.p3, S.col_pin_hover, th_wire);
+        }
+        if (draw_tooltips_) {
+            // Find the first wire for tooltip info
+            for (auto& w : drawn_wires) {
+                if (w.entry() == hover_entry) {
+                    ImGui::BeginTooltip();
+                    ImGui::SetWindowFontScale(S.tooltip_scale);
+                    if (w.is_lambda())
+                        ImGui::Text("lambda: %s", w.src_id.c_str());
+                    else
+                        ImGui::Text("net: %s", w.net_id.c_str());
+                    ImGui::Text("src: %s", w.src_id.c_str());
+                    ImGui::Text("dst: %s", w.dst_id.c_str());
+                    ImGui::EndTooltip();
+                    break;
+                }
+            }
+        }
+    }
+
+    // Lambda node hovered via wire: highlight the source node
+    if (hover_entry && hover_entry->as_Node() && !hover_node) {
+        // This case doesn't happen — if entry is a node, hover_node is set.
+        // Lambda source highlighting is handled above.
+    }
 }

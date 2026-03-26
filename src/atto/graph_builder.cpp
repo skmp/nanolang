@@ -1119,6 +1119,21 @@ Deserializer::ParseAttoResult Deserializer::parse_atto(std::istream& f) {
         gb->entries = std::move(new_entries);
     }
 
+    // ─── Assign node() on all pins ───
+    for (auto& [id, entry] : gb->entries) {
+        auto node_p = entry->as_Node();
+        if (!node_p) continue;
+        auto assign_node = [&](ParsedArgs2* pa) {
+            if (!pa) return;
+            for (int i = 0; i < pa->size(); i++)
+                (*pa)[i]->node(node_p);
+        };
+        assign_node(node_p->parsed_args.get());
+        assign_node(node_p->parsed_va_args.get());
+        for (auto& r : node_p->remaps) r->node(node_p);
+        for (auto& o : node_p->outputs) o->node(node_p);
+    }
+
     gb->compact();
 
     return gb;

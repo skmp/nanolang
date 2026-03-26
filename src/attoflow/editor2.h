@@ -31,12 +31,31 @@ private:
     float canvas_zoom_ = 1.0f;
 
     // Interaction state
-    BuilderEntryWeak hover_item_;       // current hovered item (node or net), empty = nothing
-    // TODO: pins will be part of hover_item_ system (needs Pin as a graph entity or lightweight ID)
+    using HoverItem = std::variant<std::monostate, BuilderEntryPtr, FlowArg2Ptr>;
+    HoverItem hover_item_;              // monostate = nothing, BuilderEntryPtr = node/net, FlowArg2Ptr = pin
+    bool draw_tooltips_ = true;
     std::set<FlowNodeBuilderPtr> selected_nodes_;
     bool dragging_started_ = false;
-    bool drag_was_overlapping_ = false; // true if node was overlapping when drag began
-    int editing_link_id_ = -1; // not used yet, placeholder
+    bool drag_was_overlapping_ = false;
+    int editing_link_id_ = -1;
+
+    // Wire info for hover hit-testing
+    struct WireInfo {
+        BuilderEntryPtr entry_;
+        ImVec2 p0, p1, p2, p3;
+        NodeId src_id, dst_id, net_id;
+        BuilderEntryPtr entry() const { return entry_; }
+        bool is_lambda() const { return entry_ && entry_->is(IdCategory::Node); }
+    };
+
+    // Hover detection — returns best hover match
+    HoverItem detect_hover(ImVec2 mouse, ImVec2 canvas_origin,
+                           const std::vector<WireInfo>& drawn_wires);
+
+    // Tooltip + highlight drawing (driven by hover_item parameter)
+    void draw_hover_effects(ImDrawList* dl, ImVec2 canvas_origin,
+                            const std::vector<WireInfo>& drawn_wires,
+                            const HoverItem& hover);
 
     // Drawing helpers
     void draw_node(ImDrawList* dl, const FlowNodeBuilderPtr& node,
