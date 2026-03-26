@@ -64,11 +64,11 @@ static void maybe_dirty(const std::shared_ptr<GraphBuilder>& gb) { if (gb) gb->m
 FlowArg2::FlowArg2(ArgKind kind, const std::shared_ptr<GraphBuilder>& owner)
     : kind_(kind), owner_(owner)
     , node_(owner ? owner->empty_node() : nullptr)
-    , wire_(owner ? owner->unconnected_net() : nullptr)
+    , net_(owner ? owner->unconnected_net() : nullptr)
 {
     if (!owner_) throw std::logic_error("FlowArg2: owner must not be null");
     if (!node_) throw std::logic_error("FlowArg2: node must not be null");
-    if (!wire_) throw std::logic_error("FlowArg2: wire must not be null");
+    if (!net_) throw std::logic_error("FlowArg2: net must not be null");
 }
 
 void FlowArg2::mark_dirty() { maybe_dirty(owner_); }
@@ -82,13 +82,13 @@ void FlowArg2::node(const FlowNodeBuilderPtr& n) {
     node_ = n;
 }
 
-const NetBuilderPtr& FlowArg2::wire() const {
-    if (!wire_) throw std::logic_error("FlowArg2::wire(): wire is null");
-    return wire_;
+const NetBuilderPtr& FlowArg2::net() const {
+    if (!net_) throw std::logic_error("FlowArg2::net(): net is null");
+    return net_;
 }
-void FlowArg2::wire(const NetBuilderPtr& w) {
-    if (!w) throw std::logic_error("FlowArg2::wire(set): cannot set null, use unconnected_net()");
-    wire_ = w;
+void FlowArg2::net(const NetBuilderPtr& w) {
+    if (!w) throw std::logic_error("FlowArg2::net(set): cannot set null, use unconnected_net()");
+    net_ = w;
 }
 
 const std::shared_ptr<GraphBuilder>& FlowArg2::owner() const {
@@ -583,7 +583,7 @@ Deserializer::ParseAttoResult Deserializer::parse_atto(std::istream& f) {
             bool is_expr = is_any_of(nb.type_id, NodeTypeID::Expr, NodeTypeID::ExprBang);
             int old_num_nexts = old_nt ? old_nt->num_nexts : 0;
 
-            // Helper: wire a net and return ArgNet2
+            // Helper: net a net and return ArgNet2
             auto wire_output = [&](const std::string& net_name) -> FlowArg2Ptr {
                 auto [resolved, net_ptr] = gb->find_or_create_net(net_name, true);
                 if (auto net = net_ptr ? net_ptr->as_Net() : nullptr)
@@ -591,7 +591,7 @@ Deserializer::ParseAttoResult Deserializer::parse_atto(std::istream& f) {
                 return gb->build_arg_net(resolved, net_ptr);
             };
 
-            // Filter out empty and -as_lambda entries, wire all nets
+            // Filter out empty and -as_lambda entries, net all nets
             // For expr: outputs are all data (no nexts), dynamic count
             // For others: [nexts..., data_outs..., post_bang]
             if (is_expr) {

@@ -52,12 +52,12 @@ struct FlowArg2 : std::enable_shared_from_this<FlowArg2> {
     std::shared_ptr<ArgString2> as_string();
     std::shared_ptr<ArgExpr2> as_expr();
 
-    // Context: which node/wire/port this arg belongs to (always valid, never null)
+    // Context: which node/net/port this arg belongs to (always valid, never null)
     const FlowNodeBuilderPtr& node() const;
     void node(const FlowNodeBuilderPtr& n);
 
-    const NetBuilderPtr& wire() const;
-    void wire(const NetBuilderPtr& w);
+    const NetBuilderPtr& net() const;
+    void net(const NetBuilderPtr& w);
 
     const PortDesc2* port() const { return port_; }
     void port(const PortDesc2* p) { port_ = p; }
@@ -80,7 +80,7 @@ private:
     ArgKind kind_;
     std::shared_ptr<GraphBuilder> owner_;
     FlowNodeBuilderPtr node_;   // always valid ($empty if unassigned)
-    NetBuilderPtr wire_;        // always valid ($unconnected if unassigned)
+    NetBuilderPtr net_;        // always valid ($unconnected if unassigned)
     const PortDesc2* port_ = nullptr;
 };
 
