@@ -2,6 +2,7 @@
 #include "model.h"
 #include "types.h"
 #include "node_types.h"
+#include "graph_editor_interfaces.h"
 #include <string>
 #include <vector>
 #include <map>
@@ -10,6 +11,8 @@
 #include <iostream>
 #include <algorithm>
 #include <stdexcept>
+#include <functional>
+#include <set>
 #include <cstdio>
 
 using NodeId = std::string;
@@ -115,6 +118,8 @@ private:
 
     NodeId net_id_;
     std::shared_ptr<struct BuilderEntry> entry_;
+public:
+    std::vector<std::weak_ptr<IArgNetEditor>> editors_;
 };
 
 struct ArgNumber2 : FlowArg2 {
@@ -132,6 +137,8 @@ private:
 
     double value_ = 0;
     bool is_float_ = false;
+public:
+    std::vector<std::weak_ptr<IArgNumberEditor>> editors_;
 };
 
 struct ArgString2 : FlowArg2 {
@@ -145,6 +152,8 @@ private:
         : FlowArg2(ArgKind::String, owner), value_(std::move(v)) {}
 
     std::string value_;
+public:
+    std::vector<std::weak_ptr<IArgStringEditor>> editors_;
 };
 
 struct ArgExpr2 : FlowArg2 {
@@ -158,6 +167,8 @@ private:
         : FlowArg2(ArgKind::Expr, owner), expr_(std::move(e)) {}
 
     std::string expr_;
+public:
+    std::vector<std::weak_ptr<IArgExprEditor>> editors_;
 };
 
 // ─── ParsedArgs2: vector of FlowArg2Ptr with dirty tracking ───
@@ -215,7 +226,6 @@ struct BuilderEntry: std::enable_shared_from_this<BuilderEntry> {
     std::shared_ptr<GraphBuilder> owner() const { return owner_; }
     void owner(const std::shared_ptr<GraphBuilder>& gb) { owner_ = gb; }
 
-protected:
     void mark_dirty();
 
 private:
@@ -253,6 +263,8 @@ private:
     bool is_the_unconnected_ = false;
     BuilderEntryWeak source_;
     std::vector<BuilderEntryWeak> destinations_;
+public:
+    std::vector<std::weak_ptr<INetEditor>> editors_;
 };
 
 // ─── FlowNodeBuilder ───
@@ -275,6 +287,11 @@ struct FlowNodeBuilder: BuilderEntry {
     std::string error;
 
     std::string args_str() const;
+
+    // Layout-only dirty (position changed). Does NOT bubble to args or graph-level.
+    void mark_layout_dirty();
+
+    std::vector<std::weak_ptr<INodeEditor>> editors_;
 };
 
 using BuilderResult = std::variant<std::pair<NodeId, FlowNodeBuilder>, BuilderError>;
@@ -320,11 +337,28 @@ struct GraphBuilder : std::enable_shared_from_this<GraphBuilder> {
     void mark_dirty() { dirty_ = true; }
     bool is_dirty() { return dirty_; }
 
+    // Editor registration
+    void add_editor(const std::shared_ptr<IGraphEditor>& editor);
+    void remove_editor(const std::shared_ptr<IGraphEditor>& editor);
+
+    // Mutation batching
+    void edit_start();   // throws if mutations_ not empty (missed commit)
+    void edit_commit();  // fires all queued callbacks in insertion order, then clears
+    void add_mutation_call(void* ptr, std::function<void()>&& fn);
+    bool has_editors() const { return !editors_.empty(); }
+
 private:
     bool dirty_ = false;
     std::vector<FlowArg2Ptr> pins_;
     FlowNodeBuilderPtr empty_;
     NetBuilderPtr unconnected_;
+
+    // Editor observers
+    std::vector<std::weak_ptr<IGraphEditor>> editors_;
+
+    // Mutation batch (between edit_start/edit_commit)
+    std::vector<std::function<void()>> mutations_;
+    std::set<void*> mutation_items_;
 };
 
 // ─── Parse/reconstruct helpers ───

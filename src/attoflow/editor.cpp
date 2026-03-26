@@ -325,10 +325,11 @@ void FlowEditorWindow::open_tab(const std::string& file_path) {
     tab.file_path = abs_path;
     tab.tab_name = fs::path(file_path).stem().string();
     tab.use_editor2 = true;
+    tab.editor2 = std::make_shared<Editor2Pane>();
 
     if (fs::exists(abs_path)) {
         // Try loading via Editor2Pane first
-        if (!tab.editor2.load(abs_path)) {
+        if (!tab.editor2->load(abs_path)) {
             // Fallback to legacy loader
             tab.use_editor2 = false;
             load_atto(abs_path, tab.graph);
@@ -862,10 +863,10 @@ void FlowEditorWindow::draw() {
     if (ImGui::BeginTabBar("##atto_tabs")) {
         for (int i = 0; i < (int)tabs_.size(); i++) {
             std::string label = tabs_[i].use_editor2
-                ? tabs_[i].editor2.tab_name()
+                ? tabs_[i].editor2->tab_name()
                 : tabs_[i].tab_name;
             bool tab_dirty = tabs_[i].use_editor2
-                ? tabs_[i].editor2.is_dirty()
+                ? tabs_[i].editor2->is_dirty()
                 : tabs_[i].dirty;
             if (tab_dirty) label += "*";
             label += "###tab" + std::to_string(i);
@@ -900,7 +901,7 @@ void FlowEditorWindow::draw() {
                       ImGuiWindowFlags_NoScrollbar);
 
     if (active().use_editor2) {
-        active().editor2.draw();
+        active().editor2->draw();
         ImGui::EndChild(); // flow_canvas
     } else {
     // === Legacy Editor1 canvas ===

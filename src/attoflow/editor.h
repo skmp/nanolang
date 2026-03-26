@@ -21,7 +21,7 @@ inline Vec2 to_vec2(ImVec2 v) { return {v.x, v.y}; }
 // Per-tab state: each open .atto file gets its own TabState
 struct TabState {
     FlowGraph graph;  // legacy (Editor1)
-    Editor2Pane editor2; // new editor pane
+    std::shared_ptr<Editor2Pane> editor2; // new editor pane
     bool use_editor2 = true; // true = use Editor2Pane, false = legacy
     std::string file_path;       // absolute path to this .atto file
     std::string tab_name;        // display name (filename without extension)

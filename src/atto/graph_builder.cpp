@@ -71,7 +71,49 @@ FlowArg2::FlowArg2(ArgKind kind, const std::shared_ptr<GraphBuilder>& owner)
     if (!net_) throw std::logic_error("FlowArg2: net must not be null");
 }
 
-void FlowArg2::mark_dirty() { maybe_dirty(owner_); }
+void FlowArg2::mark_dirty() {
+    maybe_dirty(owner_);
+    // Only enqueue editor callbacks if editors are registered
+    if (!owner_->has_editors()) return;
+    // Enqueue type-specific arg editor callbacks
+    switch (kind_) {
+    case ArgKind::Net: {
+        auto self = std::dynamic_pointer_cast<ArgNet2>(shared_from_this());
+        owner_->add_mutation_call(this, [self]() {
+            for (auto& we : self->editors_)
+                if (auto e = we.lock()) e->arg_net_mutated(self);
+        });
+        break;
+    }
+    case ArgKind::Number: {
+        auto self = std::dynamic_pointer_cast<ArgNumber2>(shared_from_this());
+        owner_->add_mutation_call(this, [self]() {
+            for (auto& we : self->editors_)
+                if (auto e = we.lock()) e->arg_number_mutated(self);
+        });
+        break;
+    }
+    case ArgKind::String: {
+        auto self = std::dynamic_pointer_cast<ArgString2>(shared_from_this());
+        owner_->add_mutation_call(this, [self]() {
+            for (auto& we : self->editors_)
+                if (auto e = we.lock()) e->arg_string_mutated(self);
+        });
+        break;
+    }
+    case ArgKind::Expr: {
+        auto self = std::dynamic_pointer_cast<ArgExpr2>(shared_from_this());
+        owner_->add_mutation_call(this, [self]() {
+            for (auto& we : self->editors_)
+                if (auto e = we.lock()) e->arg_expr_mutated(self);
+        });
+        break;
+    }
+    }
+    // Bubble up to node (structural change)
+    if (node_ && !node_->is_the_empty)
+        node_->mark_dirty();
+}
 
 const FlowNodeBuilderPtr& FlowArg2::node() const {
     if (!node_) throw std::logic_error("FlowArg2::node(): node is null");
@@ -217,7 +259,23 @@ void ParsedArgs2::set(int i, FlowArg2Ptr arg) { items_[i] = std::move(arg); mayb
 // ─── BuilderEntry ───
 
 void BuilderEntry::id(const NodeId& v) { id_ = v; mark_dirty(); }
-void BuilderEntry::mark_dirty() { maybe_dirty(owner_); }
+void BuilderEntry::mark_dirty() {
+    maybe_dirty(owner_);
+    if (!owner_ || !owner_->has_editors()) return;
+    if (is(IdCategory::Node)) {
+        auto self = std::dynamic_pointer_cast<FlowNodeBuilder>(shared_from_this());
+        owner_->add_mutation_call(this, [self]() {
+            for (auto& we : self->editors_)
+                if (auto e = we.lock()) e->node_mutated(self);
+        });
+    } else if (is(IdCategory::Net)) {
+        auto self = std::dynamic_pointer_cast<NetBuilder>(shared_from_this());
+        owner_->add_mutation_call(this, [self]() {
+            for (auto& we : self->editors_)
+                if (auto e = we.lock()) e->net_mutated(self);
+        });
+    }
+}
 
 std::shared_ptr<FlowNodeBuilder> BuilderEntry::as_node() {
     return std::dynamic_pointer_cast<FlowNodeBuilder>(shared_from_this());
@@ -489,6 +547,191 @@ FlowArg2Ptr GraphBuilder::build_arg_expr(std::string expr, const PortDesc2* port
     if (port) p->port(port);
     pins_.push_back(p);
     return p;
+}
+
+// ─── Mutation batching ───
+
+void GraphBuilder::edit_start() {
+    if (!mutations_.empty())
+        throw std::logic_error("GraphBuilder::edit_start(): previous edit_commit() was missed ("
+                               + std::to_string(mutations_.size()) + " pending mutations)");
+}
+
+void GraphBuilder::edit_commit() {
+    auto mutations = std::move(mutations_);
+    mutations_.clear();
+    mutation_items_.clear();
+    for (auto& fn : mutations)
+        fn();
+}
+
+void GraphBuilder::add_mutation_call(void* ptr, std::function<void()>&& fn) {
+    if (mutation_items_.count(ptr)) return;
+    mutation_items_.insert(ptr);
+    mutations_.push_back(std::move(fn));
+}
+
+// ─── Editor registration ───
+
+// Helper: create arg editors for all args belonging to a node
+static void register_arg_editors(const std::shared_ptr<INodeEditor>& node_editor,
+                                 const FlowNodeBuilderPtr& node) {
+    // Helper lambda to process a single arg
+    auto process_arg = [&](const FlowArg2Ptr& arg) {
+        if (!arg) return;
+        switch (arg->kind()) {
+        case ArgKind::Net: {
+            auto a = arg->as_net();
+            auto ed = node_editor->create_arg_net_editor(a);
+            if (ed) a->editors_.push_back(ed);
+            break;
+        }
+        case ArgKind::Number: {
+            auto a = arg->as_number();
+            auto ed = node_editor->create_arg_number_editor(a);
+            if (ed) a->editors_.push_back(ed);
+            break;
+        }
+        case ArgKind::String: {
+            auto a = arg->as_string();
+            auto ed = node_editor->create_arg_string_editor(a);
+            if (ed) a->editors_.push_back(ed);
+            break;
+        }
+        case ArgKind::Expr: {
+            auto a = arg->as_expr();
+            auto ed = node_editor->create_arg_expr_editor(a);
+            if (ed) a->editors_.push_back(ed);
+            break;
+        }
+        }
+    };
+
+    // Process all arg containers on the node
+    if (node->parsed_args) {
+        for (int i = 0; i < node->parsed_args->size(); i++)
+            process_arg((*node->parsed_args)[i]);
+    }
+    if (node->parsed_va_args) {
+        for (int i = 0; i < node->parsed_va_args->size(); i++)
+            process_arg((*node->parsed_va_args)[i]);
+    }
+    for (auto& arg : node->remaps) process_arg(arg);
+    for (auto& arg : node->outputs) process_arg(arg);
+    for (auto& arg : node->outputs_va_args) process_arg(arg);
+}
+
+// Helper: enqueue initial mutated callbacks bottom-up for a node and its args
+static void enqueue_initial_mutations(GraphBuilder* gb, const FlowNodeBuilderPtr& node) {
+    // Enqueue arg mutations first (innermost)
+    auto enqueue_arg = [&](const FlowArg2Ptr& arg) {
+        if (!arg) return;
+        switch (arg->kind()) {
+        case ArgKind::Net: {
+            auto a = arg->as_net();
+            gb->add_mutation_call(a.get(), [a]() {
+                for (auto& we : a->editors_)
+                    if (auto e = we.lock()) e->arg_net_mutated(a);
+            });
+            break;
+        }
+        case ArgKind::Number: {
+            auto a = arg->as_number();
+            gb->add_mutation_call(a.get(), [a]() {
+                for (auto& we : a->editors_)
+                    if (auto e = we.lock()) e->arg_number_mutated(a);
+            });
+            break;
+        }
+        case ArgKind::String: {
+            auto a = arg->as_string();
+            gb->add_mutation_call(a.get(), [a]() {
+                for (auto& we : a->editors_)
+                    if (auto e = we.lock()) e->arg_string_mutated(a);
+            });
+            break;
+        }
+        case ArgKind::Expr: {
+            auto a = arg->as_expr();
+            gb->add_mutation_call(a.get(), [a]() {
+                for (auto& we : a->editors_)
+                    if (auto e = we.lock()) e->arg_expr_mutated(a);
+            });
+            break;
+        }
+        }
+    };
+
+    if (node->parsed_args)
+        for (int i = 0; i < node->parsed_args->size(); i++)
+            enqueue_arg((*node->parsed_args)[i]);
+    if (node->parsed_va_args)
+        for (int i = 0; i < node->parsed_va_args->size(); i++)
+            enqueue_arg((*node->parsed_va_args)[i]);
+    for (auto& a : node->remaps) enqueue_arg(a);
+    for (auto& a : node->outputs) enqueue_arg(a);
+    for (auto& a : node->outputs_va_args) enqueue_arg(a);
+
+    // Then enqueue node mutation (outer)
+    gb->add_mutation_call(node.get(), [node]() {
+        for (auto& we : node->editors_)
+            if (auto e = we.lock()) e->node_mutated(node);
+    });
+}
+
+void GraphBuilder::add_editor(const std::shared_ptr<IGraphEditor>& editor) {
+    editors_.push_back(editor);
+
+    // Register existing entries and fire initial mutations
+    edit_start();
+
+    for (auto& [id, entry] : entries) {
+        if (auto node = entry->as_node()) {
+            if (node->shadow || node->is_the_empty) continue;
+            auto node_ed = editor->node_added(id, node);
+            if (node_ed) {
+                node->editors_.push_back(node_ed);
+                register_arg_editors(node_ed, node);
+                enqueue_initial_mutations(this, node);
+            }
+        } else if (auto net = entry->as_net()) {
+            if (net->is_the_unconnected()) continue;
+            auto net_ed = editor->net_added(id, net);
+            if (net_ed) {
+                net->editors_.push_back(net_ed);
+                add_mutation_call(net.get(), [net]() {
+                    for (auto& we : net->editors_)
+                        if (auto e = we.lock()) e->net_mutated(net);
+                });
+            }
+        }
+    }
+
+    edit_commit();
+}
+
+void GraphBuilder::remove_editor(const std::shared_ptr<IGraphEditor>& editor) {
+    editors_.erase(
+        std::remove_if(editors_.begin(), editors_.end(),
+            [&](const std::weak_ptr<IGraphEditor>& w) {
+                auto s = w.lock();
+                return !s || s == editor;
+            }),
+        editors_.end());
+    // Note: per-item editor weak_ptrs will naturally expire
+}
+
+// ─── FlowNodeBuilder::mark_layout_dirty ───
+
+void FlowNodeBuilder::mark_layout_dirty() {
+    auto gb = owner();
+    if (gb) gb->mark_dirty();
+    if (!gb || !gb->has_editors()) return;
+    auto self = std::dynamic_pointer_cast<FlowNodeBuilder>(shared_from_this());
+    gb->add_mutation_call(this, [self]() {
+        for (auto& we : self->editors_)
+            if (auto e = we.lock()) e->node_layout_changed(self);
+    });
 }
 
 // ─── Deserializer ───
