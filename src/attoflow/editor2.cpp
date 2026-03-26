@@ -324,6 +324,39 @@ void Editor2Pane::draw_node(ImDrawList* dl, const NodeId& id, const FlowNodeBuil
 
     auto layout = compute_node_layout(node, canvas_origin, canvas_zoom_);
 
+    // Special nodes: label and error
+    if (nt->is_special()) {
+        // Display first arg without quotes
+        std::string display;
+        if (node.parsed_args && !node.parsed_args->empty()) {
+            auto& a = (*node.parsed_args)[0];
+            if (auto* s = std::get_if<ArgString2>(&a)) display = s->value;
+            else if (auto* e = std::get_if<ArgExpr2>(&a)) display = e->expr;
+            else display = node.args_str();
+        }
+
+        float font_size = ImGui::GetFontSize() * canvas_zoom_;
+        bool is_error = (node.type_id == NodeTypeID::Error);
+
+        if (is_error) {
+            // Error: red box
+            dl->AddRectFilled(layout.pos, {layout.pos.x + layout.width, layout.pos.y + layout.height},
+                              COL_NODE_ERR, 4.0f * canvas_zoom_);
+            dl->AddRect(layout.pos, {layout.pos.x + layout.width, layout.pos.y + layout.height},
+                        IM_COL32(255, 80, 80, 255), 4.0f * canvas_zoom_);
+        }
+        // Label: no box at all
+
+        if (font_size > 5.0f) {
+            ImVec2 text_sz = ImGui::CalcTextSize(display.c_str());
+            float tw = text_sz.x * canvas_zoom_;
+            float cx = layout.pos.x + (layout.width - tw) * 0.5f;
+            float cy = layout.pos.y + (layout.height - font_size) * 0.5f;
+            dl->AddText(nullptr, font_size, {cx, cy}, COL_TEXT, display.c_str());
+        }
+        return; // no pins for special nodes
+    }
+
     // Display text
     std::string display = nt->name;
     std::string args = node.args_str();

@@ -23,6 +23,7 @@ enum class NodeKind2 : uint8_t {
     Banged,       // bang trigger input (top) + bang next output (bottom)
     Event,        // event source — bang next output (bottom), no bang input
     Declaration,  // compile-time — bang trigger input (top) + bang next output (bottom)
+    Special,      // Label or Error - special handling
 };
 
 struct NodeType2 {
@@ -39,6 +40,7 @@ struct NodeType2 {
     bool is_banged() const { return kind == NodeKind2::Banged || kind == NodeKind2::Event || kind == NodeKind2::Declaration; }
     bool is_declaration() const { return kind == NodeKind2::Declaration; }
     bool is_flow() const { return kind == NodeKind2::Flow; }
+    bool is_special() const { return kind == NodeKind2::Special; }
     bool is_event() const { return kind == NodeKind2::Event; }
 };
 
@@ -357,7 +359,7 @@ static const NodeType2 NODE_TYPES2[] = {
 
     // label: no pins
     {NodeTypeID::Label,         "label",      "Text label",
-     nullptr, 0, nullptr, 0},
+     nullptr, 0, nullptr, 0, NodeKind2::Special},
 
     // deref: 1 input, 1 output
     {NodeTypeID::Deref,         "deref",      "Dereference iterator (internal)",
@@ -365,7 +367,7 @@ static const NodeType2 NODE_TYPES2[] = {
 
     // error: no pins
     {NodeTypeID::Error,         "error",      "Error: invalid node",
-     nullptr, 0, nullptr, 0},
+     nullptr, 0, nullptr, 0, NodeKind2::Special},
 };
 
 static constexpr int NUM_NODE_TYPES2 = sizeof(NODE_TYPES2) / sizeof(NODE_TYPES2[0]);
