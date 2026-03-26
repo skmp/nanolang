@@ -74,7 +74,7 @@ if(ATTOLANG_BUILD_EDITOR)
 
     add_executable(attoflow
         src/attoflow/main.cpp
-        src/attoflow/editor.cpp
+        src/attoflow/window.cpp
         src/attoflow/editor1.cpp
         src/attoflow/editor2.cpp
         src/attoflow/node_renderer.cpp

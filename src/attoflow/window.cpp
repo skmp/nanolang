@@ -1,4 +1,4 @@
-#include "editor.h"
+#include "window.h"
 #include "atto/args.h"
 #include "atto/serial.h"
 #include <cmath>
