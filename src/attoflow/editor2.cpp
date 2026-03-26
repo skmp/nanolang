@@ -33,6 +33,60 @@ static inline ImVec2 v2add(ImVec2 a, ImVec2 b) { return {a.x + b.x, a.y + b.y}; 
 static inline ImVec2 v2sub(ImVec2 a, ImVec2 b) { return {a.x - b.x, a.y - b.y}; }
 static inline ImVec2 v2mul(ImVec2 a, float s) { return {a.x * s, a.y * s}; }
 
+// Computed node layout for drawing
+struct NodeLayout {
+    ImVec2 pos;      // top-left screen position
+    float width;
+    float height;
+    int num_in;
+    int num_out;
+    float zoom;
+
+    ImVec2 input_pin_pos(int i) const {
+        return {pos.x + (i + 0.5f) * PIN_SPACING * zoom, pos.y};
+    }
+    ImVec2 output_pin_pos(int i) const {
+        return {pos.x + (i + 0.5f) * PIN_SPACING * zoom, pos.y + height};
+    }
+};
+
+static NodeLayout compute_node_layout(const FlowNodeBuilder& node, ImVec2 canvas_origin, float zoom) {
+    auto* nt = find_node_type2(node.type_id);
+    std::string display = nt ? nt->name : "?";
+    std::string args = node.args_str();
+    if (!args.empty()) display += " " + args;
+
+    float font_size = ImGui::GetFontSize() * zoom;
+    ImVec2 text_sz = ImGui::CalcTextSize(display.c_str());
+    float text_w = text_sz.x * zoom + 16.0f * zoom;
+
+    auto count_net_args = [](const ParsedArgs2* pa) -> int {
+        if (!pa) return 0;
+        int n = 0;
+        for (auto& a : *pa) if (std::holds_alternative<ArgNet2>(a)) n++;
+        return n;
+    };
+    int num_in = count_net_args(node.parsed_args.get())
+               + count_net_args(node.parsed_va_args.get())
+               + (int)node.remaps.size();
+    int num_out = nt ? nt->num_outputs : 1;
+    if (node.type_id == NodeTypeID::Expr || node.type_id == NodeTypeID::ExprBang) {
+        int args_count = node.parsed_args ? (int)node.parsed_args->size() : 0;
+        if (node.type_id == NodeTypeID::ExprBang) num_out = 1 + std::max(1, args_count);
+        else num_out = std::max(1, args_count);
+    }
+
+    float pin_w_top = std::max(0, num_in) * PIN_SPACING * zoom;
+    float pin_w_bot = std::max(0, num_out) * PIN_SPACING * zoom;
+    float node_w = std::max({NODE_MIN_WIDTH * zoom, text_w, pin_w_top, pin_w_bot});
+    float node_h = NODE_HEIGHT * zoom;
+
+    ImVec2 pos = {canvas_origin.x + node.position.x * zoom,
+                  canvas_origin.y + node.position.y * zoom};
+
+    return {pos, node_w, node_h, num_in, num_out, zoom};
+}
+
 static ImU32 pin_color(PortKind2 kind) {
     switch (kind) {
     case PortKind2::BangTrigger:
@@ -113,8 +167,76 @@ void Editor2Pane::draw() {
         }
     }
 
-    // Draw nets (wires)
-    // TODO: draw connections between nodes via nets
+    // Draw wires by iterating each node's inputs/outputs/remaps
+    for (auto& [dst_id, dst_entry] : gb_->entries) {
+        if (!std::holds_alternative<FlowNodeBuilder>(*dst_entry)) continue;
+        auto& dst_node = std::get<FlowNodeBuilder>(*dst_entry);
+        auto* dst_nt = find_node_type2(dst_node.type_id);
+        if (!dst_nt) continue;
+        auto dst_layout = compute_node_layout(dst_node, canvas_origin, canvas_zoom_);
+
+        // Helper: draw wire from a source net to destination pin at index dst_pin
+        auto draw_wire_to_pin = [&](int dst_pin, const BuilderEntryPtr& net_entry, const NodeId& net_id) {
+            if (!net_entry || !std::holds_alternative<NetBuilder>(*net_entry)) return;
+            auto& net = std::get<NetBuilder>(*net_entry);
+            if (net.is_the_unconnected) return;
+
+            auto src_ptr = net.source.lock();
+            if (!src_ptr || !std::holds_alternative<FlowNodeBuilder>(*src_ptr)) return;
+            auto& src_node = std::get<FlowNodeBuilder>(*src_ptr);
+            auto src_layout = compute_node_layout(src_node, canvas_origin, canvas_zoom_);
+
+            // Find which output pin index on source this net comes from
+            // For now, use pin 0 as default — TODO: track output pin index per net
+            ImVec2 from = src_layout.output_pin_pos(0);
+            ImVec2 to = dst_layout.input_pin_pos(dst_pin);
+
+            bool named = !net.auto_wire;
+            ImU32 col = named ? IM_COL32(200, 200, 100, 120) : COL_LINK;
+            float dy = std::max(std::abs(to.y - from.y) * 0.5f, 30.0f * canvas_zoom_);
+            float th = 2.5f * canvas_zoom_;
+            dl->AddBezierCubic(from, {from.x, from.y + dy}, {to.x, to.y - dy}, to, col, th);
+
+            // Label for named nets
+            if (named) {
+                float font_size = ImGui::GetFontSize() * canvas_zoom_ * 0.8f;
+                if (font_size > 5.0f) {
+                    ImVec2 mid = {(from.x + to.x) * 0.5f, (from.y + to.y) * 0.5f};
+                    ImVec2 text_sz = ImGui::CalcTextSize(net_id.c_str());
+                    float tw = text_sz.x * (font_size / ImGui::GetFontSize());
+                    float tth = text_sz.y * (font_size / ImGui::GetFontSize());
+                    float cx = mid.x - tw * 0.5f;
+                    float cy = mid.y - tth * 0.5f;
+                    dl->AddRectFilled({cx - 3, cy - 1}, {cx + tw + 3, cy + tth + 1},
+                                      IM_COL32(30, 30, 40, 200), 3.0f);
+                    dl->AddText(nullptr, font_size, {cx, cy}, IM_COL32(180, 220, 255, 255), net_id.c_str());
+                }
+            }
+        };
+
+        // Helper: iterate ArgNet2 entries and draw wires, returns pin count used
+        auto draw_wires_from_args = [&](const ParsedArgs2* pa, int pin_start) -> int {
+            if (!pa) return 0;
+            int pin = pin_start;
+            for (auto& a : *pa) {
+                if (auto* an = std::get_if<ArgNet2>(&a)) {
+                    draw_wire_to_pin(pin++, an->second, an->first);
+                }
+            }
+            return pin - pin_start;
+        };
+
+        // Base args → va_args → remaps
+        int pin = 0;
+        pin += draw_wires_from_args(dst_node.parsed_args.get(), pin);
+        pin += draw_wires_from_args(dst_node.parsed_va_args.get(), pin);
+
+        // Remaps: $N pins (appended after base + va_args)
+        for (int i = 0; i < (int)dst_node.remaps.size(); i++) {
+            auto& remap = dst_node.remaps[i];
+            draw_wire_to_pin(pin + i, remap.second, remap.first);
+        }
+    }
 
     dl->PopClipRect();
 
@@ -151,86 +273,86 @@ void Editor2Pane::draw_node(ImDrawList* dl, const NodeId& id, const FlowNodeBuil
     auto* nt = find_node_type2(node.type_id);
     if (!nt) return;
 
-    // Compute display text
+    auto layout = compute_node_layout(node, canvas_origin, canvas_zoom_);
+
+    // Display text
     std::string display = nt->name;
     std::string args = node.args_str();
     if (!args.empty()) display += " " + args;
-
-    // Node rect
-    float font_size = ImGui::GetFontSize() * canvas_zoom_;
-    ImVec2 text_sz = ImGui::CalcTextSize(display.c_str());
-    float text_w = text_sz.x * canvas_zoom_ + 16.0f * canvas_zoom_;
-
-    // Pin counts
-    int num_in = nt->num_inputs + (node.parsed_args ? node.parsed_args->rewrite_input_count : 0);
-    int num_out = nt->num_outputs;
-    if (node.type_id == NodeTypeID::Expr || node.type_id == NodeTypeID::ExprBang) {
-        int args_count = node.parsed_args ? (int)node.parsed_args->size() : 0;
-        if (node.type_id == NodeTypeID::ExprBang) num_out = 1 + std::max(1, args_count); // next + outputs
-        else num_out = std::max(1, args_count);
-    }
-
-    float pin_w_top = std::max(0, num_in) * PIN_SPACING * canvas_zoom_;
-    float pin_w_bot = std::max(0, num_out) * PIN_SPACING * canvas_zoom_;
-    float node_w = std::max({NODE_MIN_WIDTH * canvas_zoom_, text_w, pin_w_top, pin_w_bot});
-    float node_h = NODE_HEIGHT * canvas_zoom_;
-
-    ImVec2 pos = {canvas_origin.x + node.position.x * canvas_zoom_,
-                  canvas_origin.y + node.position.y * canvas_zoom_};
 
     bool selected = selected_nodes_.count(id);
     bool has_error = !node.error.empty();
 
     ImU32 col = has_error ? COL_NODE_ERR : (selected ? COL_NODE_SEL : COL_NODE);
-    dl->AddRectFilled(pos, {pos.x + node_w, pos.y + node_h}, col, 4.0f * canvas_zoom_);
-    dl->AddRect(pos, {pos.x + node_w, pos.y + node_h}, IM_COL32(80, 80, 100, 255), 4.0f * canvas_zoom_);
+    dl->AddRectFilled(layout.pos, {layout.pos.x + layout.width, layout.pos.y + layout.height},
+                      col, 4.0f * canvas_zoom_);
+    dl->AddRect(layout.pos, {layout.pos.x + layout.width, layout.pos.y + layout.height},
+                IM_COL32(80, 80, 100, 255), 4.0f * canvas_zoom_);
 
     // Text
+    float font_size = ImGui::GetFontSize() * canvas_zoom_;
     if (font_size > 5.0f) {
+        ImVec2 text_sz = ImGui::CalcTextSize(display.c_str());
         float tw = text_sz.x * canvas_zoom_;
-        float cx = pos.x + (node_w - tw) * 0.5f;
-        float cy = pos.y + (node_h - font_size) * 0.5f;
+        float cx = layout.pos.x + (layout.width - tw) * 0.5f;
+        float cy = layout.pos.y + (layout.height - font_size) * 0.5f;
         dl->AddText(nullptr, font_size, {cx, cy}, COL_TEXT, display.c_str());
     }
 
     // Draw input pins (top)
+    // Pin order: parsed_args ArgNet2, then va_args ArgNet2, then remaps
     float pr = PIN_RADIUS * canvas_zoom_;
-    for (int i = 0; i < num_in; i++) {
-        float px = pos.x + (i + 0.5f) * PIN_SPACING * canvas_zoom_;
-        float py = pos.y;
-
+    auto count_net_args_in = [](const ParsedArgs2* pa) -> int {
+        if (!pa) return 0;
+        int n = 0;
+        for (auto& a : *pa) if (std::holds_alternative<ArgNet2>(a)) n++;
+        return n;
+    };
+    int base_pin_count = count_net_args_in(node.parsed_args.get());
+    int va_pin_count = count_net_args_in(node.parsed_va_args.get());
+    for (int i = 0; i < layout.num_in; i++) {
+        ImVec2 pp = layout.input_pin_pos(i);
         PortKind2 kind = PortKind2::Data;
-        if (nt->input_ports && i < nt->num_inputs) kind = nt->input_ports[i].kind;
+        if (i < base_pin_count) {
+            // Map visible pin index to descriptor port (skip bang triggers since they're not in parsed_args)
+            if (nt->input_ports) {
+                int vis = 0;
+                for (int p = 0; p < nt->num_inputs; p++) {
+                    if (nt->input_ports[p].kind != PortKind2::BangTrigger) {
+                        if (vis == i) { kind = nt->input_ports[p].kind; break; }
+                        vis++;
+                    }
+                }
+            }
+        } else if (i < base_pin_count + va_pin_count) {
+            kind = nt->va_args ? nt->va_args->kind : PortKind2::Data;
+        }
 
         ImU32 pc = pin_color(kind);
         if (kind == PortKind2::BangTrigger) {
-            dl->AddRectFilled({px - pr, py - pr}, {px + pr, py + pr}, pc);
+            dl->AddRectFilled({pp.x - pr, pp.y - pr}, {pp.x + pr, pp.y + pr}, pc);
         } else if (kind == PortKind2::Lambda) {
-            // Triangle for lambda
-            dl->AddTriangleFilled({px - pr, py - pr}, {px + pr, py}, {px - pr, py + pr}, pc);
+            dl->AddTriangleFilled({pp.x - pr, pp.y - pr}, {pp.x + pr, pp.y}, {pp.x - pr, pp.y + pr}, pc);
         } else {
-            dl->AddCircleFilled({px, py}, pr, pc);
+            dl->AddCircleFilled(pp, pr, pc);
         }
     }
 
     // Draw output pins (bottom)
-    for (int i = 0; i < num_out; i++) {
-        float px = pos.x + (i + 0.5f) * PIN_SPACING * canvas_zoom_;
-        float py = pos.y + node_h;
-
+    for (int i = 0; i < layout.num_out; i++) {
+        ImVec2 pp = layout.output_pin_pos(i);
         PortKind2 kind = PortKind2::Data;
         if (nt->output_ports && i < nt->num_outputs) kind = nt->output_ports[i].kind;
 
         ImU32 pc = pin_color(kind);
         if (kind == PortKind2::BangNext) {
-            dl->AddRectFilled({px - pr, py - pr}, {px + pr, py + pr}, pc);
+            dl->AddRectFilled({pp.x - pr, pp.y - pr}, {pp.x + pr, pp.y + pr}, pc);
         } else {
-            dl->AddCircleFilled({px, py}, pr, pc);
+            dl->AddCircleFilled(pp, pr, pc);
         }
     }
 }
 
-void Editor2Pane::draw_net(ImDrawList* dl, const NodeId& id, const NetBuilder& net,
-                            ImVec2 canvas_origin) {
-    // TODO: draw wires between connected nodes
+void Editor2Pane::draw_net(ImDrawList*, const NodeId&, const NetBuilder&, ImVec2) {
+    // Unused — wires drawn per-node in draw()
 }

@@ -1,4 +1,5 @@
 #include "graphbuilder.h"
+#include "node_types2.h"
 #include <sstream>
 #include <cctype>
 #include <set>
@@ -186,8 +187,16 @@ std::string reconstruct_args_str(const ParsedArgs2& args) {
 // ─── FlowNodeBuilder ───
 
 std::string FlowNodeBuilder::args_str() const {
-    if (!parsed_args) return "";
-    return reconstruct_args_str(*parsed_args);
+    std::string result;
+    if (parsed_args) result = reconstruct_args_str(*parsed_args);
+    if (parsed_va_args && !parsed_va_args->empty()) {
+        std::string va = reconstruct_args_str(*parsed_va_args);
+        if (!va.empty()) {
+            if (!result.empty()) result += " ";
+            result += va;
+        }
+    }
+    return result;
 }
 
 // ─── GraphBuilder ───
@@ -465,21 +474,26 @@ Deserializer::ParseAttoResult Deserializer::parse_atto(std::istream& f) {
 
                 if (!sin[i].empty()) {
                     auto net_ptr = gb->find(sin[i]);
-                    parent.remaps[i] = ArgNet2{sin[i], net_ptr};
+                    if (net_ptr) {
+                        parent.remaps[i] = ArgNet2{sin[i], net_ptr};
 
-                    // Remove shadow from net's destinations, add parent instead
-                    if (net_ptr && std::holds_alternative<NetBuilder>(*net_ptr)) {
-                        auto& net = std::get<NetBuilder>(*net_ptr);
-                        // Remove shadow destinations
-                        auto& dests = net.destinations;
-                        dests.erase(
-                            std::remove_if(dests.begin(), dests.end(),
-                                [&](auto& w) { return w.lock() == shadow_ptr; }),
-                            dests.end());
-                        // Add parent as destination
-                        net.destinations.push_back(parent_ptr);
+                        // Remove shadow from net's destinations, add parent instead
+                        if (std::holds_alternative<NetBuilder>(*net_ptr)) {
+                            auto& net = std::get<NetBuilder>(*net_ptr);
+                            auto& dests = net.destinations;
+                            dests.erase(
+                                std::remove_if(dests.begin(), dests.end(),
+                                    [&](auto& w) { return w.lock() == shadow_ptr; }),
+                                dests.end());
+                            net.destinations.push_back(parent_ptr);
+                        }
                     }
                 }
+            }
+            // Update parent's rewrite_input_count to be the max across all shadows
+            if (parent.parsed_args) {
+                parent.parsed_args->rewrite_input_count = std::max(
+                    parent.parsed_args->rewrite_input_count, (int)parent.remaps.size());
             }
         }
 
@@ -496,6 +510,28 @@ Deserializer::ParseAttoResult Deserializer::parse_atto(std::istream& f) {
 
         // Remove shadow from graph
         gb->entries.erase(shadow_id);
+    }
+
+    // ─── Split parsed_args into base + va_args for nodes with va_args ───
+    for (auto& [id, entry] : gb->entries) {
+        if (!std::holds_alternative<FlowNodeBuilder>(*entry)) continue;
+        auto& node = std::get<FlowNodeBuilder>(*entry);
+        auto* nt = find_node_type2(node.type_id);
+        if (!nt || !nt->va_args || !node.parsed_args) continue;
+
+        // Count non-bang fixed inputs (args don't include bang triggers)
+        int fixed_args = 0;
+        for (int i = 0; i < nt->num_inputs; i++) {
+            if (nt->input_ports && nt->input_ports[i].kind != PortKind2::BangTrigger)
+                fixed_args++;
+        }
+
+        if ((int)node.parsed_args->size() > fixed_args) {
+            node.parsed_va_args = std::make_shared<ParsedArgs2>();
+            for (int i = fixed_args; i < (int)node.parsed_args->size(); i++)
+                node.parsed_va_args->push_back(std::move((*node.parsed_args)[i]));
+            node.parsed_args->resize(fixed_args);
+        }
     }
 
     gb->compact();

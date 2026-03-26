@@ -69,7 +69,8 @@ using Remaps = std::vector<ArgNet2>;
 // A node under construction — holds structured parsed args instead of raw string.
 struct FlowNodeBuilder {
     NodeTypeID type_id = NodeTypeID::Unknown;
-    std::shared_ptr<ParsedArgs2> parsed_args;
+    std::shared_ptr<ParsedArgs2> parsed_args;      // base pins (1:1 with descriptor)
+    std::shared_ptr<ParsedArgs2> parsed_va_args;   // va_args pins
     Remaps remaps;                // $N → net mapping (remaps[0] = net for $0, etc.)
     Vec2 position = {0, 0};
     bool shadow = false;          // only used during migration, must be false after folding

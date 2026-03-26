@@ -16,7 +16,6 @@ struct PortDesc2 {
     PortKind2 kind = PortKind2::Data;
     const char* type_name = nullptr;
     bool optional = false;
-    bool va_args = false;   // last pin only: repeats as name_0, name_1, ...
 };
 
 struct NodeType2 {
@@ -29,6 +28,7 @@ struct NodeType2 {
     int num_outputs;
     bool is_event = false;
     bool is_declaration = false;
+    const PortDesc2* va_args = nullptr;  // nullptr = no va_args, else template for repeating pins
 };
 
 // ─── Port descriptor arrays ───
@@ -101,19 +101,24 @@ static const PortDesc2 P2_SELECT_BANG_OUT[] = {
     {"false", "fires when false", PortKind2::BangNext},
 };
 
-// new: va_args fields
+// va_args templates
+static const PortDesc2 P2_VA_FIELD = {"field", "constructor field"};
+static const PortDesc2 P2_VA_ARG   = {"arg",   "function argument"};
+static const PortDesc2 P2_VA_PARAM = {"param", "lambda parameter"};
+
+// new: type as fixed input, va_args fields
 static const PortDesc2 P2_NEW_IN[] = {
-    {"field", "constructor field", PortKind2::Data, nullptr, true, true},
+    {"type", "type to instantiate"},
 };
 
-// call: va_args arguments
+// call: function ref as fixed input, va_args arguments
 static const PortDesc2 P2_CALL_IN[] = {
-    {"arg", "function argument", PortKind2::Data, nullptr, true, true},
+    {"fn", "function to call"},
 };
-// call!: bang + va_args
+// call!: bang + function ref, va_args arguments
 static const PortDesc2 P2_CALL_BANG_IN[] = {
     {"bang_in", "trigger", PortKind2::BangTrigger},
-    {"arg", "function argument", PortKind2::Data, nullptr, true, true},
+    {"fn", "function to call"},
 };
 
 // iterate: collection + fn(lambda)
@@ -127,17 +132,15 @@ static const PortDesc2 P2_ITERATE_BANG_IN[] = {
     {"fn", "it=fn(it); while it!=end", PortKind2::Lambda},
 };
 
-// lock: mutex + fn(lambda) + optional va_args params
+// lock: mutex + fn(lambda), va_args handled by NodeType2::va_args
 static const PortDesc2 P2_LOCK_IN[] = {
     {"mutex", "mutex to lock"},
     {"fn", "body under lock", PortKind2::Lambda},
-    {"param", "lambda parameter", PortKind2::Data, nullptr, true, true},
 };
 static const PortDesc2 P2_LOCK_BANG_IN[] = {
     {"bang_in", "trigger", PortKind2::BangTrigger},
     {"mutex", "mutex to lock"},
     {"fn", "body under lock", PortKind2::Lambda},
-    {"param", "lambda parameter", PortKind2::Data, nullptr, true, true},
 };
 
 // decl inputs
@@ -221,9 +224,9 @@ static const NodeType2 NODE_TYPES2[] = {
     {NodeTypeID::Select,        "select",     "Select value by condition",
      P2_SELECT_IN, 3, P2_RESULT, 1, false, false},
 
-    // new: va_args fields, 1 output
+    // new: type fixed input + va_args fields, 1 output
     {NodeTypeID::New,           "new",        "Instantiate a type",
-     P2_NEW_IN, 1, P2_RESULT, 1, false, false},
+     P2_NEW_IN, 1, P2_RESULT, 1, false, false, &P2_VA_FIELD},
 
     // dup: 1 input, 1 output
     {NodeTypeID::Dup,           "dup",        "Duplicate input to output",
@@ -269,13 +272,13 @@ static const NodeType2 NODE_TYPES2[] = {
     {NodeTypeID::Ffi,           "ffi",        "Declare external function",
      P2_FFI_IN, 3, P2_NEXT, 1, false, true},
 
-    // call: va_args, 1 output
+    // call: fn fixed input + va_args, 1 output
     {NodeTypeID::Call,          "call",       "Call function",
-     P2_CALL_IN, 1, P2_RESULT, 1, false, false},
+     P2_CALL_IN, 1, P2_RESULT, 1, false, false, &P2_VA_ARG},
 
-    // call!: bang + va_args, next + result
+    // call!: bang + fn fixed input + va_args, next + result
     {NodeTypeID::CallBang,      "call!",      "Call function (bang)",
-     P2_CALL_BANG_IN, 2, P2_NEXT_RESULT, 2, false, false},
+     P2_CALL_BANG_IN, 2, P2_NEXT_RESULT, 2, false, false, &P2_VA_ARG},
 
     // erase: 2 inputs, 1 output
     {NodeTypeID::Erase,         "erase",      "Erase from collection",
@@ -337,13 +340,13 @@ static const NodeType2 NODE_TYPES2[] = {
     {NodeTypeID::Next,          "next",       "Advance iterator",
      P2_VALUE, 1, P2_RESULT, 1, false, false},
 
-    // lock: mutex + fn + va_args, no outputs
+    // lock: mutex + fn fixed inputs + va_args params, no outputs
     {NodeTypeID::Lock,          "lock",       "Execute under mutex lock",
-     P2_LOCK_IN, 3, nullptr, 0, false, false},
+     P2_LOCK_IN, 2, nullptr, 0, false, false, &P2_VA_PARAM},
 
-    // lock!: bang + mutex + fn + va_args, next
+    // lock!: bang + mutex + fn fixed inputs + va_args params, next
     {NodeTypeID::LockBang,      "lock!",      "Execute under mutex lock (bang)",
-     P2_LOCK_BANG_IN, 4, P2_NEXT, 1, false, false},
+     P2_LOCK_BANG_IN, 3, P2_NEXT, 1, false, false, &P2_VA_PARAM},
 
     // resize!: bang + target + size, next
     {NodeTypeID::ResizeBang,    "resize!",    "Resize vector",
