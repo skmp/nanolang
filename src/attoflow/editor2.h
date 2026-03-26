@@ -33,6 +33,8 @@ private:
 
     // Interaction state
     std::set<NodeId> selected_nodes_;
+    NodeId dragging_node_;         // node being dragged (empty = none)
+    bool dragging_started_ = false;
     int editing_link_id_ = -1; // not used yet, placeholder
 
     // Drawing helpers
