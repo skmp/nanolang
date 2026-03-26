@@ -369,8 +369,9 @@ void Editor2Pane::draw_node(ImDrawList* dl, const NodeId& id, const FlowNodeBuil
         }
     }
 
-    // Lambda grab handle (left-pointing triangle, middle-left)
-    {
+    // Flow-only: lambda grab (left) and side-bang (right)
+    if (nt->is_flow()) {
+        // Lambda grab handle (left-pointing triangle, middle-left)
         ImVec2 gp = layout.lambda_grab_pos();
         ImU32 lc = IM_COL32(180, 130, 255, 255);
         dl->AddTriangleFilled(
@@ -378,6 +379,10 @@ void Editor2Pane::draw_node(ImDrawList* dl, const NodeId& id, const FlowNodeBuil
             {gp.x - pr, gp.y},
             {gp.x + pr, gp.y + pr},
             lc);
+
+        // Side-bang (square, middle-right)
+        ImVec2 bp = {layout.pos.x + layout.width, layout.pos.y + layout.height * 0.5f};
+        dl->AddRectFilled({bp.x - pr, bp.y - pr}, {bp.x + pr, bp.y + pr}, COL_PIN_BANG);
     }
 
     // Hover tooltip: show parsed_args, parsed_va_args, remaps
