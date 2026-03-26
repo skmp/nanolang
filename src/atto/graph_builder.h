@@ -49,32 +49,31 @@ struct FlowArg2 : std::enable_shared_from_this<FlowArg2> {
     std::shared_ptr<ArgString2> as_string();
     std::shared_ptr<ArgExpr2> as_expr();
 
-    // Context: which node/wire/port this arg belongs to
-    std::shared_ptr<FlowNodeBuilder> node() const { return node_.lock(); }
-    void node(const std::shared_ptr<FlowNodeBuilder>& n) { node_ = n; }
+    // Context: which node/wire/port this arg belongs to (always valid, never null)
+    const FlowNodeBuilderPtr& node() const;
+    void node(const FlowNodeBuilderPtr& n);
 
-    std::shared_ptr<NetBuilder> wire() const { return wire_.lock(); }
-    void wire(const std::shared_ptr<NetBuilder>& w) { wire_ = w; }
+    const NetBuilderPtr& wire() const;
+    void wire(const NetBuilderPtr& w);
 
     const PortDesc2* port() const { return port_; }
     void port(const PortDesc2* p) { port_ = p; }
 
-    std::shared_ptr<GraphBuilder> owner() const { return owner_; }
+    const std::shared_ptr<GraphBuilder>& owner() const;
 
     // Computed name: "node.port_name" or "node.va_name[idx]" etc.
     std::string name() const;
 
 protected:
-    FlowArg2(ArgKind kind, const std::shared_ptr<GraphBuilder>& owner)
-        : kind_(kind), owner_(owner) {}
+    FlowArg2(ArgKind kind, const std::shared_ptr<GraphBuilder>& owner);
 
     void mark_dirty();
 
 private:
     ArgKind kind_;
     std::shared_ptr<GraphBuilder> owner_;
-    std::weak_ptr<FlowNodeBuilder> node_;
-    std::weak_ptr<NetBuilder> wire_;
+    FlowNodeBuilderPtr node_;   // always valid ($empty if unassigned)
+    NetBuilderPtr wire_;        // always valid ($unconnected if unassigned)
     const PortDesc2* port_ = nullptr;
 };
 
@@ -98,7 +97,9 @@ struct ArgNet2 : FlowArg2 {
 private:
     ArgNet2(NodeId id, std::shared_ptr<struct BuilderEntry> entry,
             const std::shared_ptr<GraphBuilder>& owner)
-        : FlowArg2(ArgKind::Net, owner), net_id_(std::move(id)), entry_(std::move(entry)) {}
+        : FlowArg2(ArgKind::Net, owner), net_id_(std::move(id)), entry_(std::move(entry)) {
+        if (!entry_) throw std::logic_error("ArgNet2: entry must not be null");
+    }
 
     NodeId net_id_;
     std::shared_ptr<struct BuilderEntry> entry_;

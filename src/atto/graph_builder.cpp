@@ -61,7 +61,40 @@ static std::vector<std::string> parse_toml_array(const std::string& val) {
 
 static void maybe_dirty(const std::shared_ptr<GraphBuilder>& gb) { if (gb) gb->mark_dirty(); }
 
+FlowArg2::FlowArg2(ArgKind kind, const std::shared_ptr<GraphBuilder>& owner)
+    : kind_(kind), owner_(owner)
+    , node_(owner ? owner->empty_node() : nullptr)
+    , wire_(owner ? owner->unconnected_net() : nullptr)
+{
+    if (!owner_) throw std::logic_error("FlowArg2: owner must not be null");
+    if (!node_) throw std::logic_error("FlowArg2: node must not be null");
+    if (!wire_) throw std::logic_error("FlowArg2: wire must not be null");
+}
+
 void FlowArg2::mark_dirty() { maybe_dirty(owner_); }
+
+const FlowNodeBuilderPtr& FlowArg2::node() const {
+    if (!node_) throw std::logic_error("FlowArg2::node(): node is null");
+    return node_;
+}
+void FlowArg2::node(const FlowNodeBuilderPtr& n) {
+    if (!n) throw std::logic_error("FlowArg2::node(set): cannot set null, use empty_node()");
+    node_ = n;
+}
+
+const NetBuilderPtr& FlowArg2::wire() const {
+    if (!wire_) throw std::logic_error("FlowArg2::wire(): wire is null");
+    return wire_;
+}
+void FlowArg2::wire(const NetBuilderPtr& w) {
+    if (!w) throw std::logic_error("FlowArg2::wire(set): cannot set null, use unconnected_net()");
+    wire_ = w;
+}
+
+const std::shared_ptr<GraphBuilder>& FlowArg2::owner() const {
+    if (!owner_) throw std::logic_error("FlowArg2::owner(): owner is null");
+    return owner_;
+}
 
 std::shared_ptr<ArgNet2> FlowArg2::as_net() {
     return kind_ == ArgKind::Net ? std::dynamic_pointer_cast<ArgNet2>(shared_from_this()) : nullptr;
@@ -77,15 +110,10 @@ std::shared_ptr<ArgExpr2> FlowArg2::as_expr() {
 }
 
 std::string FlowArg2::name() const {
-    // Build: "node_name.port_name" or "node_name.va_name[idx]"
-    std::string prefix;
-    auto n = node_.lock();
-    if (n) prefix = n->id();
-    else prefix = "$empty";
+    std::string prefix = node_->id();
 
     if (port_) {
-        // TODO: Check if this is a va_arg by looking at the node's va_args
-        // For now, just use port name
+        // TODO: for va_args, append [idx]
         return prefix + "." + port_->name;
     }
     return prefix + ".?";
@@ -93,8 +121,14 @@ std::string FlowArg2::name() const {
 
 // ─── Dirty-tracked setters ───
 
-void ArgNet2::net_id(const NodeId& v)     { net_id_ = v; mark_dirty(); }
-void ArgNet2::entry(std::shared_ptr<BuilderEntry> v) { entry_ = std::move(v); mark_dirty(); }
+void ArgNet2::net_id(const NodeId& v) {
+    if (v.empty()) throw std::logic_error("ArgNet2::net_id: cannot set empty id");
+    net_id_ = v; mark_dirty();
+}
+void ArgNet2::entry(std::shared_ptr<BuilderEntry> v) {
+    if (!v) throw std::logic_error("ArgNet2::entry: cannot set null entry");
+    entry_ = std::move(v); mark_dirty();
+}
 void ArgNumber2::value(double v)       { value_ = v; mark_dirty(); }
 void ArgNumber2::is_float(bool v)      { is_float_ = v; mark_dirty(); }
 void ArgString2::value(const std::string& v) { value_ = v; mark_dirty(); }
