@@ -186,6 +186,7 @@ void Editor2Pane::draw() {
             FlowNodeBuilder* src_node_ptr = nullptr;
             bool named = false;
             bool is_lambda = false;
+            int source_pin = 0;
 
             if (std::holds_alternative<NetBuilder>(*entry)) {
                 auto& net = std::get<NetBuilder>(*entry);
@@ -194,32 +195,49 @@ void Editor2Pane::draw() {
                 if (!src_ptr || !std::holds_alternative<FlowNodeBuilder>(*src_ptr)) return;
                 src_node_ptr = &std::get<FlowNodeBuilder>(*src_ptr);
                 named = !net.auto_wire;
+                // Find which output pin this net is on
+                for (int k = 0; k < (int)src_node_ptr->outputs.size(); k++) {
+                    if (src_node_ptr->outputs[k].second == entry) {
+                        source_pin = k;
+                        break;
+                    }
+                }
             } else if (std::holds_alternative<FlowNodeBuilder>(*entry)) {
-                // Lambda capture: entry IS the source node
                 src_node_ptr = &std::get<FlowNodeBuilder>(*entry);
                 is_lambda = true;
             } else {
                 return;
             }
 
+            auto* src_nt = find_node_type2(src_node_ptr->type_id);
             auto src_layout = compute_node_layout(*src_node_ptr, canvas_origin, canvas_zoom_);
             ImVec2 to = dst_layout.input_pin_pos(dst_pin);
             float th = 2.5f * canvas_zoom_;
 
             ImVec2 from;
             if (is_lambda) {
-                // Lambda wire: from grab (middle-left) with horizontal-then-vertical curve
                 from = src_layout.lambda_grab_pos();
                 float dx = std::max(std::abs(to.x - from.x) * 0.5f, 30.0f * canvas_zoom_);
                 float dy = std::max(std::abs(to.y - from.y) * 0.5f, 30.0f * canvas_zoom_);
                 ImU32 col = IM_COL32(180, 130, 255, 200);
                 dl->AddBezierCubic(from, {from.x - dx, from.y}, {to.x, to.y - dy}, to, col, th);
             } else {
-                // Regular wire: from output pin (bottom) with vertical curve
-                from = src_layout.output_pin_pos(0); // TODO: track output pin index
-                ImU32 col = named ? IM_COL32(200, 200, 100, 120) : COL_LINK;
-                float dy = std::max(std::abs(to.y - from.y) * 0.5f, 30.0f * canvas_zoom_);
-                dl->AddBezierCubic(from, {from.x, from.y + dy}, {to.x, to.y - dy}, to, col, th);
+                bool is_side_bang = src_nt && src_nt->is_flow() &&
+                    source_pin < (src_nt->num_outputs) &&
+                    src_nt->output_ports && src_nt->output_ports[source_pin].kind == PortKind2::BangNext;
+
+                if (is_side_bang) {
+                    from = {src_layout.pos.x + src_layout.width, src_layout.pos.y + src_layout.height * 0.5f};
+                    float dx = std::max(std::abs(to.x - from.x) * 0.5f, 30.0f * canvas_zoom_);
+                    float dy = std::max(std::abs(to.y - from.y) * 0.5f, 30.0f * canvas_zoom_);
+                    ImU32 col = named ? IM_COL32(200, 200, 100, 120) : COL_LINK;
+                    dl->AddBezierCubic(from, {from.x + dx, from.y}, {to.x, to.y - dy}, to, col, th);
+                } else {
+                    from = src_layout.output_pin_pos(source_pin);
+                    ImU32 col = named ? IM_COL32(200, 200, 100, 120) : COL_LINK;
+                    float dy = std::max(std::abs(to.y - from.y) * 0.5f, 30.0f * canvas_zoom_);
+                    dl->AddBezierCubic(from, {from.x, from.y + dy}, {to.x, to.y - dy}, to, col, th);
+                }
             }
 
             // Label for named nets

@@ -65,6 +65,7 @@ struct NetBuilder {
 
 // Remap: $N → net mapping (from folded shadow inputs)
 using Remaps = std::vector<ArgNet2>;
+using Outputs = std::vector<ArgNet2>;
 
 // A node under construction — holds structured parsed args instead of raw string.
 struct FlowNodeBuilder {
@@ -72,6 +73,7 @@ struct FlowNodeBuilder {
     std::shared_ptr<ParsedArgs2> parsed_args;      // base pins (1:1 with descriptor)
     std::shared_ptr<ParsedArgs2> parsed_va_args;   // va_args pins
     Remaps remaps;                // $N → net mapping (remaps[0] = net for $0, etc.)
+    Outputs outputs;              // output pin → net mapping (1:1 with descriptor output_ports)
     Vec2 position = {0, 0};
     bool shadow = false;          // only used during migration, must be false after folding
     std::string error;

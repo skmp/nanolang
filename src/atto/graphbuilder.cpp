@@ -386,15 +386,93 @@ Deserializer::ParseAttoResult Deserializer::parse_atto(std::istream& f) {
 
         auto node_entry = gb->find(cur_id);
 
-        // Wire nets from outputs (this node is source)
-        // Skip -as_lambda entries — in v1, lambda captures reference nodes directly
-        for (auto& net_name : cur_outputs) {
-            if (net_name.empty()) continue;
-            if (net_name.size() > 10 && net_name.compare(net_name.size() - 10, 10, "-as_lambda") == 0)
-                continue;
-            auto [_, net_ptr] = gb->find_or_create_net(net_name, true);
-            if (net_ptr && std::holds_alternative<NetBuilder>(*net_ptr))
-                std::get<NetBuilder>(*net_ptr).source = node_entry;
+        // Wire nets from outputs — smart map old positions to new descriptor order
+        // Old outputs array: [nexts..., data_outs..., post_bang, lambda_grab]
+        // New: nb.outputs[i] = ArgNet2 for new output_ports[i]
+        {
+            auto* old_nt = find_node_type(cur_type.c_str());
+            auto* new_nt = find_node_type2(nb.type_id);
+            bool is_expr = is_any_of(nb.type_id, NodeTypeID::Expr, NodeTypeID::ExprBang);
+            int old_num_nexts = old_nt ? old_nt->num_nexts : 0;
+
+            // Helper: wire a net and return ArgNet2
+            auto wire_output = [&](const std::string& net_name) -> ArgNet2 {
+                auto [resolved, net_ptr] = gb->find_or_create_net(net_name, true);
+                if (net_ptr && std::holds_alternative<NetBuilder>(*net_ptr))
+                    std::get<NetBuilder>(*net_ptr).source = node_entry;
+                return {resolved, net_ptr};
+            };
+
+            // Filter out empty and -as_lambda entries, wire all nets
+            // For expr: outputs are all data (no nexts), dynamic count
+            // For others: [nexts..., data_outs..., post_bang]
+            if (is_expr) {
+                // Expr: positional mapping — all outputs are data, last may be post_bang
+                for (int i = 0; i < (int)cur_outputs.size(); i++) {
+                    auto& net_name = cur_outputs[i];
+                    if (net_name.empty()) continue;
+                    // Check for post_bang suffix
+                    bool is_post_bang = (net_name.size() > 10 &&
+                        net_name.compare(net_name.size() - 10, 10, "-post_bang") == 0);
+                    if (net_name.size() > 10 && net_name.compare(net_name.size() - 10, 10, "-as_lambda") == 0)
+                        continue;
+                    auto arg = wire_output(net_name);
+                    // post_bang is side-bang for flow nodes — don't add to outputs array
+                    // (it's implicit from NodeKind2::Flow)
+                    if (!is_post_bang) {
+                        while ((int)nb.outputs.size() <= i)
+                            nb.outputs.push_back({"$unconnected", gb->find("$unconnected")});
+                        nb.outputs[i] = std::move(arg);
+                    }
+                }
+            } else {
+                // Name-based mapping for non-expr nodes
+                int old_num_outs = old_nt ? old_nt->outputs : 0;
+                std::map<std::string, ArgNet2> out_net_map;
+
+                for (int i = 0; i < (int)cur_outputs.size(); i++) {
+                    auto& net_name = cur_outputs[i];
+                    if (net_name.empty()) continue;
+                    if (net_name.size() > 10 && net_name.compare(net_name.size() - 10, 10, "-as_lambda") == 0)
+                        continue;
+
+                    auto arg = wire_output(net_name);
+
+                    // Determine old pin name from position
+                    std::string old_pin_name;
+                    if (i < old_num_nexts) {
+                        old_pin_name = (old_nt && old_nt->next_ports) ? old_nt->next_ports[i].name : "bang";
+                    } else if (i < old_num_nexts + old_num_outs) {
+                        int out_idx = i - old_num_nexts;
+                        old_pin_name = (old_nt && old_nt->output_ports) ? old_nt->output_ports[out_idx].name : "result";
+                    } else {
+                        old_pin_name = "post_bang";
+                    }
+
+                    out_net_map[old_pin_name] = std::move(arg);
+                }
+
+                // Map to new descriptor order
+                if (new_nt) {
+                    nb.outputs.resize(new_nt->num_outputs);
+                    auto unconnected = gb->find("$unconnected");
+                    for (int i = 0; i < new_nt->num_outputs; i++) {
+                        const char* name = new_nt->output_ports[i].name;
+                        auto it = out_net_map.find(name);
+                        if (it != out_net_map.end()) {
+                            nb.outputs[i] = std::move(it->second);
+                        } else if (strcmp(name, "next") == 0) {
+                            auto it2 = out_net_map.find("bang");
+                            if (it2 != out_net_map.end())
+                                nb.outputs[i] = std::move(it2->second);
+                            else
+                                nb.outputs[i] = {"$unconnected", unconnected};
+                        } else {
+                            nb.outputs[i] = {"$unconnected", unconnected};
+                        }
+                    }
+                }
+            }
         }
 
         // ─── v0 → v1 port mapping: merge inputs + args by port name ───
