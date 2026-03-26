@@ -96,6 +96,7 @@ struct GraphBuilder {
 
     std::pair<NodeId, BuilderEntryPtr> find_node(const NodeId& id);
     std::pair<NodeId, BuilderEntryPtr> find_net(const NodeId& name);
+    std::pair<NodeId, BuilderEntryPtr> find_entity(const NodeId& id);  // returns node or net
 
     void compact();
 };

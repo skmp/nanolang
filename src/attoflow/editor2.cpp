@@ -175,23 +175,34 @@ void Editor2Pane::draw() {
         if (!dst_nt) continue;
         auto dst_layout = compute_node_layout(dst_node, canvas_origin, canvas_zoom_);
 
-        // Helper: draw wire from a source net to destination pin at index dst_pin
-        auto draw_wire_to_pin = [&](int dst_pin, const BuilderEntryPtr& net_entry, const NodeId& net_id) {
-            if (!net_entry || !std::holds_alternative<NetBuilder>(*net_entry)) return;
-            auto& net = std::get<NetBuilder>(*net_entry);
-            if (net.is_the_unconnected) return;
+        // Helper: draw wire from a source to destination pin at index dst_pin
+        // Source can be a NetBuilder (regular wire) or FlowNodeBuilder (lambda capture)
+        auto draw_wire_to_pin = [&](int dst_pin, const BuilderEntryPtr& entry, const NodeId& net_id) {
+            if (!entry) return;
 
-            auto src_ptr = net.source.lock();
-            if (!src_ptr || !std::holds_alternative<FlowNodeBuilder>(*src_ptr)) return;
-            auto& src_node = std::get<FlowNodeBuilder>(*src_ptr);
-            auto src_layout = compute_node_layout(src_node, canvas_origin, canvas_zoom_);
+            FlowNodeBuilder* src_node_ptr = nullptr;
+            bool named = false;
 
-            // Find which output pin index on source this net comes from
+            if (std::holds_alternative<NetBuilder>(*entry)) {
+                auto& net = std::get<NetBuilder>(*entry);
+                if (net.is_the_unconnected) return;
+                auto src_ptr = net.source.lock();
+                if (!src_ptr || !std::holds_alternative<FlowNodeBuilder>(*src_ptr)) return;
+                src_node_ptr = &std::get<FlowNodeBuilder>(*src_ptr);
+                named = !net.auto_wire;
+            } else if (std::holds_alternative<FlowNodeBuilder>(*entry)) {
+                // Lambda capture: entry IS the source node
+                src_node_ptr = &std::get<FlowNodeBuilder>(*entry);
+            } else {
+                return;
+            }
+
+            auto src_layout = compute_node_layout(*src_node_ptr, canvas_origin, canvas_zoom_);
+
             // For now, use pin 0 as default — TODO: track output pin index per net
             ImVec2 from = src_layout.output_pin_pos(0);
             ImVec2 to = dst_layout.input_pin_pos(dst_pin);
 
-            bool named = !net.auto_wire;
             ImU32 col = named ? IM_COL32(200, 200, 100, 120) : COL_LINK;
             float dy = std::max(std::abs(to.y - from.y) * 0.5f, 30.0f * canvas_zoom_);
             float th = 2.5f * canvas_zoom_;

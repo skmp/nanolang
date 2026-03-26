@@ -221,11 +221,15 @@ void GraphBuilder::ensure_unconnected() {
 }
 
 std::pair<NodeId, BuilderEntryPtr> GraphBuilder::find_or_create_net(const NodeId& name, bool for_source) {
-    auto [id, ptr] = find_net(name); // throws if name exists as a node
-    if (ptr) {
-        if (for_source && !std::get<NetBuilder>(*ptr).source.expired())
-            throw std::logic_error("find_or_create_net(\"" + name + "\"): net already has a source");
-        return {id, ptr};
+    auto it = entries.find(name);
+    if (it != entries.end()) {
+        if (std::holds_alternative<NetBuilder>(*it->second)) {
+            if (for_source && !std::get<NetBuilder>(*it->second).source.expired())
+                throw std::logic_error("find_or_create_net(\"" + name + "\"): net already has a source");
+            return {it->first, it->second};
+        }
+        // Exists as a node — don't overwrite
+        return {it->first, nullptr};
     }
     auto entry = std::make_shared<BuilderEntry>(NetBuilder{});
     auto& net = std::get<NetBuilder>(*entry);
@@ -251,7 +255,13 @@ std::pair<NodeId, BuilderEntryPtr> GraphBuilder::find_net(const NodeId& name) {
     auto it = entries.find(name);
     if (it == entries.end()) return {name, nullptr};
     if (!std::holds_alternative<NetBuilder>(*it->second))
-        throw std::logic_error("find_net(\"" + name + "\"): entry exists but is a FlowNodeBuilder, not a NetBuilder");
+        return {name, nullptr}; // exists as node, not net
+    return {it->first, it->second};
+}
+
+std::pair<NodeId, BuilderEntryPtr> GraphBuilder::find_entity(const NodeId& id) {
+    auto it = entries.find(id);
+    if (it == entries.end()) return {id, nullptr};
     return {it->first, it->second};
 }
 
@@ -377,10 +387,14 @@ Deserializer::ParseAttoResult Deserializer::parse_atto(std::istream& f) {
         auto node_entry = gb->find(cur_id);
 
         // Wire nets from outputs (this node is source)
+        // Skip -as_lambda entries — in v1, lambda captures reference nodes directly
         for (auto& net_name : cur_outputs) {
             if (net_name.empty()) continue;
+            if (net_name.size() > 10 && net_name.compare(net_name.size() - 10, 10, "-as_lambda") == 0)
+                continue;
             auto [_, net_ptr] = gb->find_or_create_net(net_name, true);
-            std::get<NetBuilder>(*net_ptr).source = node_entry;
+            if (net_ptr && std::holds_alternative<NetBuilder>(*net_ptr))
+                std::get<NetBuilder>(*net_ptr).source = node_entry;
         }
 
         // ─── v0 → v1 port mapping: merge inputs + args by port name ───
@@ -390,13 +404,30 @@ Deserializer::ParseAttoResult Deserializer::parse_atto(std::istream& f) {
             bool is_expr = is_any_of(nb.type_id, NodeTypeID::Expr, NodeTypeID::ExprBang);
             bool args_are_type = is_any_of(nb.type_id, NodeTypeID::Cast, NodeTypeID::New);
 
-            // Helper: resolve net name to ArgNet2 and register destination
+            // Helper: resolve net/node name to ArgNet2 and register destination
             auto resolve_net = [&](const std::string& net_name) -> ArgNet2 {
-                auto [resolved, ptr] = gb->find_or_create_net(
-                    net_name.empty() ? "$unconnected" : net_name);
-                if (!net_name.empty())
-                    std::get<NetBuilder>(*ptr).destinations.push_back(node_entry);
-                return {resolved, ptr};
+                if (net_name.empty()) {
+                    auto [resolved, ptr] = gb->find_or_create_net("$unconnected");
+                    return {resolved, ptr};
+                }
+                // Strip -as_lambda suffix → resolve to node entry directly
+                std::string resolved_name = net_name;
+                if (resolved_name.size() > 10 &&
+                    resolved_name.compare(resolved_name.size() - 10, 10, "-as_lambda") == 0) {
+                    resolved_name.resize(resolved_name.size() - 10);
+                }
+                // Try finding as any entry (node or net)
+                auto ptr = gb->find(resolved_name);
+                if (ptr) {
+                    // If it's a net, register as destination
+                    if (std::holds_alternative<NetBuilder>(*ptr))
+                        std::get<NetBuilder>(*ptr).destinations.push_back(node_entry);
+                    return {resolved_name, ptr};
+                }
+                // Not found yet — create as net
+                auto [id, net_ptr] = gb->find_or_create_net(resolved_name);
+                std::get<NetBuilder>(*net_ptr).destinations.push_back(node_entry);
+                return {id, net_ptr};
             };
 
             if (is_expr || !old_nt || !new_nt) {
@@ -537,7 +568,8 @@ Deserializer::ParseAttoResult Deserializer::parse_atto(std::istream& f) {
             for (auto& net_name : cur_inputs) {
                 if (net_name.empty()) continue;
                 auto [_, net_ptr] = gb->find_or_create_net(net_name);
-                std::get<NetBuilder>(*net_ptr).destinations.push_back(node_entry);
+                if (net_ptr && std::holds_alternative<NetBuilder>(*net_ptr))
+                    std::get<NetBuilder>(*net_ptr).destinations.push_back(node_entry);
             }
         }
 
