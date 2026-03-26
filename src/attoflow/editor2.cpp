@@ -84,13 +84,14 @@ static float point_to_bezier_dist(ImVec2 p, ImVec2 p0, ImVec2 p1, ImVec2 p2, ImV
 
 // Stored wire info for hover hit-testing
 struct WireInfo {
-    BuilderEntryPtr entry;            // the net entry (null for lambda wires)
+    BuilderEntryPtr entry_;            // the net entry (null for lambda wires)
 
     ImVec2 p0, p1, p2, p3;       // bezier control points
     NodeId src_id, dst_id;        // source and destination node IDs
     NodeId net_id;                // net name
 
-    bool is_lambda() const { return entry->is(IdCategory::Node); };
+    BuilderEntryPtr entry() { return entry_; }
+    bool is_lambda() const { return entry_->is(IdCategory::Node); };
 };
 
 static inline ImVec2 v2add(ImVec2 a, ImVec2 b) { return {a.x + b.x, a.y + b.y}; }
