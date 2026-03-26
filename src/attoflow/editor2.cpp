@@ -459,8 +459,12 @@ void Editor2Pane::draw() {
                 if (drag_was_overlapping_) break;
             }
         } else {
-            // Clicked on empty space or wire — dismiss selection
+            // Clicked on empty space or wire — start selection rectangle
             selected_nodes_.clear();
+            selection_rect_active_ = true;
+            ImVec2 mouse = ImGui::GetIO().MousePos;
+            selection_rect_start_ = {(mouse.x - canvas_origin.x) / canvas_zoom_,
+                                     (mouse.y - canvas_origin.y) / canvas_zoom_};
         }
     }
 
@@ -499,8 +503,40 @@ void Editor2Pane::draw() {
             }
         }
     }
+
+    // Selection rectangle — continuously update selection each frame
+    if (selection_rect_active_) {
+        ImVec2 mouse = ImGui::GetIO().MousePos;
+        ImVec2 cur_canvas = {(mouse.x - canvas_origin.x) / canvas_zoom_,
+                             (mouse.y - canvas_origin.y) / canvas_zoom_};
+
+        float x0 = std::min(selection_rect_start_.x, cur_canvas.x);
+        float y0 = std::min(selection_rect_start_.y, cur_canvas.y);
+        float x1 = std::max(selection_rect_start_.x, cur_canvas.x);
+        float y1 = std::max(selection_rect_start_.y, cur_canvas.y);
+
+        // Draw selection rect
+        ImVec2 sp0 = {canvas_origin.x + x0 * canvas_zoom_, canvas_origin.y + y0 * canvas_zoom_};
+        ImVec2 sp1 = {canvas_origin.x + x1 * canvas_zoom_, canvas_origin.y + y1 * canvas_zoom_};
+        dl->AddRectFilled(sp0, sp1, IM_COL32(100, 130, 200, 40));
+        dl->AddRect(sp0, sp1, IM_COL32(100, 130, 200, 180), 0, 0, 1.5f);
+
+        // Recalculate selection set every frame
+        selected_nodes_.clear();
+        for (auto& [id, entry] : gb_->entries) {
+            auto node = entry->as_Node();
+            if (!node) continue;
+            auto layout = compute_node_layout(node, {0,0}, 1.0f);
+            float nx0 = node->position.x, ny0 = node->position.y;
+            float nx1 = nx0 + layout.width, ny1 = ny0 + layout.height;
+            if (nx0 < x1 && nx1 > x0 && ny0 < y1 && ny1 > y0)
+                selected_nodes_.insert(node);
+        }
+    }
+
     if (ImGui::IsMouseReleased(ImGuiMouseButton_Left)) {
         dragging_started_ = false;
+        selection_rect_active_ = false;
     }
 
     // Pan with middle mouse or right mouse

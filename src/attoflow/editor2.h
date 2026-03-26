@@ -37,6 +37,8 @@ private:
     std::set<FlowNodeBuilderPtr> selected_nodes_;
     bool dragging_started_ = false;
     bool drag_was_overlapping_ = false;
+    bool selection_rect_active_ = false;   // true when dragging a selection rectangle
+    ImVec2 selection_rect_start_ = {0, 0}; // canvas-space start point
     int editing_link_id_ = -1;
 
     // Wire info for hover hit-testing
