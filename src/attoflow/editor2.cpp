@@ -402,17 +402,27 @@ void Editor2Pane::draw() {
         canvas_offset_.y += ImGui::GetIO().MouseDelta.y;
     }
 
-    // Zoom
+    // Scroll: zoom, or pan with modifiers
     if (canvas_hovered) {
         float wheel = ImGui::GetIO().MouseWheel;
         if (wheel != 0) {
-            float old_zoom = canvas_zoom_;
-            canvas_zoom_ *= (wheel > 0) ? 1.1f : 0.9f;
-            canvas_zoom_ = std::clamp(canvas_zoom_, 0.1f, 10.0f);
-            ImVec2 mouse = ImGui::GetIO().MousePos;
-            ImVec2 mouse_rel = v2sub(v2sub(mouse, canvas_p0), canvas_offset_);
-            ImVec2 mouse_canvas = v2mul(mouse_rel, 1.0f / old_zoom);
-            canvas_offset_ = v2sub(v2sub(mouse, canvas_p0), v2mul(mouse_canvas, canvas_zoom_));
+            bool shift = ImGui::GetIO().KeyShift;
+            bool alt = ImGui::GetIO().KeyAlt;
+            if (shift || alt) {
+                // Shift+scroll = X pan, Alt+scroll = Y pan
+                float pan_speed = 40.0f;
+                if (shift) canvas_offset_.x += wheel * pan_speed;
+                if (alt)   canvas_offset_.y += wheel * pan_speed;
+            } else {
+                // Plain scroll = zoom toward mouse
+                float old_zoom = canvas_zoom_;
+                canvas_zoom_ *= (wheel > 0) ? 1.1f : 0.9f;
+                canvas_zoom_ = std::clamp(canvas_zoom_, 0.1f, 10.0f);
+                ImVec2 mouse = ImGui::GetIO().MousePos;
+                ImVec2 mouse_rel = v2sub(v2sub(mouse, canvas_p0), canvas_offset_);
+                ImVec2 mouse_canvas = v2mul(mouse_rel, 1.0f / old_zoom);
+                canvas_offset_ = v2sub(v2sub(mouse, canvas_p0), v2mul(mouse_canvas, canvas_zoom_));
+            }
         }
     }
 }
