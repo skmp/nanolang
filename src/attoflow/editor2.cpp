@@ -29,6 +29,7 @@ static struct {
 
     // Hit testing
     float pin_hit_radius_mul = 2.5f;
+    float wire_hit_threshold = 60.0f;
 
     // Canvas colors
     ImU32 col_bg          = IM_COL32(30, 30, 40, 255);
@@ -65,6 +66,28 @@ static struct {
 } S;
 
 // ─── Helpers ───
+
+static float point_to_bezier_dist(ImVec2 p, ImVec2 p0, ImVec2 p1, ImVec2 p2, ImVec2 p3) {
+    float min_d2 = 1e18f;
+    for (int i = 0; i <= 20; i++) {
+        float t = i / 20.0f;
+        float u = 1.0f - t;
+        float x = u*u*u*p0.x + 3*u*u*t*p1.x + 3*u*t*t*p2.x + t*t*t*p3.x;
+        float y = u*u*u*p0.y + 3*u*u*t*p1.y + 3*u*t*t*p2.y + t*t*t*p3.y;
+        float dx = p.x - x, dy = p.y - y;
+        float d2 = dx*dx + dy*dy;
+        if (d2 < min_d2) min_d2 = d2;
+    }
+    return std::sqrt(min_d2);
+}
+
+// Stored wire info for hover hit-testing
+struct WireInfo {
+    ImVec2 p0, p1, p2, p3;   // bezier control points
+    NodeId src_id, dst_id;    // source and destination node IDs
+    NodeId net_id;            // net name
+    bool is_lambda = false;
+};
 
 static inline ImVec2 v2add(ImVec2 a, ImVec2 b) { return {a.x + b.x, a.y + b.y}; }
 static inline ImVec2 v2sub(ImVec2 a, ImVec2 b) { return {a.x - b.x, a.y - b.y}; }
@@ -264,6 +287,8 @@ void Editor2Pane::draw() {
     }
 
     // Draw wires by iterating each node's inputs/outputs/remaps
+    std::vector<WireInfo> drawn_wires; // collect for hover testing
+
     for (auto& [dst_id, dst_entry] : gb_->entries) {
         auto dst_node = dst_entry->as_Node();
         if (!dst_node) continue;
@@ -306,13 +331,14 @@ void Editor2Pane::draw() {
             ImVec2 to = dst_layout.input_pin_pos(dst_pin);
             float th = S.wire_thickness * canvas_zoom_;
 
-            ImVec2 from;
+            ImVec2 from, cp1, cp2;
+            ImU32 wire_col;
             if (is_lambda) {
                 from = src_layout.lambda_grab_pos();
                 float dx = std::max(std::abs(to.x - from.x) * 0.5f, 30.0f * canvas_zoom_);
                 float dy = std::max(std::abs(to.y - from.y) * 0.5f, 30.0f * canvas_zoom_);
-                ImU32 col = S.col_wire_lambda;
-                dl->AddBezierCubic(from, {from.x - dx, from.y}, {to.x, to.y - dy}, to, col, th);
+                cp1 = {from.x - dx, from.y}; cp2 = {to.x, to.y - dy};
+                wire_col = S.col_wire_lambda;
             } else {
                 bool is_side_bang = src_nt && src_nt->is_flow() &&
                     source_pin < (src_nt->num_outputs) &&
@@ -322,15 +348,17 @@ void Editor2Pane::draw() {
                     from = {src_layout.pos.x + src_layout.width, src_layout.pos.y + src_layout.height * 0.5f};
                     float dx = std::max(std::abs(to.x - from.x) * 0.5f, 30.0f * canvas_zoom_);
                     float dy = std::max(std::abs(to.y - from.y) * 0.5f, 30.0f * canvas_zoom_);
-                    ImU32 col = named ? S.col_wire_named : S.col_wire;
-                    dl->AddBezierCubic(from, {from.x + dx, from.y}, {to.x, to.y - dy}, to, col, th);
+                    cp1 = {from.x + dx, from.y}; cp2 = {to.x, to.y - dy};
                 } else {
                     from = src_layout.output_pin_pos(source_pin);
-                    ImU32 col = named ? S.col_wire_named : S.col_wire;
                     float dy = std::max(std::abs(to.y - from.y) * 0.5f, 30.0f * canvas_zoom_);
-                    dl->AddBezierCubic(from, {from.x, from.y + dy}, {to.x, to.y - dy}, to, col, th);
+                    cp1 = {from.x, from.y + dy}; cp2 = {to.x, to.y - dy};
                 }
+                wire_col = named ? S.col_wire_named : S.col_wire;
             }
+
+            dl->AddBezierCubic(from, cp1, cp2, to, wire_col, th);
+            drawn_wires.push_back({from, cp1, cp2, to, src_node->id(), dst_id, net_id, is_lambda});
 
             // Label for named nets
             if (named) {
@@ -371,6 +399,39 @@ void Editor2Pane::draw() {
                 if (ri < (int)dst_node->remaps.size())
                     draw_wire_to_pin(i, dst_node->remaps[ri].second(), dst_node->remaps[ri].first());
             }
+        }
+    }
+
+    // Wire hover: highlight + tooltip
+    if (canvas_hovered) {
+        ImVec2 mouse = ImGui::GetIO().MousePos;
+        float wire_hit_threshold = S.wire_hit_threshold * canvas_zoom_;
+        const WireInfo* hovered_wire = nullptr;
+        float best_dist = wire_hit_threshold;
+        for (auto& w : drawn_wires) {
+            float d = point_to_bezier_dist(mouse, w.p0, w.p1, w.p2, w.p3);
+            if (d < best_dist) {
+                best_dist = d;
+                hovered_wire = &w;
+            }
+        }
+        if (hovered_wire) {
+            // Redraw the wire brighter as highlight
+            float th = (S.wire_thickness + 2.0f) * canvas_zoom_;
+            ImU32 col = S.col_pin_hover;
+            dl->AddBezierCubic(hovered_wire->p0, hovered_wire->p1, hovered_wire->p2, hovered_wire->p3, col, th);
+
+            // Tooltip
+            ImGui::BeginTooltip();
+            ImGui::SetWindowFontScale(S.tooltip_scale);
+            if (hovered_wire->is_lambda) {
+                ImGui::Text("lambda: %s", hovered_wire->src_id.c_str());
+            } else {
+                ImGui::Text("net: %s", hovered_wire->net_id.c_str());
+            }
+            ImGui::Text("src: %s", hovered_wire->src_id.c_str());
+            ImGui::Text("dst: %s", hovered_wire->dst_id.c_str());
+            ImGui::EndTooltip();
         }
     }
 
