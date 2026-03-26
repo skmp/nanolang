@@ -91,6 +91,7 @@ struct WireInfo {
     NodeId net_id;                // net name
 
     BuilderEntryPtr entry() { return entry_; }
+    const BuilderEntryPtr entry() const { return entry_; }
     bool is_lambda() const { return entry_->is(IdCategory::Node); };
 };
 
@@ -433,23 +434,39 @@ void Editor2Pane::draw() {
         if (hover_item_.expired()) {
             float wire_thresh = S.wire_hit_threshold * canvas_zoom_;
             float best_dist = wire_thresh;
-            BuilderEntryPtr best_wire;
             const WireInfo* best_wire_info = nullptr;
             for (auto& w : drawn_wires) {
                 float d = point_to_bezier_dist(mouse, w.p0, w.p1, w.p2, w.p3);
                 if (d < best_dist) {
                     best_dist = d;
-                    auto entry = gb_->find(w.net_id);
-                    if (entry) { best_wire = entry; best_wire_info = &w; }
+                    if (w.entry()) best_wire_info = &w;
                 }
             }
-            if (best_wire) hover_item_ = best_wire;
 
-            // Draw wire highlight + tooltip
             if (best_wire_info) {
+                hover_item_ = best_wire_info->entry();
+                auto hover_entry = best_wire_info->entry();
                 float th = (S.wire_thickness + 2.0f) * canvas_zoom_;
-                dl->AddBezierCubic(best_wire_info->p0, best_wire_info->p1,
-                                   best_wire_info->p2, best_wire_info->p3, S.col_pin_hover, th);
+
+                // Highlight ALL wires sharing the same entry (same net or same lambda node)
+                for (auto& w : drawn_wires) {
+                    if (w.entry() == hover_entry) {
+                        dl->AddBezierCubic(w.p0, w.p1, w.p2, w.p3, S.col_pin_hover, th);
+                    }
+                }
+
+                // For lambdas, also highlight the source node
+                if (best_wire_info->is_lambda()) {
+                    auto src = hover_entry->as_Node();
+                    if (src) {
+                        auto src_layout = compute_node_layout(src, canvas_origin, canvas_zoom_);
+                        dl->AddRect(src_layout.pos,
+                            {src_layout.pos.x + src_layout.width, src_layout.pos.y + src_layout.height},
+                            S.col_pin_hover, S.node_rounding * canvas_zoom_, 0, S.highlight_thickness);
+                    }
+                }
+
+                // Tooltip
                 ImGui::BeginTooltip();
                 ImGui::SetWindowFontScale(S.tooltip_scale);
                 if (best_wire_info->is_lambda())
