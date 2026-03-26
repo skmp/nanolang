@@ -70,9 +70,7 @@ struct NodeType2 {
 static const PortDesc2 P2_NEXT[] = {
     {.name = "next", .desc = "fires after completion", .kind = PortKind2::BangNext, .position = PortPosition2::Output},
 };
-static const PortDesc2 P2_RESULT[] = {
-    {.name = "result", .desc = "result value", .position = PortPosition2::Output},
-};
+
 static const PortDesc2 P2_NEXT_RESULT[] = {
     {.name = "next", .desc = "fires after completion", .kind = PortKind2::BangNext, .position = PortPosition2::Output},
     {.name = "result", .desc = "result value", .position = PortPosition2::Output},
@@ -253,7 +251,7 @@ static const NodeType2 NODE_TYPES2[] = {
         .type_id = NodeTypeID::Expr,
         .name = "expr",
         .desc = "Evaluate expression",
-        .output_ports = P2_RESULT,
+        .output_ports = P2_NEXT,
         .num_outputs = 1,
         .output_ports_va_args = &P2_VA_EXPR_OUT,
     },
@@ -263,7 +261,7 @@ static const NodeType2 NODE_TYPES2[] = {
         .desc = "Select value by condition",
         .input_ports = P2_SELECT_IN,
         .num_inputs = 3,
-        .output_ports = P2_RESULT,
+        .output_ports = P2_NEXT_RESULT,
         .num_outputs = 1
     },
     {
@@ -273,7 +271,7 @@ static const NodeType2 NODE_TYPES2[] = {
         .input_ports = P2_NEW_IN,
         .num_inputs = 1,
         .input_ports_va_args = &P2_VA_FIELD,
-        .output_ports = P2_RESULT,
+        .output_ports = P2_NEXT_RESULT,
         .num_outputs = 1,
     },
     {
@@ -282,7 +280,7 @@ static const NodeType2 NODE_TYPES2[] = {
         .desc = "Duplicate input to output",
         .input_ports = P2_VALUE,
         .num_inputs = 1,
-        .output_ports = P2_RESULT,
+        .output_ports = P2_NEXT_RESULT,
         .num_outputs = 1
     },
     {
@@ -291,14 +289,14 @@ static const NodeType2 NODE_TYPES2[] = {
         .desc = "Convert to string",
         .input_ports = P2_VALUE,
         .num_inputs = 1,
-        .output_ports = P2_RESULT,
+        .output_ports = P2_NEXT_RESULT,
         .num_outputs = 1
     },
     {
         .type_id = NodeTypeID::Void,
         .name = "void",
         .desc = "Void result",
-        .output_ports = P2_RESULT,
+        .output_ports = P2_NEXT_RESULT,
         .num_outputs = 1
     },
     {
@@ -385,7 +383,7 @@ static const NodeType2 NODE_TYPES2[] = {
         .input_ports = P2_CALL_IN,
         .num_inputs = 1,
         .input_ports_va_args = &P2_VA_ARG,
-        .output_ports = P2_RESULT,
+        .output_ports = P2_NEXT_RESULT,
         .num_outputs = 1,
     },
     {
@@ -405,7 +403,7 @@ static const NodeType2 NODE_TYPES2[] = {
         .desc = "Erase from collection",
         .input_ports = P2_ERASE_IN,
         .num_inputs = 2,
-        .output_ports = P2_RESULT,
+        .output_ports = P2_NEXT_RESULT,
         .num_outputs = 1
     },
     {
@@ -422,7 +420,7 @@ static const NodeType2 NODE_TYPES2[] = {
         .desc = "Append to collection",
         .input_ports = P2_APPEND_IN,
         .num_inputs = 2,
-        .output_ports = P2_RESULT,
+        .output_ports = P2_NEXT_RESULT,
         .num_outputs = 1
     },
     {
@@ -527,7 +525,7 @@ static const NodeType2 NODE_TYPES2[] = {
         .desc = "Advance iterator",
         .input_ports = P2_VALUE,
         .num_inputs = 1,
-        .output_ports = P2_RESULT,
+        .output_ports = P2_NEXT_RESULT,
         .num_outputs = 1
     },
     {
@@ -565,7 +563,7 @@ static const NodeType2 NODE_TYPES2[] = {
         .desc = "Cast value to type",
         .input_ports = P2_VALUE,
         .num_inputs = 1,
-        .output_ports = P2_RESULT,
+        .output_ports = P2_NEXT_RESULT,
         .num_outputs = 1
     },
     {
@@ -580,7 +578,7 @@ static const NodeType2 NODE_TYPES2[] = {
         .desc = "Dereference iterator (internal)",
         .input_ports = P2_VALUE,
         .num_inputs = 1,
-        .output_ports = P2_RESULT,
+        .output_ports = P2_NEXT_RESULT,
         .num_outputs = 1
     },
     {
