@@ -1,4 +1,5 @@
 #pragma once
+#include "editor_pane.h"
 #include "node_renderer.h"
 #include "atto/graph_editor_interfaces.h"
 #include <string>
@@ -72,15 +73,15 @@ struct ArgExprEditorImpl : IArgExprEditor {
 
 // ─── Editor2Pane ───
 
-class Editor2Pane : public IGraphEditor, public std::enable_shared_from_this<Editor2Pane> {
+class Editor2Pane : public IEditorPane, public IGraphEditor, public std::enable_shared_from_this<Editor2Pane> {
 public:
-    bool load(const std::string& path);
-    void draw();
-
-    bool is_loaded() const { return gb_ != nullptr; }
-    bool is_dirty() const { return gb_ && gb_->is_dirty(); }
-    const std::string& file_path() const { return file_path_; }
-    const std::string& tab_name() const { return tab_name_; }
+    // IEditorPane
+    bool load(const std::string& path) override;
+    void draw() override;
+    bool is_loaded() const override { return gb_ != nullptr; }
+    bool is_dirty() const override { return gb_ && gb_->is_dirty(); }
+    const std::string& file_path() const override { return file_path_; }
+    const std::string& tab_name() const override { return tab_name_; }
 
     // IGraphEditor
     std::shared_ptr<INodeEditor> node_added(const NodeId& id, const std::shared_ptr<FlowNodeBuilder>& node) override;
