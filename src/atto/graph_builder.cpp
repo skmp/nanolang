@@ -595,24 +595,69 @@ Deserializer::ParseAttoResult Deserializer::parse_atto(std::istream& f) {
             // For expr: outputs are all data (no nexts), dynamic count
             // For others: [nexts..., data_outs..., post_bang]
             if (is_expr) {
-                // Expr: positional mapping — all outputs are data, last may be post_bang
+                // Expr/Expr!: split outputs into fixed (outputs) and va (outputs_va_args)
+                // Old format:
+                //   Expr (Flow):  [out0, out1, ..., post_bang] — post_bang is side-bang → outputs[0]
+                //   Expr! (Banged): [next, out0, out1, ...] — next → outputs[0]
+                bool is_flow_expr = (nb.type_id == NodeTypeID::Expr);
+                auto* va_port = new_nt ? new_nt->output_ports_va_args : nullptr;
+
+                // Collect all non-empty, non-lambda entries
+                std::vector<FlowArg2Ptr> all_outs;
+                FlowArg2Ptr post_bang_arg = nullptr;
                 for (int i = 0; i < (int)cur_outputs.size(); i++) {
                     auto& net_name = cur_outputs[i];
                     if (net_name.empty()) continue;
-                    // Check for post_bang suffix
-                    bool is_post_bang = (net_name.size() > 10 &&
-                        net_name.compare(net_name.size() - 10, 10, "-post_bang") == 0);
                     if (net_name.size() > 10 && net_name.compare(net_name.size() - 10, 10, "-as_lambda") == 0)
                         continue;
+                    bool is_post_bang = is_flow_expr && (net_name.size() > 10 &&
+                        net_name.compare(net_name.size() - 10, 10, "-post_bang") == 0);
                     auto arg = wire_output(net_name);
-                    // post_bang is side-bang for flow nodes — don't add to outputs array
-                    // (it's implicit from NodeKind2::Flow)
-                    if (!is_post_bang) {
-                        while ((int)nb.outputs.size() <= i)
-                            nb.outputs.push_back(gb->build_arg_net("$unconnected", gb->unconnected_net()));
-                        nb.outputs[i] = std::move(arg);
+                    if (is_post_bang) {
+                        // Side-bang for flow expr → goes to outputs[0]
+                        if (new_nt && new_nt->num_outputs > 0)
+                            arg->port(&new_nt->output_ports[0]);
+                        post_bang_arg = std::move(arg);
+                    } else {
+                        if (va_port) arg->port(va_port);
+                        all_outs.push_back(std::move(arg));
                     }
                 }
+
+                // Populate fixed outputs from descriptor
+                int fixed_out = new_nt ? new_nt->num_outputs : 0;
+                nb.outputs.resize(fixed_out);
+                auto unconnected = gb->unconnected_net();
+
+                if (is_flow_expr) {
+                    // Flow expr: outputs[0] = side-bang (post_bang or $unconnected)
+                    if (fixed_out > 0) {
+                        nb.outputs[0] = post_bang_arg ? std::move(post_bang_arg)
+                            : gb->build_arg_net("$unconnected", unconnected,
+                                new_nt ? &new_nt->output_ports[0] : nullptr);
+                    }
+                    // All data outputs go to outputs_va_args
+                    for (auto& a : all_outs)
+                        nb.outputs_va_args.push_back(std::move(a));
+                } else {
+                    // Banged expr!: outputs[0] = next (first entry from all_outs if it's bang)
+                    if (fixed_out > 0 && !all_outs.empty()) {
+                        all_outs[0]->port(&new_nt->output_ports[0]);
+                        nb.outputs[0] = std::move(all_outs[0]);
+                        // Rest go to outputs_va_args
+                        for (int i = 1; i < (int)all_outs.size(); i++)
+                            nb.outputs_va_args.push_back(std::move(all_outs[i]));
+                    } else {
+                        for (int i = 0; i < fixed_out; i++)
+                            nb.outputs[i] = gb->build_arg_net("$unconnected", unconnected,
+                                &new_nt->output_ports[i]);
+                    }
+                }
+
+                // Fill va_args to match expression count
+                int expr_count = nb.parsed_args ? nb.parsed_args->size() : 0;
+                while ((int)nb.outputs_va_args.size() < expr_count)
+                    nb.outputs_va_args.push_back(gb->build_arg_net("$unconnected", unconnected, va_port));
             } else {
                 // Name-based mapping for non-expr nodes
                 int old_num_outs = old_nt ? old_nt->outputs : 0;
@@ -644,22 +689,34 @@ Deserializer::ParseAttoResult Deserializer::parse_atto(std::istream& f) {
                 if (new_nt) {
                     nb.outputs.resize(new_nt->num_outputs);
                     auto unconnected = gb->unconnected_net();
+                    std::set<std::string> consumed;
                     for (int i = 0; i < new_nt->num_outputs; i++) {
                         auto* pd = &new_nt->output_ports[i];
                         auto it = out_net_map.find(pd->name);
                         if (it != out_net_map.end()) {
                             it->second->port(pd);
                             nb.outputs[i] = std::move(it->second);
+                            consumed.insert(pd->name);
                         } else if (strcmp(pd->name, "next") == 0) {
                             auto it2 = out_net_map.find("bang");
                             if (it2 != out_net_map.end()) {
                                 it2->second->port(pd);
                                 nb.outputs[i] = std::move(it2->second);
+                                consumed.insert("bang");
                             } else {
                                 nb.outputs[i] = gb->build_arg_net("$unconnected", unconnected, pd);
                             }
                         } else {
                             nb.outputs[i] = gb->build_arg_net("$unconnected", unconnected, pd);
+                        }
+                    }
+                    // Spillover: unconsumed outputs go to outputs_va_args (for event! etc.)
+                    if (new_nt->output_ports_va_args) {
+                        for (auto& [name, arg] : out_net_map) {
+                            if (!consumed.count(name) && name != "post_bang") {
+                                arg->port(new_nt->output_ports_va_args);
+                                nb.outputs_va_args.push_back(std::move(arg));
+                            }
                         }
                     }
                 }
@@ -1109,6 +1166,7 @@ Deserializer::ParseAttoResult Deserializer::parse_atto(std::istream& f) {
             remap_args(node_p->parsed_va_args.get());
             for (auto& r : node_p->remaps) if (auto n = r->as_net()) n->net_id(remap_id(n->first()));
             for (auto& o : node_p->outputs) if (auto n = o->as_net()) n->net_id(remap_id(n->first()));
+            for (auto& o : node_p->outputs_va_args) if (auto n = o->as_net()) n->net_id(remap_id(n->first()));
         }
 
         // Rebuild entries map with new keys
@@ -1132,6 +1190,7 @@ Deserializer::ParseAttoResult Deserializer::parse_atto(std::istream& f) {
         assign_node(node_p->parsed_va_args.get());
         for (auto& r : node_p->remaps) r->node(node_p);
         for (auto& o : node_p->outputs) o->node(node_p);
+        for (auto& o : node_p->outputs_va_args) o->node(node_p);
     }
 
     gb->compact();

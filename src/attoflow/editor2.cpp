@@ -97,11 +97,11 @@ struct PinMapping {
     int base_count = 0;             // visible base pins (ArgNet2 in parsed_args + absent optionals)
     int va_count = 0;               // visible va_args pins (ArgNet2 in parsed_va_args)
     int add_pin_pos = -1;           // position of +diamond (-1 if none)
-    bool has_va = false;
+    bool has_input_va = false;
 
     static PinMapping build(const FlowNodeBuilderPtr& node, const NodeType2* nt) {
         PinMapping m;
-        m.has_va = nt && nt->input_ports_va_args != nullptr;
+        m.has_input_va = nt && nt->input_ports_va_args != nullptr;
         int parsed_size = node->parsed_args ? (int)node->parsed_args->size() : 0;
 
         // Base args: track which parsed_args indices are ArgNet2
@@ -132,7 +132,7 @@ struct PinMapping {
             }
         }
         // +diamond slot
-        if (m.has_va) {
+        if (m.has_input_va) {
             m.add_pin_pos = (int)m.pin_to_port.size();
             m.pin_to_port.push_back(-1000); // sentinel for +diamond
         }
@@ -149,7 +149,7 @@ struct PinMapping {
     int absent_port_index(int pin) const { return -(pin_to_port[pin] + 3000); }
     bool is_input_va(int pin) const { return pin >= base_count && pin < base_count + va_count; }
     bool is_add_diamond(int pin) const { return pin == add_pin_pos; }
-    bool is_remap(int pin) const { return pin >= base_count + va_count + (has_va ? 1 : 0); }
+    bool is_remap(int pin) const { return pin >= base_count + va_count + (has_input_va ? 1 : 0); }
     int port_index(int pin) const { return pin_to_port[pin]; }
     int remap_index(int pin) const { return -(pin_to_port[pin] + 2000); }
 };
@@ -186,12 +186,11 @@ static NodeLayout compute_node_layout(const FlowNodeBuilderPtr& node, ImVec2 can
 
     auto pm = PinMapping::build(node, nt);
     int num_in = pm.total();
-    int num_out = nt ? nt->num_outputs : 1;
-    if (node->type_id == NodeTypeID::Expr || node->type_id == NodeTypeID::ExprBang) {
-        int args_count = node->parsed_args ? (int)node->parsed_args->size() : 0;
-        if (node->type_id == NodeTypeID::ExprBang) num_out = 1 + std::max(1, args_count);
-        else num_out = std::max(1, args_count);
-    }
+    // Output pin count: fixed outputs + output va_args
+    // For flow nodes, outputs[0] is the side-bang (not rendered at bottom)
+    int fixed_out = nt ? nt->num_outputs : (int)node->outputs.size();
+    int va_out = (int)node->outputs_va_args.size();
+    int num_out = fixed_out + va_out;
 
     float pin_w_top = std::max(0, num_in) * S.pin_spacing * zoom;
     float pin_w_bot = std::max(0, num_out) * S.pin_spacing * zoom;
@@ -310,11 +309,23 @@ void Editor2Pane::draw() {
                 src_node = src_ptr ? src_ptr->as_Node() : nullptr;
                 if (!src_node) return;
                 named = !net->auto_wire();
+                // Search fixed outputs
                 for (int k = 0; k < (int)src_node->outputs.size(); k++) {
                     auto out_net = src_node->outputs[k]->as_net();
                     if (out_net && out_net->second() == entry) {
                         source_pin = k;
                         break;
+                    }
+                }
+                // Search output va_args
+                if (source_pin == 0) {
+                    int base = (int)src_node->outputs.size();
+                    for (int k = 0; k < (int)src_node->outputs_va_args.size(); k++) {
+                        auto out_net = src_node->outputs_va_args[k]->as_net();
+                        if (out_net && out_net->second() == entry) {
+                            source_pin = base + k;
+                            break;
+                        }
                     }
                 }
             } else if (auto node = entry->as_Node()) {
@@ -699,15 +710,24 @@ void Editor2Pane::draw_node(ImDrawList* dl, const FlowNodeBuilderPtr& node,
         }
     }
 
-    // Draw output pins (bottom)
+    // Draw output pins (bottom): fixed outputs then va_args outputs
+    int fixed_out = nt->num_outputs;
+    int va_out = (int)node->outputs_va_args.size();
     for (int i = 0; i < layout.num_out; i++) {
         ImVec2 pp = layout.output_pin_pos(i);
+        bool is_output_va = (i >= fixed_out);
         PortKind2 kind = PortKind2::Data;
-        if (nt->output_ports && i < nt->num_outputs) kind = nt->output_ports[i].kind;
+        if (!is_output_va && nt->output_ports && i < nt->num_outputs)
+            kind = nt->output_ports[i].kind;
+        else if (is_output_va && nt->output_ports_va_args)
+            kind = nt->output_ports_va_args->kind;
 
         ImU32 pc = pin_color(kind);
         if (kind == PortKind2::BangNext) {
             dl->AddRectFilled({pp.x - pr, pp.y - pr}, {pp.x + pr, pp.y + pr}, pc);
+        } else if (is_output_va) {
+            // Diamond for output va_args (no +diamond button)
+            dl->AddQuadFilled({pp.x, pp.y + pr}, {pp.x + pr, pp.y}, {pp.x, pp.y - pr}, {pp.x - pr, pp.y}, pc);
         } else {
             dl->AddCircleFilled(pp, pr, pc);
         }
@@ -804,12 +824,24 @@ void Editor2Pane::draw_node(ImDrawList* dl, const FlowNodeBuilderPtr& node,
                 return;
             }
         }
-        // Output pins
+        // Output pins (fixed + va_args)
         for (int i = 0; i < layout.num_out; i++) {
-            if (i < (int)node->outputs.size() && node->outputs[i] == hovered_pin) {
+            FlowArg2Ptr out_pin = nullptr;
+            bool is_output_va = (i >= fixed_out);
+            if (!is_output_va && i < (int)node->outputs.size())
+                out_pin = node->outputs[i];
+            else if (is_output_va && (i - fixed_out) < (int)node->outputs_va_args.size())
+                out_pin = node->outputs_va_args[i - fixed_out];
+
+            if (out_pin == hovered_pin) {
                 ImVec2 pp = layout.output_pin_pos(i);
-                PortKind2 kind = (nt->output_ports && i < nt->num_outputs) ? nt->output_ports[i].kind : PortKind2::Data;
-                draw_highlight(pp, kind == PortKind2::BangNext ? PinShape2::Square : PinShape2::Circle);
+                PinShape2 shape = PinShape2::Circle;
+                if (!is_output_va && nt->output_ports && i < nt->num_outputs &&
+                    nt->output_ports[i].kind == PortKind2::BangNext)
+                    shape = PinShape2::Square;
+                else if (is_output_va)
+                    shape = PinShape2::Diamond;
+                draw_highlight(pp, shape);
                 if (draw_tooltips_) {
                     ImGui::BeginTooltip();
                     ImGui::SetWindowFontScale(S.tooltip_scale);
@@ -962,11 +994,21 @@ Editor2Pane::HoverItem Editor2Pane::detect_hover(
             }
         }
 
-        // Output pins
-        for (int i = 0; i < layout.num_out; i++) {
-            float pd = d2(mouse, layout.output_pin_pos(i));
-            if (pd < pin_thresh && i < (int)node->outputs.size() && node->outputs[i])
-                try_candidate(pd - pin_bias, node->outputs[i]);
+        // Output pins (fixed + va_args)
+        {
+            int n_fixed_out = nt->num_outputs;
+            for (int i = 0; i < layout.num_out; i++) {
+                float pd = d2(mouse, layout.output_pin_pos(i));
+                if (pd < pin_thresh) {
+                    if (i < n_fixed_out && i < (int)node->outputs.size() && node->outputs[i])
+                        try_candidate(pd - pin_bias, node->outputs[i]);
+                    else if (i >= n_fixed_out) {
+                        int vi = i - n_fixed_out;
+                        if (vi < (int)node->outputs_va_args.size() && node->outputs_va_args[vi])
+                            try_candidate(pd - pin_bias, node->outputs_va_args[vi]);
+                    }
+                }
+            }
         }
 
         // Lambda grab → node itself (pin-level priority)
