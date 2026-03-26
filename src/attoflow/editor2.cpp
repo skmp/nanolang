@@ -277,7 +277,7 @@ void Editor2Pane::draw() {
         auto draw_wire_to_pin = [&](int dst_pin, const BuilderEntryPtr& entry, const NodeId& net_id) {
             if (!entry) return;
 
-            FlowNodeBuilderPtr src_node_ptr = nullptr;
+            FlowNodeBuilderPtr src_node = nullptr;
             bool named = false;
             bool is_lambda = false;
             int source_pin = 0;
@@ -285,25 +285,24 @@ void Editor2Pane::draw() {
             if (auto net = entry->as_Net()) {
                 if (net->is_the_unconnected) return;
                 auto src_ptr = net->source.lock();
-                auto src_node = src_ptr ? src_ptr->as_Node() : nullptr;
+                src_node = src_ptr ? src_ptr->as_Node() : nullptr;
                 if (!src_node) return;
-                src_node_ptr = src_node;
                 named = !net->auto_wire;
-                for (int k = 0; k < (int)src_node_ptr->outputs.size(); k++) {
-                    if (src_node_ptr->outputs[k].second == entry) {
+                for (int k = 0; k < (int)src_node->outputs.size(); k++) {
+                    if (src_node->outputs[k].second == entry) {
                         source_pin = k;
                         break;
                     }
                 }
             } else if (auto node = entry->as_Node()) {
-                src_node_ptr = node;
+                src_node = node;
                 is_lambda = true;
             } else {
                 return;
             }
 
-            auto* src_nt = find_node_type2(src_node_ptr->type_id);
-            auto src_layout = compute_node_layout(src_node_ptr, canvas_origin, canvas_zoom_);
+            auto* src_nt = find_node_type2(src_node->type_id);
+            auto src_layout = compute_node_layout(src_node, canvas_origin, canvas_zoom_);
             ImVec2 to = dst_layout.input_pin_pos(dst_pin);
             float th = S.wire_thickness * canvas_zoom_;
 
@@ -384,9 +383,9 @@ void Editor2Pane::draw() {
         dragging_node_.clear();
         // Iterate in reverse so topmost (last drawn) is hit first
         for (auto it = gb_->entries.rbegin(); it != gb_->entries.rend(); ++it) {
-            auto node_p = it->second->as_Node();
-            if (!node_p) continue;
-            auto layout = compute_node_layout(node_p, canvas_origin, canvas_zoom_);
+            auto node = it->second->as_Node();
+            if (!node) continue;
+            auto layout = compute_node_layout(node, canvas_origin, canvas_zoom_);
             if (mouse.x >= layout.pos.x && mouse.x <= layout.pos.x + layout.width &&
                 mouse.y >= layout.pos.y && mouse.y <= layout.pos.y + layout.height) {
                 dragging_node_ = it->first;
