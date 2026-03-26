@@ -30,13 +30,22 @@ struct NodeType2 {
     NodeTypeID type_id;
     const char* name;
     const char* desc;
-    const PortDesc2* input_ports;
-    int num_inputs;
+    const PortDesc2* input_ports = nullptr;
+    int num_inputs = 0;                        // required input ports
+    const PortDesc2* input_optional_ports = nullptr;
+    int num_inputs_optional = 0;               // trailing optional input ports
     const PortDesc2* output_ports;
     int num_outputs;
     NodeKind2 kind = NodeKind2::Flow;
     const PortDesc2* va_args = nullptr;  // nullptr = no va_args, else template for repeating pins
 
+    int total_inputs() const { return num_inputs + num_inputs_optional; }
+    const PortDesc2* input_port(int i) const {
+        if (i < num_inputs) return input_ports ? &input_ports[i] : nullptr;
+        int oi = i - num_inputs;
+        if (oi < num_inputs_optional) return input_optional_ports ? &input_optional_ports[oi] : nullptr;
+        return nullptr;
+    }
     bool is_banged() const { return kind == NodeKind2::Banged || kind == NodeKind2::Event || kind == NodeKind2::Declaration; }
     bool is_declaration() const { return kind == NodeKind2::Declaration; }
     bool is_flow() const { return kind == NodeKind2::Flow; }
@@ -47,328 +56,524 @@ struct NodeType2 {
 // ─── Port descriptor arrays ───
 
 // Common outputs
-static const PortDesc2 P2_NEXT[]       = {{"next", "fires after completion", PortKind2::BangNext}};
-static const PortDesc2 P2_RESULT[]     = {{"result", "result value"}};
-static const PortDesc2 P2_NEXT_RESULT[] = {{"next", "fires after completion", PortKind2::BangNext}, {"result", "result value"}};
+static const PortDesc2 P2_NEXT[] = {
+    {.name = "next", .desc = "fires after completion", .kind = PortKind2::BangNext},
+};
+static const PortDesc2 P2_RESULT[] = {
+    {.name = "result", .desc = "result value"},
+};
+static const PortDesc2 P2_NEXT_RESULT[] = {
+    {.name = "next", .desc = "fires after completion", .kind = PortKind2::BangNext},
+    {.name = "result", .desc = "result value"},
+};
 
 // Common inputs
-static const PortDesc2 P2_BANG_IN[]    = {{"bang_in", "trigger input", PortKind2::BangTrigger}};
-static const PortDesc2 P2_VALUE[]      = {{"value", "input value"}};
+static const PortDesc2 P2_BANG_IN[] = {
+    {.name = "bang_in", .desc = "trigger input", .kind = PortKind2::BangTrigger},
+};
+static const PortDesc2 P2_VALUE[] = {
+    {.name = "value", .desc = "input value"},
+};
 
-// expr! inputs
-static const PortDesc2 P2_EXPR_BANG_IN[] = {{"bang_in", "trigger input", PortKind2::BangTrigger}};
+// expr!
+static const PortDesc2 P2_EXPR_BANG_IN[] = {
+    {.name = "bang_in", .desc = "trigger input", .kind = PortKind2::BangTrigger},
+};
 
-// store! inputs: bang, target, value
+// store!
 static const PortDesc2 P2_STORE_BANG_IN[] = {
-    {"bang_in", "trigger", PortKind2::BangTrigger},
-    {"target", "variable/reference to store into"},
-    {"value", "value to store"},
+    {.name = "bang_in", .desc = "trigger", .kind = PortKind2::BangTrigger},
+    {.name = "target", .desc = "variable/reference to store into"},
+    {.name = "value", .desc = "value to store"},
 };
-
-// store (no bang) inputs: target, value
 static const PortDesc2 P2_STORE_IN[] = {
-    {"target", "variable/reference to store into"},
-    {"value", "value to store"},
+    {.name = "target", .desc = "variable/reference to store into"},
+    {.name = "value", .desc = "value to store"},
 };
 
-// append! inputs: bang, target, value
+// append!
 static const PortDesc2 P2_APPEND_BANG_IN[] = {
-    {"bang_in", "trigger", PortKind2::BangTrigger},
-    {"target", "collection to append to"},
-    {"value", "value to append"},
+    {.name = "bang_in", .desc = "trigger", .kind = PortKind2::BangTrigger},
+    {.name = "target", .desc = "collection to append to"},
+    {.name = "value", .desc = "value to append"},
 };
-
-// append (no bang) inputs: target, value
 static const PortDesc2 P2_APPEND_IN[] = {
-    {"target", "collection to append to"},
-    {"value", "value to append"},
+    {.name = "target", .desc = "collection to append to"},
+    {.name = "value", .desc = "value to append"},
 };
 
-// erase inputs
+// erase
 static const PortDesc2 P2_ERASE_BANG_IN[] = {
-    {"bang_in", "trigger", PortKind2::BangTrigger},
-    {"target", "collection to erase from"},
-    {"key", "key/value/iterator to erase"},
+    {.name = "bang_in", .desc = "trigger", .kind = PortKind2::BangTrigger},
+    {.name = "target", .desc = "collection to erase from"},
+    {.name = "key", .desc = "key/value/iterator to erase"},
 };
 static const PortDesc2 P2_ERASE_IN[] = {
-    {"target", "collection to erase from"},
-    {"key", "key/value/iterator to erase"},
+    {.name = "target", .desc = "collection to erase from"},
+    {.name = "key", .desc = "key/value/iterator to erase"},
 };
 
-// select inputs: condition, if_true, if_false
+// select
 static const PortDesc2 P2_SELECT_IN[] = {
-    {"condition", "boolean selector"},
-    {"if_true", "value when true"},
-    {"if_false", "value when false"},
+    {.name = "condition", .desc = "boolean selector"},
+    {.name = "if_true", .desc = "value when true"},
+    {.name = "if_false", .desc = "value when false"},
 };
-
-// select! inputs: bang, condition
 static const PortDesc2 P2_SELECT_BANG_IN[] = {
-    {"bang_in", "trigger", PortKind2::BangTrigger},
-    {"condition", "boolean condition"},
+    {.name = "bang_in", .desc = "trigger", .kind = PortKind2::BangTrigger},
+    {.name = "condition", .desc = "boolean condition"},
 };
-// select! outputs: next, true, false
 static const PortDesc2 P2_SELECT_BANG_OUT[] = {
-    {"next", "fires after branch completes", PortKind2::BangNext},
-    {"true", "fires when true", PortKind2::BangNext},
-    {"false", "fires when false", PortKind2::BangNext},
+    {.name = "next", .desc = "fires after branch completes", .kind = PortKind2::BangNext},
+    {.name = "true", .desc = "fires when true", .kind = PortKind2::BangNext},
+    {.name = "false", .desc = "fires when false", .kind = PortKind2::BangNext},
 };
 
 // va_args templates
-static const PortDesc2 P2_VA_FIELD = {"field", "constructor field"};
-static const PortDesc2 P2_VA_ARG   = {"arg",   "function argument"};
-static const PortDesc2 P2_VA_PARAM = {"param", "lambda parameter"};
+static const PortDesc2 P2_VA_FIELD = {.name = "field", .desc = "constructor field"};
+static const PortDesc2 P2_VA_ARG   = {.name = "arg",   .desc = "function argument"};
+static const PortDesc2 P2_VA_PARAM = {.name = "param", .desc = "lambda parameter"};
 
-// new: type as fixed input, va_args fields
+// new
 static const PortDesc2 P2_NEW_IN[] = {
-    {"type", "type to instantiate"},
+    {.name = "type", .desc = "type to instantiate"},
 };
 
-// call: function ref as fixed input, va_args arguments
+// call
 static const PortDesc2 P2_CALL_IN[] = {
-    {"fn", "function to call"},
+    {.name = "fn", .desc = "function to call"},
 };
-// call!: bang + function ref, va_args arguments
 static const PortDesc2 P2_CALL_BANG_IN[] = {
-    {"bang_in", "trigger", PortKind2::BangTrigger},
-    {"fn", "function to call"},
+    {.name = "bang_in", .desc = "trigger", .kind = PortKind2::BangTrigger},
+    {.name = "fn", .desc = "function to call"},
 };
 
-// iterate: collection + fn(lambda)
+// iterate
 static const PortDesc2 P2_ITERATE_IN[] = {
-    {"collection", "collection to iterate over"},
-    {"fn", "it=fn(it); while it!=end", PortKind2::Lambda},
+    {.name = "collection", .desc = "collection to iterate over"},
+    {.name = "fn", .desc = "it=fn(it); while it!=end", .kind = PortKind2::Lambda},
 };
 static const PortDesc2 P2_ITERATE_BANG_IN[] = {
-    {"bang_in", "trigger", PortKind2::BangTrigger},
-    {"collection", "collection to iterate over"},
-    {"fn", "it=fn(it); while it!=end", PortKind2::Lambda},
+    {.name = "bang_in", .desc = "trigger", .kind = PortKind2::BangTrigger},
+    {.name = "collection", .desc = "collection to iterate over"},
+    {.name = "fn", .desc = "it=fn(it); while it!=end", .kind = PortKind2::Lambda},
 };
 
-// lock: mutex + fn(lambda), va_args handled by NodeType2::va_args
+// lock
 static const PortDesc2 P2_LOCK_IN[] = {
-    {"mutex", "mutex to lock"},
-    {"fn", "body under lock", PortKind2::Lambda},
+    {.name = "mutex", .desc = "mutex to lock"},
+    {.name = "fn", .desc = "body under lock", .kind = PortKind2::Lambda},
 };
 static const PortDesc2 P2_LOCK_BANG_IN[] = {
-    {"bang_in", "trigger", PortKind2::BangTrigger},
-    {"mutex", "mutex to lock"},
-    {"fn", "body under lock", PortKind2::Lambda},
+    {.name = "bang_in", .desc = "trigger", .kind = PortKind2::BangTrigger},
+    {.name = "mutex", .desc = "mutex to lock"},
+    {.name = "fn", .desc = "body under lock", .kind = PortKind2::Lambda},
 };
 
-// decl inputs
+// decl
 static const PortDesc2 P2_DECL_TYPE_IN[] = {
-    {"bang_in", "trigger", PortKind2::BangTrigger},
-    {"name", "type name (symbol)"},
-    {"type", "type definition"},
+    {.name = "bang_in", .desc = "trigger", .kind = PortKind2::BangTrigger},
+    {.name = "name", .desc = "type name (symbol)"},
+    {.name = "type", .desc = "type definition"},
 };
 static const PortDesc2 P2_DECL_TYPE_OUT[] = {
-    {"next", "fires after declaration", PortKind2::BangNext},
-    {"type", "the declared type"},
+    {.name = "next", .desc = "fires after declaration", .kind = PortKind2::BangNext},
+    {.name = "type", .desc = "the declared type"},
 };
 static const PortDesc2 P2_DECL_VAR_IN[] = {
-    {"bang_in", "trigger", PortKind2::BangTrigger},
-    {"name", "variable name (symbol)"},
-    {"type", "variable type"},
-    {"initial", "variable initial value", PortKind2::Data, nullptr, true},
+    {.name = "bang_in", .desc = "trigger", .kind = PortKind2::BangTrigger},
+    {.name = "name", .desc = "variable name (symbol)"},
+    {.name = "type", .desc = "variable type"},
+};
+static const PortDesc2 P2_DECL_VAR_OPT_IN[] = {
+    {.name = "initial", .desc = "variable initial value", .optional = true},
 };
 static const PortDesc2 P2_DECL_VAR_OUT[] = {
-    {"next", "fires after declaration", PortKind2::BangNext},
-    {"ref", "reference to variable"},
+    {.name = "next", .desc = "fires after declaration", .kind = PortKind2::BangNext},
+    {.name = "ref", .desc = "reference to variable"},
 };
-static const PortDesc2 P2_DECL_OUT[] = {{"next", "fires to start declarations", PortKind2::BangNext}};
+static const PortDesc2 P2_DECL_OUT[] = {
+    {.name = "next", .desc = "fires to start declarations", .kind = PortKind2::BangNext},
+};
 static const PortDesc2 P2_DECL_EVENT_IN[] = {
-    {"bang_in", "trigger", PortKind2::BangTrigger},
-    {"name", "event name (symbol)"},
-    {"type", "event function type"},
+    {.name = "bang_in", .desc = "trigger", .kind = PortKind2::BangTrigger},
+    {.name = "name", .desc = "event name (symbol)"},
+    {.name = "type", .desc = "event function type"},
 };
 static const PortDesc2 P2_DECL_IMPORT_IN[] = {
-    {"bang_in", "trigger", PortKind2::BangTrigger},
-    {"path", "module path", PortKind2::Data, "literal<string,?>"},
+    {.name = "bang_in", .desc = "trigger", .kind = PortKind2::BangTrigger},
+    {.name = "path", .desc = "module path", .type_name = "literal<string,?>"},
 };
 static const PortDesc2 P2_FFI_IN[] = {
-    {"bang_in", "trigger", PortKind2::BangTrigger},
-    {"name", "function name (symbol)"},
-    {"type", "function type"},
+    {.name = "bang_in", .desc = "trigger", .kind = PortKind2::BangTrigger},
+    {.name = "name", .desc = "function name (symbol)"},
+    {.name = "type", .desc = "function type"},
 };
 
 // discard
 static const PortDesc2 P2_DISCARD_BANG_IN[] = {
-    {"bang_in", "trigger", PortKind2::BangTrigger},
-    {"value", "value to discard"},
+    {.name = "bang_in", .desc = "trigger", .kind = PortKind2::BangTrigger},
+    {.name = "value", .desc = "value to discard"},
 };
 
 // output_mix!
 static const PortDesc2 P2_OUTPUT_MIX_IN[] = {
-    {"bang_in", "trigger", PortKind2::BangTrigger},
-    {"value", "audio sample to mix"},
+    {.name = "bang_in", .desc = "trigger", .kind = PortKind2::BangTrigger},
+    {.name = "value", .desc = "audio sample to mix"},
 };
 
 // resize!
 static const PortDesc2 P2_RESIZE_IN[] = {
-    {"bang_in", "trigger", PortKind2::BangTrigger},
-    {"target", "vector to resize"},
-    {"size", "new size", PortKind2::Data, "s32"},
+    {.name = "bang_in", .desc = "trigger", .kind = PortKind2::BangTrigger},
+    {.name = "target", .desc = "vector to resize"},
+    {.name = "size", .desc = "new size", .type_name = "s32"},
 };
 
-
-// event! outputs
-static const PortDesc2 P2_EVENT_OUT[] = {{"next", "fires on event", PortKind2::BangNext}};
+// event!
+static const PortDesc2 P2_EVENT_OUT[] = {
+    {.name = "next", .desc = "fires on event", .kind = PortKind2::BangNext},
+};
 
 // ─── Node type table ───
 
 static const NodeType2 NODE_TYPES2[] = {
-    // expr: no fixed inputs, outputs = args count
-    {NodeTypeID::Expr,          "expr",       "Evaluate expression",
-     nullptr, 0, P2_RESULT, 1},
-
-    // select: 3 fixed inputs, 1 output
-    {NodeTypeID::Select,        "select",     "Select value by condition",
-     P2_SELECT_IN, 3, P2_RESULT, 1},
-
-    // new: type fixed input + va_args fields, 1 output
-    {NodeTypeID::New,           "new",        "Instantiate a type",
-     P2_NEW_IN, 1, P2_RESULT, 1, NodeKind2::Flow, &P2_VA_FIELD},
-
-    // dup: 1 input, 1 output
-    {NodeTypeID::Dup,           "dup",        "Duplicate input to output",
-     P2_VALUE, 1, P2_RESULT, 1},
-
-    // str: 1 input, 1 output
-    {NodeTypeID::Str,           "str",        "Convert to string",
-     P2_VALUE, 1, P2_RESULT, 1},
-
-    // void: no inputs, 1 output
-    {NodeTypeID::Void,          "void",       "Void result",
-     nullptr, 0, P2_RESULT, 1},
-
-    // discard!: bang + value, next output
-    {NodeTypeID::DiscardBang,   "discard!",   "Discard value, pass bang",
-     P2_DISCARD_BANG_IN, 2, P2_NEXT, 1, NodeKind2::Banged},
-
-    // discard: 1 input, no outputs
-    {NodeTypeID::Discard,       "discard",    "Discard input values",
-     P2_VALUE, 1, nullptr, 0},
-
-    // decl_type
-    {NodeTypeID::DeclType,      "decl_type",  "Declare a type",
-     P2_DECL_TYPE_IN, 3, P2_DECL_TYPE_OUT, 2, NodeKind2::Declaration},
-
-    // decl_var
-    {NodeTypeID::DeclVar,       "decl_var",   "Declare a variable",
-     P2_DECL_VAR_IN, 4, P2_DECL_VAR_OUT, 2, NodeKind2::Declaration},
-
-    // decl
-    {NodeTypeID::Decl,          "decl",       "Compile-time entry point",
-     nullptr, 0, P2_DECL_OUT, 1, NodeKind2::Declaration},
-
-    // decl_event
-    {NodeTypeID::DeclEvent,     "decl_event", "Declare event",
-     P2_DECL_EVENT_IN, 3, P2_NEXT, 1, NodeKind2::Declaration},
-
-    // decl_import
-    {NodeTypeID::DeclImport,    "decl_import","Import module",
-     P2_DECL_IMPORT_IN, 2, P2_NEXT, 1, NodeKind2::Declaration},
-
-    // ffi
-    {NodeTypeID::Ffi,           "ffi",        "Declare external function",
-     P2_FFI_IN, 3, P2_NEXT, 1, NodeKind2::Declaration},
-
-    // call: fn fixed input + va_args, 1 output
-    {NodeTypeID::Call,          "call",       "Call function",
-     P2_CALL_IN, 1, P2_RESULT, 1, NodeKind2::Flow, &P2_VA_ARG},
-
-    // call!: bang + fn fixed input + va_args, next + result
-    {NodeTypeID::CallBang,      "call!",      "Call function (bang)",
-     P2_CALL_BANG_IN, 2, P2_NEXT_RESULT, 2, NodeKind2::Banged, &P2_VA_ARG},
-
-    // erase: 2 inputs, 1 output
-    {NodeTypeID::Erase,         "erase",      "Erase from collection",
-     P2_ERASE_IN, 2, P2_RESULT, 1},
-
-    // output_mix!
-    {NodeTypeID::OutputMixBang, "output_mix!","Mix into audio output",
-     P2_OUTPUT_MIX_IN, 2, nullptr, 0, NodeKind2::Banged},
-
-    // append: 2 inputs, 1 output
-    {NodeTypeID::Append,        "append",     "Append to collection",
-     P2_APPEND_IN, 2, P2_RESULT, 1},
-
-    // append!: bang + 2 inputs, next + result
-    {NodeTypeID::AppendBang,    "append!",    "Append to collection (bang)",
-     P2_APPEND_BANG_IN, 3, P2_NEXT_RESULT, 2, NodeKind2::Banged},
-
-    // store: 2 inputs, no outputs
-    {NodeTypeID::Store,         "store",      "Store value",
-     P2_STORE_IN, 2, nullptr, 0},
-
-    // store!: bang + 2 inputs, next
-    {NodeTypeID::StoreBang,     "store!",     "Store value (bang)",
-     P2_STORE_BANG_IN, 3, P2_NEXT, 1, NodeKind2::Banged},
-
-    // event!: no inputs, next output
-    {NodeTypeID::EventBang,     "event!",     "Event source",
-     nullptr, 0, P2_EVENT_OUT, 1, NodeKind2::Event},
-
-    // on_key_down! — removed
-    {NodeTypeID::OnKeyDownBang, "on_key_down!","(removed)",
-     nullptr, 0, nullptr, 0},
-
-    // on_key_up! — removed
-    {NodeTypeID::OnKeyUpBang,   "on_key_up!", "(removed)",
-     nullptr, 0, nullptr, 0},
-
-    // select!: bang + condition, 3 bang outputs
-    {NodeTypeID::SelectBang,    "select!",    "Branch on condition",
-     P2_SELECT_BANG_IN, 2, P2_SELECT_BANG_OUT, 3, NodeKind2::Banged},
-
-    // expr!: bang input, next + outputs (dynamic)
-    {NodeTypeID::ExprBang,      "expr!",      "Evaluate expression on bang",
-     P2_EXPR_BANG_IN, 1, P2_NEXT, 1, NodeKind2::Banged},
-
-    // erase!: bang + 2 inputs, next + result
-    {NodeTypeID::EraseBang,     "erase!",     "Erase from collection (bang)",
-     P2_ERASE_BANG_IN, 3, P2_NEXT_RESULT, 2, NodeKind2::Banged},
-
-    // iterate: collection + fn, no outputs
-    {NodeTypeID::Iterate,       "iterate",    "Iterate collection",
-     P2_ITERATE_IN, 2, nullptr, 0},
-
-    // iterate!: bang + collection + fn, next
-    {NodeTypeID::IterateBang,   "iterate!",   "Iterate collection (bang)",
-     P2_ITERATE_BANG_IN, 3, P2_NEXT, 1, NodeKind2::Banged},
-
-    // next: 1 input, 1 output
-    {NodeTypeID::Next,          "next",       "Advance iterator",
-     P2_VALUE, 1, P2_RESULT, 1},
-
-    // lock: mutex + fn fixed inputs + va_args params, no outputs
-    {NodeTypeID::Lock,          "lock",       "Execute under mutex lock",
-     P2_LOCK_IN, 2, nullptr, 0, NodeKind2::Flow, &P2_VA_PARAM},
-
-    // lock!: bang + mutex + fn fixed inputs + va_args params, next
-    {NodeTypeID::LockBang,      "lock!",      "Execute under mutex lock (bang)",
-     P2_LOCK_BANG_IN, 3, P2_NEXT, 1, NodeKind2::Banged, &P2_VA_PARAM},
-
-    // resize!: bang + target + size, next
-    {NodeTypeID::ResizeBang,    "resize!",    "Resize vector",
-     P2_RESIZE_IN, 3, P2_NEXT, 1, NodeKind2::Banged},
-
-    // cast: 1 input, 1 output
-    {NodeTypeID::Cast,          "cast",       "Cast value to type",
-     P2_VALUE, 1, P2_RESULT, 1},
-
-    // label: no pins
-    {NodeTypeID::Label,         "label",      "Text label",
-     nullptr, 0, nullptr, 0, NodeKind2::Special},
-
-    // deref: 1 input, 1 output
-    {NodeTypeID::Deref,         "deref",      "Dereference iterator (internal)",
-     P2_VALUE, 1, P2_RESULT, 1},
-
-    // error: no pins
-    {NodeTypeID::Error,         "error",      "Error: invalid node",
-     nullptr, 0, nullptr, 0, NodeKind2::Special},
+    {
+        .type_id = NodeTypeID::Expr,
+        .name = "expr",
+        .desc = "Evaluate expression",
+        .output_ports = P2_RESULT,
+        .num_outputs = 1
+    },
+    {
+        .type_id = NodeTypeID::Select,
+        .name = "select",
+        .desc = "Select value by condition",
+        .input_ports = P2_SELECT_IN,
+        .num_inputs = 3,
+        .output_ports = P2_RESULT,
+        .num_outputs = 1
+    },
+    {
+        .type_id = NodeTypeID::New,
+        .name = "new",
+        .desc = "Instantiate a type",
+        .input_ports = P2_NEW_IN,
+        .num_inputs = 1,
+        .output_ports = P2_RESULT,
+        .num_outputs = 1,
+        .va_args = &P2_VA_FIELD
+    },
+    {
+        .type_id = NodeTypeID::Dup,
+        .name = "dup",
+        .desc = "Duplicate input to output",
+        .input_ports = P2_VALUE,
+        .num_inputs = 1,
+        .output_ports = P2_RESULT,
+        .num_outputs = 1
+    },
+    {
+        .type_id = NodeTypeID::Str,
+        .name = "str",
+        .desc = "Convert to string",
+        .input_ports = P2_VALUE,
+        .num_inputs = 1,
+        .output_ports = P2_RESULT,
+        .num_outputs = 1
+    },
+    {
+        .type_id = NodeTypeID::Void,
+        .name = "void",
+        .desc = "Void result",
+        .output_ports = P2_RESULT,
+        .num_outputs = 1
+    },
+    {
+        .type_id = NodeTypeID::DiscardBang,
+        .name = "discard!",
+        .desc = "Discard value, pass bang",
+        .input_ports = P2_DISCARD_BANG_IN,
+        .num_inputs = 2,
+        .output_ports = P2_NEXT,
+        .num_outputs = 1,
+        .kind = NodeKind2::Banged
+    },
+    {
+        .type_id = NodeTypeID::Discard,
+        .name = "discard",
+        .desc = "Discard input values",
+        .input_ports = P2_VALUE,
+        .num_inputs = 1
+    },
+    {
+        .type_id = NodeTypeID::DeclType,
+        .name = "decl_type",
+        .desc = "Declare a type",
+        .input_ports = P2_DECL_TYPE_IN,
+        .num_inputs = 3,
+        .output_ports = P2_DECL_TYPE_OUT,
+        .num_outputs = 2,
+        .kind = NodeKind2::Declaration
+    },
+    {
+        .type_id = NodeTypeID::DeclVar,
+        .name = "decl_var",
+        .desc = "Declare a variable",
+        .input_ports = P2_DECL_VAR_IN,
+        .num_inputs = 3,
+        .input_optional_ports = P2_DECL_VAR_OPT_IN,
+        .num_inputs_optional = 1,
+        .output_ports = P2_DECL_VAR_OUT,
+        .num_outputs = 2,
+        .kind = NodeKind2::Declaration
+    },
+    {
+        .type_id = NodeTypeID::Decl,
+        .name = "decl",
+        .desc = "Compile-time entry point",
+        .output_ports = P2_DECL_OUT,
+        .num_outputs = 1,
+        .kind = NodeKind2::Declaration
+    },
+    {
+        .type_id = NodeTypeID::DeclEvent,
+        .name = "decl_event",
+        .desc = "Declare event",
+        .input_ports = P2_DECL_EVENT_IN,
+        .num_inputs = 3,
+        .output_ports = P2_NEXT,
+        .num_outputs = 1,
+        .kind = NodeKind2::Declaration
+    },
+    {
+        .type_id = NodeTypeID::DeclImport,
+        .name = "decl_import",
+        .desc = "Import module",
+        .input_ports = P2_DECL_IMPORT_IN,
+        .num_inputs = 2,
+        .output_ports = P2_NEXT,
+        .num_outputs = 1,
+        .kind = NodeKind2::Declaration
+    },
+    {
+        .type_id = NodeTypeID::Ffi,
+        .name = "ffi",
+        .desc = "Declare external function",
+        .input_ports = P2_FFI_IN,
+        .num_inputs = 3,
+        .output_ports = P2_NEXT,
+        .num_outputs = 1,
+        .kind = NodeKind2::Declaration
+    },
+    {
+        .type_id = NodeTypeID::Call,
+        .name = "call",
+        .desc = "Call function",
+        .input_ports = P2_CALL_IN,
+        .num_inputs = 1,
+        .output_ports = P2_RESULT,
+        .num_outputs = 1,
+        .va_args = &P2_VA_ARG
+    },
+    {
+        .type_id = NodeTypeID::CallBang,
+        .name = "call!",
+        .desc = "Call function (bang)",
+        .input_ports = P2_CALL_BANG_IN,
+        .num_inputs = 2,
+        .output_ports = P2_NEXT_RESULT,
+        .num_outputs = 2,
+        .kind = NodeKind2::Banged,
+        .va_args = &P2_VA_ARG
+    },
+    {
+        .type_id = NodeTypeID::Erase,
+        .name = "erase",
+        .desc = "Erase from collection",
+        .input_ports = P2_ERASE_IN,
+        .num_inputs = 2,
+        .output_ports = P2_RESULT,
+        .num_outputs = 1
+    },
+    {
+        .type_id = NodeTypeID::OutputMixBang,
+        .name = "output_mix!",
+        .desc = "Mix into audio output",
+        .input_ports = P2_OUTPUT_MIX_IN,
+        .num_inputs = 2,
+        .kind = NodeKind2::Banged
+    },
+    {
+        .type_id = NodeTypeID::Append,
+        .name = "append",
+        .desc = "Append to collection",
+        .input_ports = P2_APPEND_IN,
+        .num_inputs = 2,
+        .output_ports = P2_RESULT,
+        .num_outputs = 1
+    },
+    {
+        .type_id = NodeTypeID::AppendBang,
+        .name = "append!",
+        .desc = "Append to collection (bang)",
+        .input_ports = P2_APPEND_BANG_IN,
+        .num_inputs = 3,
+        .output_ports = P2_NEXT_RESULT,
+        .num_outputs = 2,
+        .kind = NodeKind2::Banged
+    },
+    {
+        .type_id = NodeTypeID::Store,
+        .name = "store",
+        .desc = "Store value",
+        .input_ports = P2_STORE_IN,
+        .num_inputs = 2
+    },
+    {
+        .type_id = NodeTypeID::StoreBang,
+        .name = "store!",
+        .desc = "Store value (bang)",
+        .input_ports = P2_STORE_BANG_IN,
+        .num_inputs = 3,
+        .output_ports = P2_NEXT,
+        .num_outputs = 1,
+        .kind = NodeKind2::Banged
+    },
+    {
+        .type_id = NodeTypeID::EventBang,
+        .name = "event!",
+        .desc = "Event source",
+        .output_ports = P2_EVENT_OUT,
+        .num_outputs = 1,
+        .kind = NodeKind2::Event
+    },
+    {
+        .type_id = NodeTypeID::OnKeyDownBang,
+        .name = "on_key_down!",
+        .desc = "(removed)",
+        .kind = NodeKind2::Special
+    },
+    {
+        .type_id = NodeTypeID::OnKeyUpBang,
+        .name = "on_key_up!",
+        .desc = "(removed)",
+        .kind = NodeKind2::Special
+    },
+    {
+        .type_id = NodeTypeID::SelectBang,
+        .name = "select!",
+        .desc = "Branch on condition",
+        .input_ports = P2_SELECT_BANG_IN,
+        .num_inputs = 2,
+        .output_ports = P2_SELECT_BANG_OUT,
+        .num_outputs = 3,
+        .kind = NodeKind2::Banged
+    },
+    {
+        .type_id = NodeTypeID::ExprBang,
+        .name = "expr!",
+        .desc = "Evaluate expression on bang",
+        .input_ports = P2_EXPR_BANG_IN,
+        .num_inputs = 1,
+        .output_ports = P2_NEXT,
+        .num_outputs = 1,
+        .kind = NodeKind2::Banged
+    },
+    {
+        .type_id = NodeTypeID::EraseBang,
+        .name = "erase!",
+        .desc = "Erase from collection (bang)",
+        .input_ports = P2_ERASE_BANG_IN,
+        .num_inputs = 3,
+        .output_ports = P2_NEXT_RESULT,
+        .num_outputs = 2,
+        .kind = NodeKind2::Banged
+    },
+    {
+        .type_id = NodeTypeID::Iterate,
+        .name = "iterate",
+        .desc = "Iterate collection",
+        .input_ports = P2_ITERATE_IN,
+        .num_inputs = 2
+    },
+    {
+        .type_id = NodeTypeID::IterateBang,
+        .name = "iterate!",
+        .desc = "Iterate collection (bang)",
+        .input_ports = P2_ITERATE_BANG_IN,
+        .num_inputs = 3,
+        .output_ports = P2_NEXT,
+        .num_outputs = 1,
+        .kind = NodeKind2::Banged
+    },
+    {
+        .type_id = NodeTypeID::Next,
+        .name = "next",
+        .desc = "Advance iterator",
+        .input_ports = P2_VALUE,
+        .num_inputs = 1,
+        .output_ports = P2_RESULT,
+        .num_outputs = 1
+    },
+    {
+        .type_id = NodeTypeID::Lock,
+        .name = "lock",
+        .desc = "Execute under mutex lock",
+        .input_ports = P2_LOCK_IN,
+        .num_inputs = 2,
+        .va_args = &P2_VA_PARAM
+    },
+    {
+        .type_id = NodeTypeID::LockBang,
+        .name = "lock!",
+        .desc = "Execute under mutex lock (bang)",
+        .input_ports = P2_LOCK_BANG_IN,
+        .num_inputs = 3,
+        .output_ports = P2_NEXT,
+        .num_outputs = 1,
+        .kind = NodeKind2::Banged,
+        .va_args = &P2_VA_PARAM
+    },
+    {
+        .type_id = NodeTypeID::ResizeBang,
+        .name = "resize!",
+        .desc = "Resize vector",
+        .input_ports = P2_RESIZE_IN,
+        .num_inputs = 3,
+        .output_ports = P2_NEXT,
+        .num_outputs = 1,
+        .kind = NodeKind2::Banged
+    },
+    {
+        .type_id = NodeTypeID::Cast,
+        .name = "cast",
+        .desc = "Cast value to type",
+        .input_ports = P2_VALUE,
+        .num_inputs = 1,
+        .output_ports = P2_RESULT,
+        .num_outputs = 1
+    },
+    {
+        .type_id = NodeTypeID::Label,
+        .name = "label",
+        .desc = "Text label",
+        .kind = NodeKind2::Special
+    },
+    {
+        .type_id = NodeTypeID::Deref,
+        .name = "deref",
+        .desc = "Dereference iterator (internal)",
+        .input_ports = P2_VALUE,
+        .num_inputs = 1,
+        .output_ports = P2_RESULT,
+        .num_outputs = 1
+    },
+    {
+        .type_id = NodeTypeID::Error,
+        .name = "error",
+        .desc = "Error: invalid node",
+        .kind = NodeKind2::Special
+    },
 };
 
 static constexpr int NUM_NODE_TYPES2 = sizeof(NODE_TYPES2) / sizeof(NODE_TYPES2[0]);

@@ -92,9 +92,9 @@ struct PinMapping {
         }
         // Absent trailing optional ports: show as pins beyond parsed_args
         if (nt) {
-            for (int i = parsed_size; i < nt->num_inputs; i++) {
-                if (nt->input_ports[i].optional) {
-                    m.pin_to_port.push_back(-3000 - i); // sentinel for absent optional at port i
+            for (int i = parsed_size; i < nt->total_inputs(); i++) {
+                if (i >= nt->num_inputs) { // port is in the optional range
+                    m.pin_to_port.push_back(-3000 - i);
                     m.base_count++;
                 }
             }
@@ -527,14 +527,13 @@ void Editor2Pane::draw_node(ImDrawList* dl, const NodeId& id, const FlowNodeBuil
 
         if (pm.is_absent_optional(i)) {
             int port = pm.absent_port_index(i);
-            if (nt->input_ports && port < nt->num_inputs)
-                kind = nt->input_ports[port].kind;
+            if (auto* pd = nt->input_port(port)) kind = pd->kind;
             is_optional = true;
         } else if (pm.is_base(i)) {
             int port = pm.port_index(i);
-            if (nt->input_ports && port < nt->num_inputs) {
-                kind = nt->input_ports[port].kind;
-                is_optional = nt->input_ports[port].optional;
+            if (auto* pd = nt->input_port(port)) {
+                kind = pd->kind;
+                is_optional = pd->optional;
             }
         } else if (is_va) {
             kind = nt->va_args ? nt->va_args->kind : PortKind2::Data;
@@ -605,12 +604,10 @@ void Editor2Pane::draw_node(ImDrawList* dl, const NodeId& id, const FlowNodeBuil
     auto get_input_pin_name = [&](int i) -> const char* {
         if (pm.is_absent_optional(i)) {
             int port = pm.absent_port_index(i);
-            if (nt->input_ports && port < nt->num_inputs)
-                return nt->input_ports[port].name;
+            if (auto* pd = nt->input_port(port)) return pd->name;
         } else if (pm.is_base(i)) {
             int port = pm.port_index(i);
-            if (nt->input_ports && port < nt->num_inputs)
-                return nt->input_ports[port].name;
+            if (auto* pd = nt->input_port(port)) return pd->name;
         } else if (pm.is_va(i)) {
             return nt->va_args ? nt->va_args->name : "va";
         } else if (pm.is_remap(i)) {
@@ -628,10 +625,10 @@ void Editor2Pane::draw_node(ImDrawList* dl, const NodeId& id, const FlowNodeBuil
         if (pm.is_absent_optional(i)) return PinShape2::Diamond;
         if (pm.is_base(i)) {
             int port = pm.port_index(i);
-            if (nt->input_ports && port < nt->num_inputs) {
-                if (nt->input_ports[port].kind == PortKind2::BangTrigger) return PinShape2::Square;
-                if (nt->input_ports[port].kind == PortKind2::Lambda) return PinShape2::TriangleDown;
-                if (nt->input_ports[port].optional) return PinShape2::Diamond;
+            if (auto* pd = nt->input_port(port)) {
+                if (pd->kind == PortKind2::BangTrigger) return PinShape2::Square;
+                if (pd->kind == PortKind2::Lambda) return PinShape2::TriangleDown;
+                if (pd->optional) return PinShape2::Diamond;
             }
         } else if (pm.is_va(i)) {
             return PinShape2::Diamond;

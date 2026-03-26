@@ -622,9 +622,9 @@ Deserializer::ParseAttoResult Deserializer::parse_atto(std::istream& f) {
                 };
 
                 // Pass 1: fill by name matching
-                std::vector<bool> filled(new_nt->num_inputs, false);
-                for (int i = 0; i < new_nt->num_inputs; i++) {
-                    auto [found, value] = find_by_name(new_nt->input_ports[i].name);
+                std::vector<bool> filled(new_nt->total_inputs(), false);
+                for (int i = 0; i < new_nt->total_inputs(); i++) {
+                    auto [found, value] = find_by_name(new_nt->input_port(i)->name);
                     if (found) {
                         merged->push_back(std::move(value));
                         filled[i] = true;
@@ -643,8 +643,8 @@ Deserializer::ParseAttoResult Deserializer::parse_atto(std::istream& f) {
                         consumed = std::min(consumed, old_nt->inputs);
                     }
                     int arg_cursor = consumed;
-                    for (int i = 0; i < new_nt->num_inputs; i++) {
-                        if (!filled[i] && new_nt->input_ports[i].kind != PortKind2::BangTrigger) {
+                    for (int i = 0; i < new_nt->total_inputs(); i++) {
+                        if (!filled[i] && new_nt->input_port(i)->kind != PortKind2::BangTrigger) {
                             if (arg_cursor < (int)nb.parsed_args->size()) {
                                 (*merged)[i] = std::move((*nb.parsed_args)[arg_cursor++]);
                                 filled[i] = true;
@@ -676,13 +676,11 @@ Deserializer::ParseAttoResult Deserializer::parse_atto(std::istream& f) {
         }
 
         // Trim trailing $unconnected optional ports from parsed_args
+        // Optional ports are always trailing: anything beyond num_inputs is optional
         {
             auto* trim_nt = find_node_type2(nb.type_id);
             if (trim_nt && nb.parsed_args) {
-                while (!nb.parsed_args->empty()) {
-                    int idx = (int)nb.parsed_args->size() - 1;
-                    if (idx >= trim_nt->num_inputs) break;
-                    if (!trim_nt->input_ports[idx].optional) break;
+                while ((int)nb.parsed_args->size() > trim_nt->num_inputs) {
                     auto* an = std::get_if<ArgNet2>(&nb.parsed_args->back());
                     if (!an || an->first != "$unconnected") break;
                     nb.parsed_args->pop_back();
@@ -858,8 +856,8 @@ Deserializer::ParseAttoResult Deserializer::parse_atto(std::istream& f) {
         auto* nt = find_node_type2(node.type_id);
         if (!nt || !nt->va_args || !node.parsed_args) continue;
 
-        // Split at descriptor input count — inputs are merged first, then args
-        int fixed_args = nt->num_inputs;
+        // Split at total descriptor input count (required + optional)
+        int fixed_args = nt->total_inputs();
 
         if ((int)node.parsed_args->size() > fixed_args) {
             node.parsed_va_args = std::make_shared<ParsedArgs2>();
