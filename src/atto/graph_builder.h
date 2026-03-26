@@ -29,64 +29,86 @@ struct NetBuilder;
 // ─── Arg types with dirty tracking ───
 
 struct ArgNet2 {
-    ArgNet2() = default;
-    ArgNet2(NodeId id, std::shared_ptr<struct BuilderEntry> entry) : id_(std::move(id)), entry_(std::move(entry)) {}
+    friend struct GraphBuilder;
 
     const NodeId& id() const { return id_; }
-    void id(const NodeId& v, GraphBuilder* gb = nullptr);
+    void id(const NodeId& v);
 
     const std::shared_ptr<struct BuilderEntry>& entry() const { return entry_; }
-    void entry(std::shared_ptr<struct BuilderEntry> v, GraphBuilder* gb = nullptr);
+    void entry(std::shared_ptr<struct BuilderEntry> v);
 
-    // Convenience: access like old pair
+    // Convenience
     const NodeId& first() const { return id_; }
     const std::shared_ptr<struct BuilderEntry>& second() const { return entry_; }
 
+    std::shared_ptr<GraphBuilder> owner() const { return owner_; }
+
 private:
+    ArgNet2(NodeId id, std::shared_ptr<struct BuilderEntry> entry,
+            const std::shared_ptr<GraphBuilder>& owner)
+        : id_(std::move(id)), entry_(std::move(entry)), owner_(owner) {}
+
     NodeId id_;
     std::shared_ptr<struct BuilderEntry> entry_;
+    std::shared_ptr<GraphBuilder> owner_;
 };
 
 struct ArgNumber2 {
-    ArgNumber2() = default;
-    ArgNumber2(double v, bool f) : value_(v), is_float_(f) {}
+    friend struct GraphBuilder;
 
     double value() const { return value_; }
-    void value(double v, GraphBuilder* gb = nullptr);
+    void value(double v);
 
     bool is_float() const { return is_float_; }
-    void is_float(bool v, GraphBuilder* gb = nullptr);
+    void is_float(bool v);
+
+    std::shared_ptr<GraphBuilder> owner() const { return owner_; }
 
 private:
+    ArgNumber2(double v, bool f, const std::shared_ptr<GraphBuilder>& owner)
+        : value_(v), is_float_(f), owner_(owner) {}
+
     double value_ = 0;
     bool is_float_ = false;
+    std::shared_ptr<GraphBuilder> owner_;
 };
 
 struct ArgString2 {
-    ArgString2() = default;
-    ArgString2(std::string v) : value_(std::move(v)) {}
+    friend struct GraphBuilder;
 
     const std::string& value() const { return value_; }
-    void value(const std::string& v, GraphBuilder* gb = nullptr);
+    void value(const std::string& v);
+
+    std::shared_ptr<GraphBuilder> owner() const { return owner_; }
 
 private:
+    ArgString2(std::string v, const std::shared_ptr<GraphBuilder>& owner)
+        : value_(std::move(v)), owner_(owner) {}
+
     std::string value_;
+    std::shared_ptr<GraphBuilder> owner_;
 };
 
 struct ArgExpr2 {
-    ArgExpr2() = default;
-    ArgExpr2(std::string e) : expr_(std::move(e)) {}
+    friend struct GraphBuilder;
 
     const std::string& expr() const { return expr_; }
-    void expr(const std::string& v, GraphBuilder* gb = nullptr);
+    void expr(const std::string& v);
+
+    std::shared_ptr<GraphBuilder> owner() const { return owner_; }
 
 private:
+    ArgExpr2(std::string e, const std::shared_ptr<GraphBuilder>& owner)
+        : expr_(std::move(e)), owner_(owner) {}
+
     std::string expr_;
+    std::shared_ptr<GraphBuilder> owner_;
 };
 
 using FlowArg2 = std::variant<ArgNet2, ArgNumber2, ArgString2, ArgExpr2>;
+using FlowArg2Ptr = std::shared_ptr<FlowArg2>;
 
-// ─── ParsedArgs2: vector wrapper with dirty tracking ───
+// ─── ParsedArgs2: vector of shared_ptr<FlowArg2> with dirty tracking ───
 
 struct ParsedArgs2 {
     int rewrite_input_count = 0;
@@ -94,27 +116,35 @@ struct ParsedArgs2 {
     // Read access
     bool empty() const { return items_.empty(); }
     int size() const { return (int)items_.size(); }
-    FlowArg2& operator[](int i) { return items_[i]; }
-    const FlowArg2& operator[](int i) const { return items_[i]; }
-    auto begin() { return items_.begin(); }
-    auto end() { return items_.end(); }
-    auto begin() const { return items_.begin(); }
-    auto end() const { return items_.end(); }
-    FlowArg2& back() { return items_.back(); }
-    const FlowArg2& back() const { return items_.back(); }
+    FlowArg2Ptr at(int i) { return items_[i]; }
+    FlowArg2Ptr at(int i) const { return items_[i]; }
+    FlowArg2& operator[](int i) { return *items_[i]; }
+    const FlowArg2& operator[](int i) const { return *items_[i]; }
+
+    using iterator = std::vector<FlowArg2Ptr>::iterator;
+    using const_iterator = std::vector<FlowArg2Ptr>::const_iterator;
+    iterator begin() { return items_.begin(); }
+    iterator end() { return items_.end(); }
+    const_iterator begin() const { return items_.begin(); }
+    const_iterator end() const { return items_.end(); }
+    FlowArg2Ptr back() { return items_.back(); }
+    FlowArg2Ptr back() const { return items_.back(); }
 
     // Write access (marks dirty)
-    void push_back(FlowArg2 arg);
+    void push_back(FlowArg2Ptr arg);
     void pop_back();
     void resize(int n);
-    void insert(typename std::vector<FlowArg2>::iterator pos, FlowArg2 arg);
+    void insert(iterator pos, FlowArg2Ptr arg);
     void clear();
+
+    // Set item at index (marks dirty)
+    void set(int i, FlowArg2Ptr arg);
 
     // Owner
     std::shared_ptr<GraphBuilder> owner;
 
 private:
-    std::vector<FlowArg2> items_;
+    std::vector<FlowArg2Ptr> items_;
 };
 
 // ─── BuilderEntry base ───
@@ -225,12 +255,21 @@ struct GraphBuilder : std::enable_shared_from_this<GraphBuilder> {
     // Rename an entry (node or net). Returns false if new_id already exists.
     bool rename(const BuilderEntryPtr& entry, const NodeId& new_id);
 
+    // Arg factories — all pins are tracked in pins_
+    FlowArg2Ptr build_arg_net(NodeId id, BuilderEntryPtr entry);
+    FlowArg2Ptr build_arg_number(double value, bool is_float);
+    FlowArg2Ptr build_arg_string(std::string value);
+    FlowArg2Ptr build_arg_expr(std::string expr);
+
+    const std::vector<FlowArg2Ptr>& pins() const { return pins_; }
+
     // Dirty tracking
     void mark_dirty() { dirty_ = true; }
     bool is_dirty() { return dirty_; }
 
 private:
     bool dirty_ = false;
+    std::vector<FlowArg2Ptr> pins_;
 };
 
 // ─── Parse/reconstruct helpers ───

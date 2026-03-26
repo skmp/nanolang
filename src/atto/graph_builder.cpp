@@ -62,20 +62,25 @@ static std::vector<std::string> parse_toml_array(const std::string& val) {
 static void maybe_dirty(GraphBuilder* gb) { if (gb) gb->mark_dirty(); }
 static void maybe_dirty(const std::shared_ptr<GraphBuilder>& gb) { if (gb) gb->mark_dirty(); }
 
-void ArgNet2::id(const NodeId& v, GraphBuilder* gb)     { id_ = v; maybe_dirty(gb); }
-void ArgNet2::entry(std::shared_ptr<BuilderEntry> v, GraphBuilder* gb) { entry_ = std::move(v); maybe_dirty(gb); }
-void ArgNumber2::value(double v, GraphBuilder* gb)       { value_ = v; maybe_dirty(gb); }
-void ArgNumber2::is_float(bool v, GraphBuilder* gb)      { is_float_ = v; maybe_dirty(gb); }
-void ArgString2::value(const std::string& v, GraphBuilder* gb) { value_ = v; maybe_dirty(gb); }
-void ArgExpr2::expr(const std::string& v, GraphBuilder* gb)    { expr_ = v; maybe_dirty(gb); }
+void ArgNet2::id(const NodeId& v)     { id_ = v; maybe_dirty(owner_); }
+void ArgNet2::entry(std::shared_ptr<BuilderEntry> v) { entry_ = std::move(v); maybe_dirty(owner_); }
+void ArgNumber2::value(double v)       { value_ = v; maybe_dirty(owner_); }
+void ArgNumber2::is_float(bool v)      { is_float_ = v; maybe_dirty(owner_); }
+void ArgString2::value(const std::string& v) { value_ = v; maybe_dirty(owner_); }
+void ArgExpr2::expr(const std::string& v)    { expr_ = v; maybe_dirty(owner_); }
 
 // ─── ParsedArgs2 ───
 
-void ParsedArgs2::push_back(FlowArg2 arg)  { items_.push_back(std::move(arg)); maybe_dirty(owner); }
-void ParsedArgs2::pop_back()               { items_.pop_back(); maybe_dirty(owner); }
-void ParsedArgs2::resize(int n)            { items_.resize(n); maybe_dirty(owner); }
-void ParsedArgs2::insert(std::vector<FlowArg2>::iterator pos, FlowArg2 arg) { items_.insert(pos, std::move(arg)); maybe_dirty(owner); }
-void ParsedArgs2::clear()                  { items_.clear(); maybe_dirty(owner); }
+void ParsedArgs2::push_back(FlowArg2Ptr arg) { items_.push_back(std::move(arg)); maybe_dirty(owner); }
+void ParsedArgs2::pop_back()                 { items_.pop_back(); maybe_dirty(owner); }
+void ParsedArgs2::resize(int n) {
+    while ((int)items_.size() < n) items_.push_back(std::make_shared<FlowArg2>());
+    items_.resize(n);
+    maybe_dirty(owner);
+}
+void ParsedArgs2::insert(iterator pos, FlowArg2Ptr arg) { items_.insert(pos, std::move(arg)); maybe_dirty(owner); }
+void ParsedArgs2::clear()                    { items_.clear(); maybe_dirty(owner); }
+void ParsedArgs2::set(int i, FlowArg2Ptr arg) { items_[i] = std::move(arg); maybe_dirty(owner); }
 
 // ─── BuilderEntry ───
 
@@ -305,6 +310,27 @@ bool GraphBuilder::rename(const BuilderEntryPtr& entry, const NodeId& new_id) {
     return true;
 }
 
+FlowArg2Ptr GraphBuilder::build_arg_net(NodeId id, BuilderEntryPtr entry) {
+    auto p = std::make_shared<FlowArg2>(ArgNet2{std::move(id), std::move(entry), shared_from_this()});
+    pins_.push_back(p);
+    return p;
+}
+FlowArg2Ptr GraphBuilder::build_arg_number(double value, bool is_float) {
+    auto p = std::make_shared<FlowArg2>(ArgNumber2{value, is_float, shared_from_this()});
+    pins_.push_back(p);
+    return p;
+}
+FlowArg2Ptr GraphBuilder::build_arg_string(std::string value) {
+    auto p = std::make_shared<FlowArg2>(ArgString2{std::move(value), shared_from_this()});
+    pins_.push_back(p);
+    return p;
+}
+FlowArg2Ptr GraphBuilder::build_arg_expr(std::string expr) {
+    auto p = std::make_shared<FlowArg2>(ArgExpr2{std::move(expr), shared_from_this()});
+    pins_.push_back(p);
+    return p;
+}
+
 // ─── Deserializer ───
 
 BuilderResult Deserializer::parse_node(
@@ -324,7 +350,7 @@ BuilderResult Deserializer::parse_node(
         if (args.size() != 1)
             throw std::invalid_argument("Label/Error node requires exactly 1 argument, got " + std::to_string(args.size()));
         nb.parsed_args = std::make_shared<ParsedArgs2>();
-        nb.parsed_args->push_back(ArgString2{args[0]});
+        nb.parsed_args->push_back(std::make_shared<FlowArg2>(ArgString2{args[0]}));
         return std::pair{id, std::move(nb)};
     }
 
@@ -362,7 +388,7 @@ FlowNodeBuilder& Deserializer::parse_or_error(
     auto entry = std::make_shared<FlowNodeBuilder>(gb);
     entry->type_id = NodeTypeID::Error;
     entry->parsed_args = std::make_shared<ParsedArgs2>();
-    entry->parsed_args->push_back(ArgString2{type + " " + args_joined});
+    entry->parsed_args->push_back(std::make_shared<FlowArg2>(ArgString2{type + " " + args_joined}));
     entry->error = error_msg;
     entry->id(id);
     gb->entries[id] = entry;
@@ -675,7 +701,7 @@ Deserializer::ParseAttoResult Deserializer::parse_atto(std::istream& f) {
                     for (int i = 0; i < new_nt->total_inputs(); i++) {
                         if (!filled[i] && new_nt->input_port(i)->kind != PortKind2::BangTrigger) {
                             if (arg_cursor < (int)nb.parsed_args->size()) {
-                                (*merged)[i] = std::move((*nb.parsed_args)[arg_cursor++]);
+                                merged->set(i, std::move((*nb.parsed_args)[arg_cursor++]));
                                 filled[i] = true;
                             }
                         }
@@ -823,7 +849,7 @@ Deserializer::ParseAttoResult Deserializer::parse_atto(std::istream& f) {
             // Fallback: try positional insertion (for nodes without merged inputs)
             if (!replaced) {
                 while ((int)parent_ptr->parsed_args->size() <= arg_index)
-                    parent_ptr->parsed_args->push_back(ArgString2{""});
+                    parent_ptr->parsed_args->push_back(std::make_shared<FlowArg2>(ArgString2{""}));
                 (*parent_ptr->parsed_args)[arg_index] = (*shadow_ptr->parsed_args)[0];
             }
         }
