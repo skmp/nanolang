@@ -77,6 +77,8 @@ if(ATTOLANG_BUILD_EDITOR)
         src/attoflow/editor.cpp
         src/attoflow/editor2.cpp
         src/attoflow/node_renderer.cpp
+        src/attoflow/tooltip_renderer.cpp
+        src/attoflow/editor_style.cpp
     )
     target_include_directories(attoflow PRIVATE
         ${CMAKE_CURRENT_SOURCE_DIR}/src

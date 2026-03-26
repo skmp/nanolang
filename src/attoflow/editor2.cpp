@@ -1,5 +1,6 @@
 #include "editor2.h"
 #include "node_renderer.h"
+#include "tooltip_renderer.h"
 #include "atto/graph_builder.h"
 #include "atto/node_types2.h"
 #include "imgui.h"
@@ -471,15 +472,7 @@ void Editor2Pane::draw_hover_effects(ImDrawList* dl, ImVec2 canvas_origin, const
         if (draw_tooltips_) {
             for (auto& w : cached_wires_) {
                 if (w.entry() == hover_entry) {
-                    ImGui::BeginTooltip();
-                    ImGui::SetWindowFontScale(S.tooltip_scale);
-                    if (w.is_lambda())
-                        ImGui::Text("lambda: %s", w.src_id.c_str());
-                    else
-                        ImGui::Text("net: %s", w.net_id.c_str());
-                    ImGui::Text("src: %s", w.src_id.c_str());
-                    ImGui::Text("dst: %s", w.dst_id.c_str());
-                    ImGui::EndTooltip();
+                    tooltip_wire(w);
                     break;
                 }
             }

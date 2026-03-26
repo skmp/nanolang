@@ -1,10 +1,7 @@
 #include "node_renderer.h"
+#include "tooltip_renderer.h"
 #include <cmath>
 #include <algorithm>
-
-// ─── Style (global instance) ───
-
-Editor2Style S;
 
 // ─── Geometry helpers ───
 
@@ -310,12 +307,8 @@ void render_node(ImDrawList* dl, const FlowNodeBuilderPtr& node, const NodeType2
         for (int i = 0; i < (int)vpm.inputs.size(); i++) {
             if (vpm.inputs[i].kind == VisualPinKind::AddDiamond) {
                 draw_highlight(layout.input_pin_pos(i), PinShape::Diamond);
-                if (draw_tooltips) {
-                    ImGui::BeginTooltip();
-                    ImGui::SetWindowFontScale(S.tooltip_scale);
-                    ImGui::Text("add %s", state.add_pin_hover->va_port ? state.add_pin_hover->va_port->name : "arg");
-                    ImGui::EndTooltip();
-                }
+                if (draw_tooltips)
+                    tooltip_add_diamond(*state.add_pin_hover);
                 return;
             }
         }
@@ -328,15 +321,8 @@ void render_node(ImDrawList* dl, const FlowNodeBuilderPtr& node, const NodeType2
             if (pin.kind == VisualPinKind::AddDiamond || pin.kind == VisualPinKind::AbsentOptional) continue;
             if (pin.arg == state.hovered_pin) {
                 draw_highlight(layout.input_pin_pos(i), pin_shape_for(pin));
-                if (draw_tooltips) {
-                    ImGui::BeginTooltip();
-                    ImGui::SetWindowFontScale(S.tooltip_scale);
-                    if (pin.arg->port())
-                        ImGui::Text("%s", pin.arg->name().c_str());
-                    else if (pin.kind == VisualPinKind::Remap)
-                        ImGui::Text("$%d", pin.arg->remap_idx());
-                    ImGui::EndTooltip();
-                }
+                if (draw_tooltips)
+                    tooltip_input_pin(pin);
                 return;
             }
         }
@@ -345,63 +331,23 @@ void render_node(ImDrawList* dl, const FlowNodeBuilderPtr& node, const NodeType2
             auto& pin = vpm.outputs[i];
             if (pin.arg == state.hovered_pin) {
                 draw_highlight(layout.output_pin_pos(i), pin_shape_for(pin));
-                if (draw_tooltips) {
-                    ImGui::BeginTooltip();
-                    ImGui::SetWindowFontScale(S.tooltip_scale);
-                    if (pin.arg->port())
-                        ImGui::Text("%s", pin.arg->name().c_str());
-                    else
-                        ImGui::Text("out%d", i);
-                    ImGui::EndTooltip();
-                }
+                if (draw_tooltips)
+                    tooltip_output_pin(pin, i);
                 return;
             }
         }
         // Side-bang
         if (vpm.has_side_bang && vpm.side_bang_arg == state.hovered_pin) {
             draw_highlight(layout.side_bang_pos(), PinShape::Square);
-            if (draw_tooltips) {
-                ImGui::BeginTooltip();
-                ImGui::SetWindowFontScale(S.tooltip_scale);
-                ImGui::Text("post_bang");
-                ImGui::EndTooltip();
-            }
+            if (draw_tooltips)
+                tooltip_side_bang();
             return;
         }
     }
 
     // Node body tooltip
-    if (state.node_hovered && draw_tooltips) {
-        ImGui::BeginTooltip();
-        ImGui::SetWindowFontScale(S.tooltip_scale);
-        ImGui::Text("id: %s", node->id().c_str());
-        auto show_args = [](const char* label, const ParsedArgs2* pa) {
-            if (!pa) return;
-            ImGui::Text("%s (%d):", label, pa->size());
-            for (int i = 0; i < pa->size(); i++) {
-                auto a = (*pa)[i];
-                if (auto n = a->as_net())
-                    ImGui::Text("  [%d] net: %s", i, n->first().c_str());
-                else if (auto e = a->as_expr())
-                    ImGui::Text("  [%d] expr: %s", i, e->expr().c_str());
-                else if (auto s = a->as_string())
-                    ImGui::Text("  [%d] str: %s", i, s->value().c_str());
-                else if (auto v = a->as_number())
-                    ImGui::Text("  [%d] num: %g", i, v->value());
-            }
-        };
-        show_args("parsed_args", node->parsed_args.get());
-        if (node->parsed_va_args && !node->parsed_va_args->empty())
-            show_args("parsed_va_args", node->parsed_va_args.get());
-        if (!node->remaps.empty()) {
-            ImGui::Text("remaps (%d):", (int)node->remaps.size());
-            for (int i = 0; i < (int)node->remaps.size(); i++) {
-                if (auto n = node->remaps[i]->as_net())
-                    ImGui::Text("  $%d -> %s", i, n->first().c_str());
-            }
-        }
-        ImGui::EndTooltip();
-    }
+    if (state.node_hovered && draw_tooltips)
+        tooltip_node_body(node);
 }
 
 // ─── Wire rendering ───

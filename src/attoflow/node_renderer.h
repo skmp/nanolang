@@ -1,4 +1,5 @@
 #pragma once
+#include "editor_style.h"
 #include "atto/graph_builder.h"
 #include "atto/node_types2.h"
 #include "imgui.h"
@@ -6,58 +7,6 @@
 #include <memory>
 #include <vector>
 #include <variant>
-
-// ─── Style ───
-
-struct Editor2Style {
-    float node_min_width  = 80.0f;
-    float node_height     = 40.0f;
-    float pin_radius      = 5.0f;
-    float pin_spacing     = 16.0f;
-    float node_rounding   = 4.0f;
-    float grid_step       = 20.0f;
-
-    float wire_thickness      = 2.5f;
-    float node_border         = 1.0f;
-    float highlight_offset    = 2.0f;
-    float highlight_thickness = 2.0f;
-    float add_pin_line        = 1.5f;
-
-    float pin_hit_radius_mul = 2.5f;
-    float wire_hit_threshold = 30.0f;
-    float node_hit_threshold_mul = 6.f;
-    float dismiss_radius = 20.0f;
-    float pin_priority_bias = 1e6f;
-
-    ImU32 col_bg          = IM_COL32(30, 30, 40, 255);
-    ImU32 col_grid        = IM_COL32(50, 50, 60, 255);
-
-    ImU32 col_node        = IM_COL32(50, 55, 75, 220);
-    ImU32 col_node_sel    = IM_COL32(80, 90, 130, 255);
-    ImU32 col_node_err    = IM_COL32(130, 40, 40, 220);
-    ImU32 col_node_border = IM_COL32(80, 80, 100, 255);
-    ImU32 col_err_border  = IM_COL32(255, 80, 80, 255);
-    ImU32 col_text        = IM_COL32(220, 220, 220, 255);
-
-    ImU32 col_pin_data    = IM_COL32(100, 200, 100, 255);
-    ImU32 col_pin_bang    = IM_COL32(255, 200, 80, 255);
-    ImU32 col_pin_lambda  = IM_COL32(180, 130, 255, 255);
-    ImU32 col_pin_hover   = IM_COL32(255, 255, 255, 255);
-    ImU32 col_add_pin     = IM_COL32(120, 120, 140, 180);
-    ImU32 col_add_pin_fg  = IM_COL32(200, 200, 220, 220);
-    ImU32 col_opt_pin_fg  = IM_COL32(30, 30, 40, 255);
-
-    ImU32 col_wire        = IM_COL32(200, 200, 100, 200);
-    ImU32 col_wire_named  = IM_COL32(200, 200, 100, 120);
-    ImU32 col_wire_lambda = IM_COL32(180, 130, 255, 200);
-
-    ImU32 col_label_bg    = IM_COL32(30, 30, 40, 200);
-    ImU32 col_label_text  = IM_COL32(180, 220, 255, 255);
-
-    float tooltip_scale   = 1.0f;
-};
-
-extern Editor2Style S;
 
 // ─── Vector helpers ───
 
