@@ -224,7 +224,7 @@ struct GraphBuilder : std::enable_shared_from_this<GraphBuilder> {
 
     // Dirty tracking
     void mark_dirty() { dirty_ = true; }
-    bool was_dirty() { bool d = dirty_; dirty_ = false; return d; }
+    bool is_dirty() { return dirty_; }
 
 private:
     bool dirty_ = false;
