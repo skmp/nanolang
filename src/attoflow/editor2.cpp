@@ -30,6 +30,7 @@ static struct {
     // Hit testing
     float pin_hit_radius_mul = 2.5f;
     float wire_hit_threshold = 60.0f;
+    float dismiss_radius = 20.0f;  // click within this of empty space/wire dismisses selection
 
     // Canvas colors
     ImU32 col_bg          = IM_COL32(30, 30, 40, 255);
@@ -437,88 +438,92 @@ void Editor2Pane::draw() {
 
     dl->PopClipRect();
 
-    // ─── Node dragging with left mouse ───
+    // ─── Selection + dragging with left mouse ───
     if (canvas_hovered && ImGui::IsMouseClicked(ImGuiMouseButton_Left)) {
-        // Hit test: find node under mouse
         ImVec2 mouse = ImGui::GetIO().MousePos;
-        dragging_node_.clear();
-        // Iterate in reverse so topmost (last drawn) is hit first
+
+        // Hit test: find node under mouse (reverse order = topmost first)
+        FlowNodeBuilderPtr hit_node = nullptr;
         for (auto it = gb_->entries.rbegin(); it != gb_->entries.rend(); ++it) {
             auto node = it->second->as_Node();
             if (!node) continue;
             auto layout = compute_node_layout(node, canvas_origin, canvas_zoom_);
             if (mouse.x >= layout.pos.x && mouse.x <= layout.pos.x + layout.width &&
                 mouse.y >= layout.pos.y && mouse.y <= layout.pos.y + layout.height) {
-                dragging_node_ = it->first;
-                selected_nodes_.clear();
-                selected_nodes_.insert(dragging_node_);
-                dragging_started_ = true;
-                // Check if already overlapping at drag start
-                drag_was_overlapping_ = false;
-                {
-                    auto dl2 = compute_node_layout(node, {0,0}, 1.0f);
-                    float pad = S.node_height * 0.5f;
-                    for (auto& [oid, oe] : gb_->entries) {
-                        if (oid == dragging_node_) continue;
-                        auto on = oe->as_Node();
-                        if (!on) continue;
-                        auto ol = compute_node_layout(on, {0,0}, 1.0f);
-                        if (node->position.x < on->position.x - pad + ol.width + pad * 2 &&
-                            node->position.x + dl2.width > on->position.x - pad &&
-                            node->position.y < on->position.y - pad + ol.height + pad * 2 &&
-                            node->position.y + dl2.height > on->position.y - pad) {
-                            drag_was_overlapping_ = true;
-                            break;
-                        }
-                    }
-                }
+                hit_node = node;
                 break;
             }
         }
-        if (dragging_node_.empty()) {
+
+        if (hit_node) {
+            // If node is not already in selection, replace selection with just this node
+            if (!selected_nodes_.count(hit_node)) {
+                selected_nodes_.clear();
+                selected_nodes_.insert(hit_node);
+            }
+            dragging_started_ = true;
+
+            // Check if any selected node is already overlapping at drag start
+            drag_was_overlapping_ = false;
+            float pad = S.node_height * 0.5f;
+            for (auto& sel : selected_nodes_) {
+                auto sel_layout = compute_node_layout(sel, {0,0}, 1.0f);
+                for (auto& [oid, oe] : gb_->entries) {
+                    auto on = oe->as_Node();
+                    if (!on || selected_nodes_.count(on)) continue;
+                    auto ol = compute_node_layout(on, {0,0}, 1.0f);
+                    if (sel->position.x < on->position.x - pad + ol.width + pad * 2 &&
+                        sel->position.x + sel_layout.width > on->position.x - pad &&
+                        sel->position.y < on->position.y - pad + ol.height + pad * 2 &&
+                        sel->position.y + sel_layout.height > on->position.y - pad) {
+                        drag_was_overlapping_ = true;
+                        break;
+                    }
+                }
+                if (drag_was_overlapping_) break;
+            }
+        } else {
+            // Clicked on empty space or wire — dismiss selection
             selected_nodes_.clear();
         }
     }
-    if (dragging_started_ && ImGui::IsMouseDragging(ImGuiMouseButton_Left) && !dragging_node_.empty()) {
-        auto it = gb_->entries.find(dragging_node_);
-        auto drag_node = (it != gb_->entries.end()) ? it->second->as_Node() : nullptr;
-        if (drag_node) {
-            ImVec2 delta = ImGui::GetIO().MouseDelta;
-            float new_x = drag_node->position.x + delta.x / canvas_zoom_;
-            float new_y = drag_node->position.y + delta.y / canvas_zoom_;
 
-            // Compute proposed layout
-            auto proposed = compute_node_layout(drag_node, {0,0}, 1.0f);
-            float pw = proposed.width;
-            float ph = proposed.height;
+    // Drag all selected nodes
+    if (dragging_started_ && ImGui::IsMouseDragging(ImGuiMouseButton_Left) && !selected_nodes_.empty()) {
+        ImVec2 delta = ImGui::GetIO().MouseDelta;
+        float dx = delta.x / canvas_zoom_;
+        float dy = delta.y / canvas_zoom_;
 
-            // Check overlap with all other nodes (0.5em padding)
-            // If the node was already overlapping at drag start, allow free movement
-            bool blocked = false;
-            if (!drag_was_overlapping_) {
-                float pad = S.node_height * 0.5f;
-                for (auto& [other_id, other_entry] : gb_->entries) {
-                    if (other_id == dragging_node_) continue;
-                    auto other_node = other_entry->as_Node();
-                    if (!other_node) continue;
-                    auto other_layout = compute_node_layout(other_node, {0,0}, 1.0f);
-                    float ox = other_node->position.x - pad, oy = other_node->position.y - pad;
-                    float ow = other_layout.width + pad * 2, oh = other_layout.height + pad * 2;
-                    if (new_x < ox + ow && new_x + pw > ox &&
-                        new_y < oy + oh && new_y + ph > oy) {
+        // Check overlap for all selected nodes against all non-selected nodes
+        bool blocked = false;
+        if (!drag_was_overlapping_) {
+            float pad = S.node_height * 0.5f;
+            for (auto& sel : selected_nodes_) {
+                auto sel_layout = compute_node_layout(sel, {0,0}, 1.0f);
+                float nx = sel->position.x + dx, ny = sel->position.y + dy;
+                for (auto& [oid, oe] : gb_->entries) {
+                    auto on = oe->as_Node();
+                    if (!on || selected_nodes_.count(on)) continue;
+                    auto ol = compute_node_layout(on, {0,0}, 1.0f);
+                    float ox = on->position.x - pad, oy = on->position.y - pad;
+                    float ow = ol.width + pad * 2, oh = ol.height + pad * 2;
+                    if (nx < ox + ow && nx + sel_layout.width > ox &&
+                        ny < oy + oh && ny + sel_layout.height > oy) {
                         blocked = true;
                         break;
                     }
                 }
+                if (blocked) break;
             }
-            if (!blocked) {
-                drag_node->position.x = new_x;
-                drag_node->position.y = new_y;
+        }
+        if (!blocked) {
+            for (auto& sel : selected_nodes_) {
+                sel->position.x += dx;
+                sel->position.y += dy;
             }
         }
     }
     if (ImGui::IsMouseReleased(ImGuiMouseButton_Left)) {
-        dragging_node_.clear();
         dragging_started_ = false;
     }
 
@@ -595,7 +600,7 @@ void Editor2Pane::draw_node(ImDrawList* dl, const FlowNodeBuilderPtr& node,
     std::string args = node->args_str();
     if (!args.empty()) display += " " + args;
 
-    bool selected = selected_nodes_.count(node->id());
+    bool selected = selected_nodes_.count(node);
     bool has_error = !node->error.empty();
 
     ImU32 col = has_error ? S.col_node_err : (selected ? S.col_node_sel : S.col_node);
