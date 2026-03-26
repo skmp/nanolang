@@ -1442,10 +1442,12 @@ Deserializer::ParseAttoResult Deserializer::parse_atto(std::istream& f) {
             for (auto& o : node_p->outputs_va_args) if (auto n = o->as_net()) n->net_id(remap_id(n->first()));
         }
 
-        // Rebuild entries map with new keys
+        // Rebuild entries map with new keys and update entry IDs
         std::map<NodeId, BuilderEntryPtr> new_entries;
         for (auto& [id, entry] : gb->entries) {
-            new_entries[remap_id(id)] = std::move(entry);
+            auto new_id = remap_id(id);
+            entry->id(new_id);
+            new_entries[new_id] = std::move(entry);
         }
         gb->entries = std::move(new_entries);
     }
