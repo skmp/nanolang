@@ -67,6 +67,57 @@ static inline ImVec2 v2add(ImVec2 a, ImVec2 b) { return {a.x + b.x, a.y + b.y}; 
 static inline ImVec2 v2sub(ImVec2 a, ImVec2 b) { return {a.x - b.x, a.y - b.y}; }
 static inline ImVec2 v2mul(ImVec2 a, float s) { return {a.x * s, a.y * s}; }
 
+// Maps visible pin index → descriptor port index for input pins
+// Sections: base_args ArgNet2, va_args ArgNet2, [+diamond], remaps
+struct PinMapping {
+    std::vector<int> pin_to_port;   // visible pin idx → port index in parsed_args/descriptor
+    int base_count = 0;             // visible base pins (ArgNet2 in parsed_args)
+    int va_count = 0;               // visible va_args pins (ArgNet2 in parsed_va_args)
+    int add_pin_pos = -1;           // position of +diamond (-1 if none)
+    bool has_va = false;
+
+    static PinMapping build(const FlowNodeBuilder& node, const NodeType2* nt) {
+        PinMapping m;
+        m.has_va = nt && nt->va_args != nullptr;
+        // Base args: track which parsed_args indices are ArgNet2
+        if (node.parsed_args) {
+            for (int i = 0; i < (int)node.parsed_args->size(); i++) {
+                if (std::holds_alternative<ArgNet2>((*node.parsed_args)[i])) {
+                    m.pin_to_port.push_back(i);
+                    m.base_count++;
+                }
+            }
+        }
+        // Va_args
+        if (node.parsed_va_args) {
+            for (int i = 0; i < (int)node.parsed_va_args->size(); i++) {
+                if (std::holds_alternative<ArgNet2>((*node.parsed_va_args)[i])) {
+                    m.pin_to_port.push_back(-(i + 1)); // negative = va_args index (1-based)
+                    m.va_count++;
+                }
+            }
+        }
+        // +diamond slot
+        if (m.has_va) {
+            m.add_pin_pos = (int)m.pin_to_port.size();
+            m.pin_to_port.push_back(-1000); // sentinel for +diamond
+        }
+        // Remaps
+        for (int i = 0; i < (int)node.remaps.size(); i++) {
+            m.pin_to_port.push_back(-2000 - i); // sentinel for remap i
+        }
+        return m;
+    }
+
+    int total() const { return (int)pin_to_port.size(); }
+    bool is_base(int pin) const { return pin < base_count; }
+    bool is_va(int pin) const { return pin >= base_count && pin < base_count + va_count; }
+    bool is_add_diamond(int pin) const { return pin == add_pin_pos; }
+    bool is_remap(int pin) const { return pin >= base_count + va_count + (has_va ? 1 : 0); }
+    int port_index(int pin) const { return pin_to_port[pin]; }
+    int remap_index(int pin) const { return -(pin_to_port[pin] + 2000); }
+};
+
 // Computed node layout for drawing
 struct NodeLayout {
     ImVec2 pos;      // top-left screen position
@@ -97,17 +148,8 @@ static NodeLayout compute_node_layout(const FlowNodeBuilder& node, ImVec2 canvas
     ImVec2 text_sz = ImGui::CalcTextSize(display.c_str());
     float text_w = text_sz.x * zoom + 16.0f * zoom;
 
-    auto count_net_args = [](const ParsedArgs2* pa) -> int {
-        if (!pa) return 0;
-        int n = 0;
-        for (auto& a : *pa) if (std::holds_alternative<ArgNet2>(a)) n++;
-        return n;
-    };
-    bool has_va = nt && nt->va_args != nullptr;
-    int num_in = count_net_args(node.parsed_args.get())
-               + count_net_args(node.parsed_va_args.get())
-               + (has_va ? 1 : 0)  // +1 for the "add more" diamond
-               + (int)node.remaps.size();
+    auto pm = PinMapping::build(node, nt);
+    int num_in = pm.total();
     int num_out = nt ? nt->num_outputs : 1;
     if (node.type_id == NodeTypeID::Expr || node.type_id == NodeTypeID::ExprBang) {
         int args_count = node.parsed_args ? (int)node.parsed_args->size() : 0;
@@ -293,31 +335,27 @@ void Editor2Pane::draw() {
             }
         };
 
-        // Helper: iterate ArgNet2 entries and draw wires, returns pin count used
-        auto draw_wires_from_args = [&](const ParsedArgs2* pa, int pin_start) -> int {
-            if (!pa) return 0;
-            int pin = pin_start;
-            for (auto& a : *pa) {
-                if (auto* an = std::get_if<ArgNet2>(&a)) {
-                    draw_wire_to_pin(pin++, an->second, an->first);
+        // Draw wires using PinMapping for correct pin positions
+        auto dst_pm = PinMapping::build(dst_node, dst_nt);
+        for (int i = 0; i < dst_pm.total(); i++) {
+            if (dst_pm.is_add_diamond(i)) continue;
+            if (dst_pm.is_base(i)) {
+                int port = dst_pm.port_index(i);
+                if (dst_node.parsed_args && port < (int)dst_node.parsed_args->size()) {
+                    if (auto* an = std::get_if<ArgNet2>(&(*dst_node.parsed_args)[port]))
+                        draw_wire_to_pin(i, an->second, an->first);
                 }
+            } else if (dst_pm.is_va(i)) {
+                int va_idx = -(dst_pm.port_index(i) + 1);
+                if (dst_node.parsed_va_args && va_idx < (int)dst_node.parsed_va_args->size()) {
+                    if (auto* an = std::get_if<ArgNet2>(&(*dst_node.parsed_va_args)[va_idx]))
+                        draw_wire_to_pin(i, an->second, an->first);
+                }
+            } else if (dst_pm.is_remap(i)) {
+                int ri = dst_pm.remap_index(i);
+                if (ri < (int)dst_node.remaps.size())
+                    draw_wire_to_pin(i, dst_node.remaps[ri].second, dst_node.remaps[ri].first);
             }
-            return pin - pin_start;
-        };
-
-        // Base args → va_args → remaps
-        int pin = 0;
-        pin += draw_wires_from_args(dst_node.parsed_args.get(), pin);
-        pin += draw_wires_from_args(dst_node.parsed_va_args.get(), pin);
-
-        // Skip +diamond slot if node has va_args
-        auto* dst_nt2 = find_node_type2(dst_node.type_id);
-        if (dst_nt2 && dst_nt2->va_args) pin++;
-
-        // Remaps: $N pins (appended after base + va_args + add-diamond)
-        for (int i = 0; i < (int)dst_node.remaps.size(); i++) {
-            auto& remap = dst_node.remaps[i];
-            draw_wire_to_pin(pin + i, remap.second, remap.first);
         }
     }
 
@@ -452,45 +490,37 @@ void Editor2Pane::draw_node(ImDrawList* dl, const NodeId& id, const FlowNodeBuil
         dl->AddText(nullptr, font_size, {cx, cy}, S.col_text, display.c_str());
     }
 
-    // Draw input pins (top)
-    // Pin order: parsed_args ArgNet2 (inputs merged first), then va_args ArgNet2, then remaps
+    // Draw input pins (top) using PinMapping for correct port-to-pin association
     float pr = S.pin_radius * canvas_zoom_;
-    bool has_va = nt->va_args != nullptr;
-    auto count_net_args_in = [](const ParsedArgs2* pa) -> int {
-        if (!pa) return 0;
-        int n = 0;
-        for (auto& a : *pa) if (std::holds_alternative<ArgNet2>(a)) n++;
-        return n;
-    };
-    int base_pin_count = count_net_args_in(node.parsed_args.get());
-    int va_pin_count = count_net_args_in(node.parsed_va_args.get());
-    int add_pin_pos = base_pin_count + va_pin_count; // where the +diamond goes (if va_args)
+    auto pm = PinMapping::build(node, nt);
     for (int i = 0; i < layout.num_in; i++) {
         ImVec2 pp = layout.input_pin_pos(i);
 
-        // Draw the "add more" diamond at the boundary between va_args and remaps
-        if (has_va && i == add_pin_pos) {
+        // +diamond slot
+        if (pm.is_add_diamond(i)) {
             ImU32 pc = S.col_add_pin;
             dl->AddQuadFilled({pp.x, pp.y - pr}, {pp.x + pr, pp.y}, {pp.x, pp.y + pr}, {pp.x - pr, pp.y}, pc);
             float cr = pr * 0.5f;
-            ImU32 tc = S.col_add_pin_fg;
             float lth = S.add_pin_line * canvas_zoom_;
-            dl->AddLine({pp.x - cr, pp.y}, {pp.x + cr, pp.y}, tc, lth);
-            dl->AddLine({pp.x, pp.y - cr}, {pp.x, pp.y + cr}, tc, lth);
+            dl->AddLine({pp.x - cr, pp.y}, {pp.x + cr, pp.y}, S.col_add_pin_fg, lth);
+            dl->AddLine({pp.x, pp.y - cr}, {pp.x, pp.y + cr}, S.col_add_pin_fg, lth);
             continue;
         }
 
         PortKind2 kind = PortKind2::Data;
-        bool is_va = false;
+        bool is_va = pm.is_va(i);
         bool is_optional = false;
-        if (i < base_pin_count && nt->input_ports && i < nt->num_inputs) {
-            kind = nt->input_ports[i].kind;
-            is_optional = nt->input_ports[i].optional;
-        } else if (i >= base_pin_count && i < add_pin_pos) {
+
+        if (pm.is_base(i)) {
+            int port = pm.port_index(i);
+            if (nt->input_ports && port < nt->num_inputs) {
+                kind = nt->input_ports[port].kind;
+                is_optional = nt->input_ports[port].optional;
+            }
+        } else if (is_va) {
             kind = nt->va_args ? nt->va_args->kind : PortKind2::Data;
-            is_va = true;
         }
-        // pins after add_pin_pos are remaps (Data)
+        // remaps are always Data
 
         ImU32 pc = pin_color(kind);
         if (kind == PortKind2::BangTrigger) {
@@ -498,10 +528,8 @@ void Editor2Pane::draw_node(ImDrawList* dl, const NodeId& id, const FlowNodeBuil
         } else if (kind == PortKind2::Lambda) {
             dl->AddTriangleFilled({pp.x - pr, pp.y - pr}, {pp.x + pr, pp.y - pr}, {pp.x, pp.y + pr}, pc);
         } else if (is_va) {
-            // Diamond for va_args pins
             dl->AddQuadFilled({pp.x, pp.y - pr}, {pp.x + pr, pp.y}, {pp.x, pp.y + pr}, {pp.x - pr, pp.y}, pc);
         } else if (is_optional) {
-            // Diamond with ? for optional pins
             dl->AddQuadFilled({pp.x, pp.y - pr}, {pp.x + pr, pp.y}, {pp.x, pp.y + pr}, {pp.x - pr, pp.y}, pc);
             float font_sz = pr * 1.6f;
             if (font_sz > 3.0f) {
@@ -554,36 +582,36 @@ void Editor2Pane::draw_node(ImDrawList* dl, const NodeId& id, const FlowNodeBuil
     float ho = S.highlight_offset * canvas_zoom_;
     ImU32 COL_HOVER = S.col_pin_hover;
 
-    // Helper to get input pin name
+    // Helper to get input pin name using PinMapping
     auto get_input_pin_name = [&](int i) -> const char* {
-        int adj = (has_va && i > add_pin_pos) ? i - 1 : i;
-        if (adj < base_pin_count && nt->input_ports && adj < nt->num_inputs)
-            return nt->input_ports[adj].name;
-        if (adj >= base_pin_count && adj < add_pin_pos && nt->va_args)
-            return nt->va_args->name;
-        int remap_idx = adj - add_pin_pos;
-        static char remap_buf[16];
-        snprintf(remap_buf, sizeof(remap_buf), "$%d", remap_idx);
-        return remap_buf;
+        if (pm.is_base(i)) {
+            int port = pm.port_index(i);
+            if (nt->input_ports && port < nt->num_inputs)
+                return nt->input_ports[port].name;
+        } else if (pm.is_va(i)) {
+            return nt->va_args ? nt->va_args->name : "va";
+        } else if (pm.is_remap(i)) {
+            static char remap_buf[16];
+            snprintf(remap_buf, sizeof(remap_buf), "$%d", pm.remap_index(i));
+            return remap_buf;
+        }
+        return "?";
     };
 
     // Helper to get input pin shape for highlight
     enum class PinShape2 { Circle, Square, Diamond, TriangleDown, TriangleLeft };
     auto get_input_pin_shape = [&](int i) -> PinShape2 {
-        if (has_va && i == add_pin_pos) return PinShape2::Diamond;
-        int adj = (has_va && i > add_pin_pos) ? i - 1 : i;
-        PortKind2 kind = PortKind2::Data;
-        bool is_va_pin = false;
-        bool is_opt = false;
-        if (adj < base_pin_count && nt->input_ports && adj < nt->num_inputs) {
-            kind = nt->input_ports[adj].kind;
-            is_opt = nt->input_ports[adj].optional;
-        } else if (adj >= base_pin_count && adj < add_pin_pos) {
-            is_va_pin = true;
+        if (pm.is_add_diamond(i)) return PinShape2::Diamond;
+        if (pm.is_base(i)) {
+            int port = pm.port_index(i);
+            if (nt->input_ports && port < nt->num_inputs) {
+                if (nt->input_ports[port].kind == PortKind2::BangTrigger) return PinShape2::Square;
+                if (nt->input_ports[port].kind == PortKind2::Lambda) return PinShape2::TriangleDown;
+                if (nt->input_ports[port].optional) return PinShape2::Diamond;
+            }
+        } else if (pm.is_va(i)) {
+            return PinShape2::Diamond;
         }
-        if (kind == PortKind2::BangTrigger) return PinShape2::Square;
-        if (kind == PortKind2::Lambda) return PinShape2::TriangleDown;
-        if (is_va_pin || is_opt) return PinShape2::Diamond;
         return PinShape2::Circle;
     };
 
@@ -611,7 +639,7 @@ void Editor2Pane::draw_node(ImDrawList* dl, const NodeId& id, const FlowNodeBuil
     bool pin_hovered = false;
     // Check input pins
     for (int i = 0; i < layout.num_in; i++) {
-        if (has_va && i == add_pin_pos) continue;
+        if (pm.is_add_diamond(i)) continue;
         ImVec2 pp = layout.input_pin_pos(i);
         if (dist2(mouse, pp) < hit_r2) {
             draw_highlight(pp, get_input_pin_shape(i));
