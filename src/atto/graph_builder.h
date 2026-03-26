@@ -61,6 +61,10 @@ struct FlowArg2 : std::enable_shared_from_this<FlowArg2> {
 
     const PortDesc2* port() const { return port_; }
     void port(const PortDesc2* p) { port_ = p; }
+    bool is_remap() const { return port_ == nullptr; }
+    unsigned remap_idx() const;      // throws if !is_remap()
+    unsigned input_pin_idx() const;  // throws if is_remap(); looks in parsed_args + parsed_va_args
+    unsigned output_pin_idx() const; // throws if is_remap(); looks in outputs
 
     const std::shared_ptr<GraphBuilder>& owner() const;
 
@@ -299,10 +303,10 @@ struct GraphBuilder : std::enable_shared_from_this<GraphBuilder> {
     bool rename(const BuilderEntryPtr& entry, const NodeId& new_id);
 
     // Arg factories — all pins are tracked in pins_
-    FlowArg2Ptr build_arg_net(NodeId id, BuilderEntryPtr entry);
-    FlowArg2Ptr build_arg_number(double value, bool is_float);
-    FlowArg2Ptr build_arg_string(std::string value);
-    FlowArg2Ptr build_arg_expr(std::string expr);
+    FlowArg2Ptr build_arg_net(NodeId id, BuilderEntryPtr entry, const PortDesc2* port = nullptr);
+    FlowArg2Ptr build_arg_number(double value, bool is_float, const PortDesc2* port = nullptr);
+    FlowArg2Ptr build_arg_string(std::string value, const PortDesc2* port = nullptr);
+    FlowArg2Ptr build_arg_expr(std::string expr, const PortDesc2* port = nullptr);
 
     const std::vector<FlowArg2Ptr>& pins() const { return pins_; }
 

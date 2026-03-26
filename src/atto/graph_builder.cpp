@@ -119,6 +119,41 @@ std::string FlowArg2::name() const {
     return prefix + ".?";
 }
 
+unsigned FlowArg2::remap_idx() const {
+    if (!is_remap()) throw std::logic_error("FlowArg2::remap_idx(): not a remap (port is set)");
+    auto n = node();
+    auto self = const_cast<FlowArg2*>(this)->shared_from_this();
+    for (unsigned i = 0; i < n->remaps.size(); i++) {
+        if (n->remaps[i] == self) return i;
+    }
+    throw std::logic_error("FlowArg2::remap_idx(): arg not found in node remaps");
+}
+
+unsigned FlowArg2::input_pin_idx() const {
+    if (is_remap()) throw std::logic_error("FlowArg2::input_pin_idx(): is a remap (no port)");
+    auto n = node();
+    auto self = const_cast<FlowArg2*>(this)->shared_from_this();
+    if (n->parsed_args) {
+        for (unsigned i = 0; i < (unsigned)n->parsed_args->size(); i++)
+            if ((*n->parsed_args)[i] == self) return i;
+    }
+    if (n->parsed_va_args) {
+        unsigned base = n->parsed_args ? (unsigned)n->parsed_args->size() : 0;
+        for (unsigned i = 0; i < (unsigned)n->parsed_va_args->size(); i++)
+            if ((*n->parsed_va_args)[i] == self) return base + i;
+    }
+    throw std::logic_error("FlowArg2::input_pin_idx(): arg not found in node inputs");
+}
+
+unsigned FlowArg2::output_pin_idx() const {
+    if (is_remap()) throw std::logic_error("FlowArg2::output_pin_idx(): is a remap (no port)");
+    auto n = node();
+    auto self = const_cast<FlowArg2*>(this)->shared_from_this();
+    for (unsigned i = 0; i < (unsigned)n->outputs.size(); i++)
+        if (n->outputs[i] == self) return i;
+    throw std::logic_error("FlowArg2::output_pin_idx(): arg not found in node outputs");
+}
+
 // ─── Dirty-tracked setters ───
 
 void ArgNet2::net_id(const NodeId& v) {
@@ -399,23 +434,27 @@ bool GraphBuilder::rename(const BuilderEntryPtr& entry, const NodeId& new_id) {
     return true;
 }
 
-FlowArg2Ptr GraphBuilder::build_arg_net(NodeId id, BuilderEntryPtr entry) {
+FlowArg2Ptr GraphBuilder::build_arg_net(NodeId id, BuilderEntryPtr entry, const PortDesc2* port) {
     auto p = std::shared_ptr<ArgNet2>(new ArgNet2{std::move(id), std::move(entry), shared_from_this()});
+    if (port) p->port(port);
     pins_.push_back(p);
     return p;
 }
-FlowArg2Ptr GraphBuilder::build_arg_number(double value, bool is_float) {
+FlowArg2Ptr GraphBuilder::build_arg_number(double value, bool is_float, const PortDesc2* port) {
     auto p = std::shared_ptr<ArgNumber2>(new ArgNumber2{value, is_float, shared_from_this()});
+    if (port) p->port(port);
     pins_.push_back(p);
     return p;
 }
-FlowArg2Ptr GraphBuilder::build_arg_string(std::string value) {
+FlowArg2Ptr GraphBuilder::build_arg_string(std::string value, const PortDesc2* port) {
     auto p = std::shared_ptr<ArgString2>(new ArgString2{std::move(value), shared_from_this()});
+    if (port) p->port(port);
     pins_.push_back(p);
     return p;
 }
-FlowArg2Ptr GraphBuilder::build_arg_expr(std::string expr) {
+FlowArg2Ptr GraphBuilder::build_arg_expr(std::string expr, const PortDesc2* port) {
     auto p = std::shared_ptr<ArgExpr2>(new ArgExpr2{std::move(expr), shared_from_this()});
+    if (port) p->port(port);
     pins_.push_back(p);
     return p;
 }
@@ -601,18 +640,21 @@ Deserializer::ParseAttoResult Deserializer::parse_atto(std::istream& f) {
                     nb.outputs.resize(new_nt->num_outputs);
                     auto unconnected = gb->unconnected_net();
                     for (int i = 0; i < new_nt->num_outputs; i++) {
-                        const char* name = new_nt->output_ports[i].name;
-                        auto it = out_net_map.find(name);
+                        auto* pd = &new_nt->output_ports[i];
+                        auto it = out_net_map.find(pd->name);
                         if (it != out_net_map.end()) {
+                            it->second->port(pd);
                             nb.outputs[i] = std::move(it->second);
-                        } else if (strcmp(name, "next") == 0) {
+                        } else if (strcmp(pd->name, "next") == 0) {
                             auto it2 = out_net_map.find("bang");
-                            if (it2 != out_net_map.end())
+                            if (it2 != out_net_map.end()) {
+                                it2->second->port(pd);
                                 nb.outputs[i] = std::move(it2->second);
-                            else
-                                nb.outputs[i] = gb->build_arg_net("$unconnected", unconnected);
+                            } else {
+                                nb.outputs[i] = gb->build_arg_net("$unconnected", unconnected, pd);
+                            }
                         } else {
-                            nb.outputs[i] = gb->build_arg_net("$unconnected", unconnected);
+                            nb.outputs[i] = gb->build_arg_net("$unconnected", unconnected, pd);
                         }
                     }
                 }
@@ -765,12 +807,16 @@ Deserializer::ParseAttoResult Deserializer::parse_atto(std::istream& f) {
                 // Pass 1: fill by name matching
                 std::vector<bool> filled(new_nt->total_inputs(), false);
                 for (int i = 0; i < new_nt->total_inputs(); i++) {
-                    auto value = find_by_name(new_nt->input_port(i)->name);
+                    auto* pd = new_nt->input_port(i);
+                    auto value = find_by_name(pd->name);
                     if (value) {
+                        value->port(pd);
                         merged->push_back(std::move(value));
                         filled[i] = true;
                     } else {
-                        merged->push_back(resolve_net(""));
+                        auto placeholder = resolve_net("");
+                        placeholder->port(pd);
+                        merged->push_back(std::move(placeholder));
                     }
                 }
 
@@ -787,7 +833,9 @@ Deserializer::ParseAttoResult Deserializer::parse_atto(std::istream& f) {
                     for (int i = 0; i < new_nt->total_inputs(); i++) {
                         if (!filled[i] && new_nt->input_port(i)->kind != PortKind2::BangTrigger) {
                             if (arg_cursor < (int)nb.parsed_args->size()) {
-                                merged->set(i, std::move((*nb.parsed_args)[arg_cursor++]));
+                                auto arg = std::move((*nb.parsed_args)[arg_cursor++]);
+                                arg->port(new_nt->input_port(i));
+                                merged->set(i, std::move(arg));
                                 filled[i] = true;
                             }
                         }
