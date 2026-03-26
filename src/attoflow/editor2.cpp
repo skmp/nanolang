@@ -48,6 +48,9 @@ struct NodeLayout {
     ImVec2 output_pin_pos(int i) const {
         return {pos.x + (i + 0.5f) * PIN_SPACING * zoom, pos.y + height};
     }
+    ImVec2 lambda_grab_pos() const {
+        return {pos.x, pos.y + height * 0.5f};
+    }
 };
 
 static NodeLayout compute_node_layout(const FlowNodeBuilder& node, ImVec2 canvas_origin, float zoom) {
@@ -182,6 +185,7 @@ void Editor2Pane::draw() {
 
             FlowNodeBuilder* src_node_ptr = nullptr;
             bool named = false;
+            bool is_lambda = false;
 
             if (std::holds_alternative<NetBuilder>(*entry)) {
                 auto& net = std::get<NetBuilder>(*entry);
@@ -193,20 +197,30 @@ void Editor2Pane::draw() {
             } else if (std::holds_alternative<FlowNodeBuilder>(*entry)) {
                 // Lambda capture: entry IS the source node
                 src_node_ptr = &std::get<FlowNodeBuilder>(*entry);
+                is_lambda = true;
             } else {
                 return;
             }
 
             auto src_layout = compute_node_layout(*src_node_ptr, canvas_origin, canvas_zoom_);
-
-            // For now, use pin 0 as default — TODO: track output pin index per net
-            ImVec2 from = src_layout.output_pin_pos(0);
             ImVec2 to = dst_layout.input_pin_pos(dst_pin);
-
-            ImU32 col = named ? IM_COL32(200, 200, 100, 120) : COL_LINK;
-            float dy = std::max(std::abs(to.y - from.y) * 0.5f, 30.0f * canvas_zoom_);
             float th = 2.5f * canvas_zoom_;
-            dl->AddBezierCubic(from, {from.x, from.y + dy}, {to.x, to.y - dy}, to, col, th);
+
+            ImVec2 from;
+            if (is_lambda) {
+                // Lambda wire: from grab (middle-left) with horizontal-then-vertical curve
+                from = src_layout.lambda_grab_pos();
+                float dx = std::max(std::abs(to.x - from.x) * 0.5f, 30.0f * canvas_zoom_);
+                float dy = std::max(std::abs(to.y - from.y) * 0.5f, 30.0f * canvas_zoom_);
+                ImU32 col = IM_COL32(180, 130, 255, 200);
+                dl->AddBezierCubic(from, {from.x - dx, from.y}, {to.x, to.y - dy}, to, col, th);
+            } else {
+                // Regular wire: from output pin (bottom) with vertical curve
+                from = src_layout.output_pin_pos(0); // TODO: track output pin index
+                ImU32 col = named ? IM_COL32(200, 200, 100, 120) : COL_LINK;
+                float dy = std::max(std::abs(to.y - from.y) * 0.5f, 30.0f * canvas_zoom_);
+                dl->AddBezierCubic(from, {from.x, from.y + dy}, {to.x, to.y - dy}, to, col, th);
+            }
 
             // Label for named nets
             if (named) {
@@ -334,7 +348,8 @@ void Editor2Pane::draw_node(ImDrawList* dl, const NodeId& id, const FlowNodeBuil
         if (kind == PortKind2::BangTrigger) {
             dl->AddRectFilled({pp.x - pr, pp.y - pr}, {pp.x + pr, pp.y + pr}, pc);
         } else if (kind == PortKind2::Lambda) {
-            dl->AddTriangleFilled({pp.x - pr, pp.y - pr}, {pp.x + pr, pp.y}, {pp.x - pr, pp.y + pr}, pc);
+            // Down-pointing triangle for lambda inputs (matching editor1)
+            dl->AddTriangleFilled({pp.x - pr, pp.y - pr}, {pp.x + pr, pp.y - pr}, {pp.x, pp.y + pr}, pc);
         } else {
             dl->AddCircleFilled(pp, pr, pc);
         }
@@ -352,6 +367,17 @@ void Editor2Pane::draw_node(ImDrawList* dl, const NodeId& id, const FlowNodeBuil
         } else {
             dl->AddCircleFilled(pp, pr, pc);
         }
+    }
+
+    // Lambda grab handle (left-pointing triangle, middle-left)
+    {
+        ImVec2 gp = layout.lambda_grab_pos();
+        ImU32 lc = IM_COL32(180, 130, 255, 255);
+        dl->AddTriangleFilled(
+            {gp.x + pr, gp.y - pr},
+            {gp.x - pr, gp.y},
+            {gp.x + pr, gp.y + pr},
+            lc);
     }
 
     // Hover tooltip: show parsed_args, parsed_va_args, remaps

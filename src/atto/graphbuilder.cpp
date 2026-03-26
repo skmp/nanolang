@@ -613,6 +613,29 @@ Deserializer::ParseAttoResult Deserializer::parse_atto(std::istream& f) {
     }
     flush_node();
 
+    // ─── Re-resolve ArgNet2 entries pointing to stale placeholders ───
+    // When a lambda capture references a node parsed later in the file,
+    // resolve_net creates a NetBuilder placeholder. Now re-resolve to the actual node.
+    {
+        auto fixup_args = [&](ParsedArgs2* pa) {
+            if (!pa) return;
+            for (auto& a : *pa) {
+                if (auto* an = std::get_if<ArgNet2>(&a)) {
+                    if (!an->second || !std::holds_alternative<NetBuilder>(*an->second)) continue;
+                    auto actual = gb->find(an->first);
+                    if (actual && std::holds_alternative<FlowNodeBuilder>(*actual))
+                        an->second = actual;
+                }
+            }
+        };
+        for (auto& [id, entry] : gb->entries) {
+            if (!std::holds_alternative<FlowNodeBuilder>(*entry)) continue;
+            auto& node = std::get<FlowNodeBuilder>(*entry);
+            fixup_args(node.parsed_args.get());
+            fixup_args(node.parsed_va_args.get());
+        }
+    }
+
     // ─── Fold shadow nodes into parents ───
     auto unconnected_entry = gb->find("$unconnected");
 
