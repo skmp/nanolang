@@ -256,7 +256,7 @@ void NetsEditor::rebuild_layout(ImVec2 canvas_origin) {
             // Input pin stubs (curve upward from pin)
             for (int i = 0; i < (int)vpm.inputs.size(); i++) {
                 auto& pin = vpm.inputs[i];
-                if (!pin.arg || pin.kind == VisualPinKind::AddDiamond || pin.kind == VisualPinKind::AbsentOptional) continue;
+                if (!pin.arg || pin.kind == VisualPinKind::AddDiamond) continue;
                 auto an = pin.arg->as_net();
                 if (!an) continue;
                 auto entry = an->second();

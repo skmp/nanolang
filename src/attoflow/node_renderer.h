@@ -102,6 +102,32 @@ NodeRenderState build_render_state(const FlowNodeBuilderPtr& node,
                                     const HoverItem& hover_item,
                                     const AttoEditorSharedState* shared);
 
+// ─── Wire direction helpers ───
+// BangTrigger inputs are wire SOURCES (they produce the function call)
+// BangNext outputs are wire DESTINATIONS (they consume the continuation)
+
+inline bool is_wire_source(PortKind2 kind, PortPosition2 pos) {
+    if (kind == PortKind2::Data && pos == PortPosition2::Output) return true;
+    if (kind == PortKind2::BangTrigger) return true;
+    return false;
+}
+
+inline bool is_wire_dest(PortKind2 kind, PortPosition2 pos) {
+    if (kind == PortKind2::Data && pos == PortPosition2::Input) return true;
+    if (kind == PortKind2::BangNext) return true;
+    if (kind == PortKind2::Lambda) return true;
+    return false;
+}
+
+// Check if a pin allows multiple incoming connections (fan-in)
+inline bool allows_multi_input(PortKind2 kind) {
+    return kind == PortKind2::BangTrigger || kind == PortKind2::Lambda;
+}
+
+// Determine if two pins can be connected (one must be source, other dest, compatible kinds)
+bool can_connect_pins(const FlowArg2Ptr& a, PortPosition2 a_pos,
+                      const FlowArg2Ptr& b, PortPosition2 b_pos);
+
 // ─── Hit-testing ───
 
 struct HitResult {

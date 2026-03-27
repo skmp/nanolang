@@ -1196,15 +1196,15 @@ Deserializer::ParseAttoResult Deserializer::parse_atto(std::istream& f) {
                 nb.remaps.push_back(gb->build_arg_net("$unconnected", unconnected));
         }
 
-        // Trim trailing $unconnected optional ports from parsed_args
-        // Optional ports are always trailing: anything beyond num_inputs is optional
+        // Ensure all optional ports have $unconnected args (so they're always hoverable/connectable)
         {
-            auto* trim_nt = find_node_type2(nb.type_id);
-            if (trim_nt && nb.parsed_args) {
-                while ((int)nb.parsed_args->size() > trim_nt->num_inputs) {
-                    auto an = nb.parsed_args->back()->as_net();
-                    if (!an || an->first() != "$unconnected") break;
-                    nb.parsed_args->pop_back();
+            auto* fill_nt = find_node_type2(nb.type_id);
+            if (fill_nt && nb.parsed_args) {
+                auto uncon = gb->unconnected_net();
+                auto uncon_entry = std::static_pointer_cast<BuilderEntry>(uncon);
+                for (int i = (int)nb.parsed_args->size(); i < fill_nt->total_inputs(); i++) {
+                    auto* pd = fill_nt->input_port(i);
+                    nb.parsed_args->push_back(gb->build_arg_net("$unconnected", uncon_entry, pd));
                 }
             }
         }
