@@ -2,6 +2,12 @@
 #include <algorithm>
 #include <cmath>
 
+static FlowArg2Ptr hover_to_pin(const HoverItem& item) {
+    if (auto* pp = std::get_if<FlowArg2Ptr>(&item))
+        return *pp;
+    return nullptr;
+}
+
 void VisualEditor::draw_canvas(const char* id) {
     ImVec2 canvas_p0 = ImGui::GetCursorScreenPos();
     ImVec2 canvas_sz = ImGui::GetContentRegionAvail();
@@ -33,14 +39,36 @@ void VisualEditor::draw_canvas(const char* id) {
     }
     do_draw_hover_effects(dl, canvas_origin, hover_item_);
 
-    // Extract hover node
     FlowNodeBuilderPtr hover_node = hover_to_node(hover_item_);
+    FlowArg2Ptr hover_pin = hover_to_pin(hover_item_);
 
-    // ─── Selection + dragging with left mouse ───
+    // ─── Wire drag preview ───
+    if (wire_drag_active_ || wire_grab_active_) {
+        ImVec2 from = wire_drag_active_ ? wire_drag_start_ : wire_grab_anchor_;
+        ImVec2 to = ImGui::GetIO().MousePos;
+        float dy = std::max(std::abs(to.y - from.y) * 0.5f, 30.0f * canvas_zoom_);
+        ImVec2 cp1 = {from.x, from.y + dy};
+        ImVec2 cp2 = {to.x, to.y - dy};
+        dl->AddBezierCubic(from, cp1, cp2, to, S.col_wire, S.wire_thickness * canvas_zoom_);
+    }
+
+    // ─── Left-click: wire creation from pin, OR selection/node drag ───
     if (canvas_hovered && ImGui::IsMouseClicked(ImGuiMouseButton_Left)) {
         bool ctrl = ImGui::GetIO().KeyCtrl;
 
-        if (ctrl && hover_node) {
+        if (hover_pin && !ctrl && !wire_drag_active_ && !wire_grab_active_) {
+            // Left-click on pin → start new wire creation
+            auto pos = get_pin_position(hover_pin);
+            auto port = hover_pin->port();
+            PortKind2 kind = port ? port->kind : PortKind2::Data;
+            if (is_wire_source(kind, pos) || is_wire_dest(kind, pos)) {
+                wire_drag_active_ = true;
+                wire_drag_pin_ = hover_pin;
+                wire_drag_pin_pos_ = pos;
+                wire_drag_start_ = get_pin_screen_pos(hover_pin);
+                wire_drag_is_source_ = is_wire_source(kind, pos);
+            }
+        } else if (ctrl && hover_node) {
             if (shared_->selected_nodes.count(hover_node))
                 shared_->selected_nodes.erase(hover_node);
             else
@@ -52,7 +80,6 @@ void VisualEditor::draw_canvas(const char* id) {
             }
             dragging_started_ = true;
 
-            // Check initial overlap
             drag_was_overlapping_ = false;
             for (auto& sel : shared_->selected_nodes) {
                 if (test_drag_overlap(sel, sel->position.x, sel->position.y)) {
@@ -60,7 +87,7 @@ void VisualEditor::draw_canvas(const char* id) {
                     break;
                 }
             }
-        } else {
+        } else if (!hover_pin) {
             shared_->selected_nodes.clear();
             selection_rect_active_ = true;
             ImVec2 mouse = ImGui::GetIO().MousePos;
@@ -69,8 +96,58 @@ void VisualEditor::draw_canvas(const char* id) {
         }
     }
 
-    // Drag selected nodes
-    if (dragging_started_ && ImGui::IsMouseDragging(ImGuiMouseButton_Left) && !shared_->selected_nodes.empty()) {
+    // Left-click release
+    if (ImGui::IsMouseReleased(ImGuiMouseButton_Left)) {
+        if (wire_drag_active_) {
+            // Complete wire creation
+            if (hover_pin && hover_pin != wire_drag_pin_) {
+                auto to_pos = get_pin_position(hover_pin);
+                if (can_connect_pins(wire_drag_pin_, wire_drag_pin_pos_, hover_pin, to_pos))
+                    do_connect_pins(wire_drag_pin_, wire_drag_pin_pos_, hover_pin, to_pos);
+            }
+            wire_drag_active_ = false;
+            wire_drag_pin_ = nullptr;
+        }
+        dragging_started_ = false;
+        selection_rect_active_ = false;
+    }
+
+    // ─── Right-click: wire grab/move from connected pin, OR pan ───
+    if (canvas_hovered && ImGui::IsMouseClicked(ImGuiMouseButton_Right)) {
+        if (hover_pin && pin_is_connected(hover_pin) && !wire_grab_active_) {
+            // Right-click on connected pin → grab and move the wire
+            auto pos = get_pin_position(hover_pin);
+            wire_grab_active_ = true;
+            wire_grab_pin_ = hover_pin;
+            wire_grab_pin_pos_ = pos;
+            wire_grab_anchor_ = get_pin_screen_pos(hover_pin);
+            do_disconnect_pin(hover_pin, pos);
+        }
+    }
+
+    // Right-click release
+    if (wire_grab_active_ && ImGui::IsMouseReleased(ImGuiMouseButton_Right)) {
+        bool connected = false;
+        if (hover_pin && hover_pin != wire_grab_pin_) {
+            auto to_pos = get_pin_position(hover_pin);
+            if (can_connect_pins(wire_grab_pin_, wire_grab_pin_pos_, hover_pin, to_pos))
+                connected = do_connect_pins(wire_grab_pin_, wire_grab_pin_pos_, hover_pin, to_pos);
+        }
+        if (!connected)
+            do_reconnect_pin(wire_grab_pin_, wire_grab_pin_pos_);
+        wire_grab_active_ = false;
+        wire_grab_pin_ = nullptr;
+    }
+
+    // Right-click drag: pan (only if not wire-grabbing)
+    if (!wire_grab_active_ && canvas_hovered && ImGui::IsMouseDragging(ImGuiMouseButton_Right)) {
+        canvas_offset_.x += ImGui::GetIO().MouseDelta.x;
+        canvas_offset_.y += ImGui::GetIO().MouseDelta.y;
+    }
+
+    // ─── Node dragging (left-click, not wire-dragging) ───
+    if (!wire_drag_active_ && !wire_grab_active_ && dragging_started_ &&
+        ImGui::IsMouseDragging(ImGuiMouseButton_Left) && !shared_->selected_nodes.empty()) {
         ImVec2 delta = ImGui::GetIO().MouseDelta;
         float dx = delta.x / canvas_zoom_;
         float dy = delta.y / canvas_zoom_;
@@ -115,17 +192,8 @@ void VisualEditor::draw_canvas(const char* id) {
         }
     }
 
-    if (ImGui::IsMouseReleased(ImGuiMouseButton_Left)) {
-        dragging_started_ = false;
-        selection_rect_active_ = false;
-    }
-
-    // Pan
+    // Pan with middle mouse
     if (canvas_hovered && ImGui::IsMouseDragging(ImGuiMouseButton_Middle)) {
-        canvas_offset_.x += ImGui::GetIO().MouseDelta.x;
-        canvas_offset_.y += ImGui::GetIO().MouseDelta.y;
-    }
-    if (canvas_hovered && ImGui::IsMouseDragging(ImGuiMouseButton_Right)) {
         canvas_offset_.x += ImGui::GetIO().MouseDelta.x;
         canvas_offset_.y += ImGui::GetIO().MouseDelta.y;
     }

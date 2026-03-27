@@ -98,6 +98,15 @@ protected:
     std::vector<BoxTestNode> get_box_test_nodes() override;
     void on_nodes_moved() override { wires_dirty_ = true; }
 
+    // Wire connection hooks
+    ImVec2 get_pin_screen_pos(const FlowArg2Ptr& pin) override;
+    PortPosition2 get_pin_position(const FlowArg2Ptr& pin) override;
+    bool pin_is_connected(const FlowArg2Ptr& pin) override;
+    bool do_connect_pins(const FlowArg2Ptr& from_pin, PortPosition2 from_pos,
+                          const FlowArg2Ptr& to_pin, PortPosition2 to_pos) override;
+    bool do_disconnect_pin(const FlowArg2Ptr& pin, PortPosition2 pos) override;
+    void do_reconnect_pin(const FlowArg2Ptr& pin, PortPosition2 pos) override;
+
 private:
     friend struct NodeEditorImpl;
     friend struct NetEditorImpl;
@@ -111,6 +120,14 @@ private:
     // Wire cache
     std::vector<WireInfo> cached_wires_;
     bool wires_dirty_ = true;
+
+    // Wire grab undo state (for restoring on cancel)
+    struct GrabUndoState {
+        FlowArg2Ptr pin;
+        NodeId old_net_id;
+        BuilderEntryPtr old_entry;
+    };
+    GrabUndoState grab_undo_;
 
     void rebuild_wires(ImVec2 canvas_origin);
 };

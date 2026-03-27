@@ -26,6 +26,40 @@ NodeRenderState build_render_state(const FlowNodeBuilderPtr& node,
     return state;
 }
 
+// ─── Wire direction helpers ───
+
+bool can_connect_pins(const FlowArg2Ptr& a, PortPosition2 a_pos,
+                      const FlowArg2Ptr& b, PortPosition2 b_pos) {
+    if (!a || !b) return false;
+    if (a->node() == b->node()) return false; // no self-connection
+
+    auto a_port = a->port();
+    auto b_port = b->port();
+    PortKind2 a_kind = a_port ? a_port->kind : PortKind2::Data;
+    PortKind2 b_kind = b_port ? b_port->kind : PortKind2::Data;
+
+    bool a_src = is_wire_source(a_kind, a_pos);
+    bool a_dst = is_wire_dest(a_kind, a_pos);
+    bool b_src = is_wire_source(b_kind, b_pos);
+    bool b_dst = is_wire_dest(b_kind, b_pos);
+
+    // One must be source, other must be dest
+    if (a_src && b_dst) {
+        // Check kind compatibility: bang↔bang, data↔data, lambda↔lambda
+        if (a_kind == PortKind2::BangTrigger && b_kind == PortKind2::BangNext) return true;
+        if (a_kind == PortKind2::Data && b_kind == PortKind2::Data) return true;
+        if (a_kind == PortKind2::Data && b_kind == PortKind2::Lambda) return true;
+        return false;
+    }
+    if (b_src && a_dst) {
+        if (b_kind == PortKind2::BangTrigger && a_kind == PortKind2::BangNext) return true;
+        if (b_kind == PortKind2::Data && a_kind == PortKind2::Data) return true;
+        if (b_kind == PortKind2::Data && a_kind == PortKind2::Lambda) return true;
+        return false;
+    }
+    return false;
+}
+
 // ─── Geometry helpers ───
 
 float point_to_bezier_dist(ImVec2 p, ImVec2 p0, ImVec2 p1, ImVec2 p2, ImVec2 p3) {

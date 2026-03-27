@@ -6,7 +6,7 @@
 #include <vector>
 
 // Reusable 2D canvas interaction layer.
-// Provides pan/zoom/select/drag; subclass provides content drawing and hit-testing.
+// Provides pan/zoom/select/drag/wire-connect; subclass provides content drawing and hit-testing.
 class VisualEditor {
 public:
     VisualEditor(const std::shared_ptr<AttoEditorSharedState>& shared) : shared_(shared) {}
@@ -36,36 +36,58 @@ protected:
     HoverItem hover_item_;
     std::shared_ptr<AttoEditorSharedState> shared_;
 
-    // Interaction state
+    // Node drag state
     bool dragging_started_ = false;
     bool drag_was_overlapping_ = false;
     bool selection_rect_active_ = false;
     ImVec2 selection_rect_start_ = {0, 0};
 
+    // Wire drag state (right-click: create new wire)
+    bool wire_drag_active_ = false;
+    FlowArg2Ptr wire_drag_pin_;        // pin being dragged from
+    PortPosition2 wire_drag_pin_pos_;  // Input or Output
+    ImVec2 wire_drag_start_;           // screen position of the pin
+    bool wire_drag_is_source_ = false; // whether this pin is a wire source
+
+    // Wire grab state (left-click: move existing wire)
+    bool wire_grab_active_ = false;
+    FlowArg2Ptr wire_grab_pin_;        // pin whose wire was grabbed
+    PortPosition2 wire_grab_pin_pos_;
+    ImVec2 wire_grab_anchor_;          // screen pos of the anchored end
+
     // ─── Subclass hooks ───
 
-    // Draw all content (nodes, wires) inside the clipped canvas
     virtual void draw_content(const CanvasFrame& frame) = 0;
-
-    // Find what's under the mouse
     virtual HoverItem do_detect_hover(ImVec2 mouse, ImVec2 canvas_origin) = 0;
-
-    // Draw hover highlights and tooltips
     virtual void do_draw_hover_effects(ImDrawList* dl, ImVec2 canvas_origin, const HoverItem& hover) = 0;
-
-    // Extract draggable node from hover item (nullptr if not a node)
     virtual FlowNodeBuilderPtr hover_to_node(const HoverItem& item) = 0;
-
-    // Test if moving sel to (nx, ny) would overlap non-selected nodes
     virtual bool test_drag_overlap(const FlowNodeBuilderPtr& sel, float nx, float ny) = 0;
 
-    // Get all nodes for box-select testing (canvas-space, unzoomed)
     struct BoxTestNode {
         FlowNodeBuilderPtr node;
         float x, y, w, h;
     };
     virtual std::vector<BoxTestNode> get_box_test_nodes() = 0;
-
-    // Called when dragging moves selected nodes (subclass can mark wires dirty etc.)
     virtual void on_nodes_moved() {}
+
+    // Wire connection hooks (subclass implements actual graph mutations)
+
+    // Get the screen position of a pin (for wire preview drawing)
+    virtual ImVec2 get_pin_screen_pos(const FlowArg2Ptr& pin) { return {0,0}; }
+
+    // Determine if a pin is in the inputs or outputs of its node
+    virtual PortPosition2 get_pin_position(const FlowArg2Ptr& pin) { return PortPosition2::Input; }
+
+    // Check if a pin has an existing connection (not $unconnected)
+    virtual bool pin_is_connected(const FlowArg2Ptr& pin) { return false; }
+
+    // Execute a wire connection between two pins. Return true if successful.
+    virtual bool do_connect_pins(const FlowArg2Ptr& from_pin, PortPosition2 from_pos,
+                                  const FlowArg2Ptr& to_pin, PortPosition2 to_pos) { return false; }
+
+    // Disconnect a pin from its current net. Return true if was connected.
+    virtual bool do_disconnect_pin(const FlowArg2Ptr& pin, PortPosition2 pos) { return false; }
+
+    // Reconnect a previously disconnected pin (undo grab). Called on cancel.
+    virtual void do_reconnect_pin(const FlowArg2Ptr& pin, PortPosition2 pos) {}
 };
