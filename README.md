@@ -6,6 +6,8 @@ Each instrument is a self-contained `.atto` program that defines its Functionali
 
 <img width="3840" height="2088" alt="nanolang" src="https://github.com/nilware-io/orgasm/blob/main/docs/nanolang.png" />
 
+[![Youtube/the Organic Assembler](https://img.youtube.com/vi/ymzuD-oekFM/0.jpg)](https://www.youtube.com/watch?v=ymzuD-oekFM)
+
 Listen to the [introductory podcast](docs/podcasts/introducing-orgasm.md) — *Growing Instruments with the Organic Assembler* ([SoundCloud](https://soundcloud.com/poiitidis/growing-instruments-with-the), [YouTube](https://youtu.be/ymzuD-oekFM)).
 
 See an [example instrument](scenes/klavier/main.atto) and the full [language specification](docs/attolang.md).
