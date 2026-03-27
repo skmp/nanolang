@@ -1,6 +1,6 @@
 # Organic Assembler
 
-An Operating System for Instruments, written in attolang. Instruments are multimodal dataflow programs — authored as node graphs possibly using the **attoflow** editor, compiled, and run in real time.
+An Operating System for Instruments (Όργανα), written in attolang. Instruments are multimodal dataflow programs — authored as node graphs possibly using the **attoflow** editor, compiled, and run in real time.
 
 Each instrument is a self-contained `.atto` program that defines its Functionality. The System compiles these programs runs them with hot-reload support.
 
