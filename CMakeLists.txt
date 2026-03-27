@@ -74,8 +74,13 @@ if(ATTOLANG_BUILD_EDITOR)
 
     add_executable(attoflow
         src/attoflow/main.cpp
-        src/attoflow/editor.cpp
+        src/attoflow/window.cpp
         src/attoflow/editor2.cpp
+        src/attoflow/nets_editor.cpp
+        src/attoflow/visual_editor.cpp
+        src/attoflow/node_renderer.cpp
+        src/attoflow/tooltip_renderer.cpp
+        src/attoflow/editor_style.cpp
     )
     target_include_directories(attoflow PRIVATE
         ${CMAKE_CURRENT_SOURCE_DIR}/src

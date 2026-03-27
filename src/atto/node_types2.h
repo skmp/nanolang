@@ -1,7 +1,7 @@
 #pragma once
 #include "node_types.h" // for NodeTypeID
 
-// New pin model: flattened inputs/outputs, optional, va_args
+// New pin model: flattened inputs/outputs, optional, input_ports_va_args, output_ports_va_args
 
 enum class PortKind2 : uint8_t {
     BangTrigger,  // bang input (rendered as square, top)
@@ -10,12 +10,19 @@ enum class PortKind2 : uint8_t {
     BangNext,     // bang output (rendered as square)
 };
 
+enum class PortPosition2: uint8_t {
+    Input,
+    Output,
+};
+
 struct PortDesc2 {
     const char* name;
     const char* desc;
     PortKind2 kind = PortKind2::Data;
+    PortPosition2 position = PortPosition2::Input;
     const char* type_name = nullptr;
     bool optional = false;
+    bool va_args = false;
 };
 
 enum class NodeKind2 : uint8_t {
@@ -27,17 +34,21 @@ enum class NodeKind2 : uint8_t {
 };
 
 struct NodeType2 {
+    NodeKind2 kind = NodeKind2::Flow;
     NodeTypeID type_id;
+    
     const char* name;
     const char* desc;
+    
     const PortDesc2* input_ports = nullptr;
     int num_inputs = 0;                        // required input ports
     const PortDesc2* input_optional_ports = nullptr;
     int num_inputs_optional = 0;               // trailing optional input ports
+    const PortDesc2* input_ports_va_args = nullptr;  // nullptr = no input_ports_va_args, else template for repeating pins
+    
     const PortDesc2* output_ports;
     int num_outputs;
-    NodeKind2 kind = NodeKind2::Flow;
-    const PortDesc2* va_args = nullptr;  // nullptr = no va_args, else template for repeating pins
+    const PortDesc2* output_ports_va_args = nullptr;  // nullptr = no input_ports_va_args, else template for repeating pins
 
     int total_inputs() const { return num_inputs + num_inputs_optional; }
     const PortDesc2* input_port(int i) const {
@@ -57,14 +68,12 @@ struct NodeType2 {
 
 // Common outputs
 static const PortDesc2 P2_NEXT[] = {
-    {.name = "next", .desc = "fires after completion", .kind = PortKind2::BangNext},
+    {.name = "next", .desc = "fires after completion", .kind = PortKind2::BangNext, .position = PortPosition2::Output},
 };
-static const PortDesc2 P2_RESULT[] = {
-    {.name = "result", .desc = "result value"},
-};
+
 static const PortDesc2 P2_NEXT_RESULT[] = {
-    {.name = "next", .desc = "fires after completion", .kind = PortKind2::BangNext},
-    {.name = "result", .desc = "result value"},
+    {.name = "next", .desc = "fires after completion", .kind = PortKind2::BangNext, .position = PortPosition2::Output},
+    {.name = "result", .desc = "result value", .position = PortPosition2::Output},
 };
 
 // Common inputs
@@ -124,15 +133,20 @@ static const PortDesc2 P2_SELECT_BANG_IN[] = {
     {.name = "condition", .desc = "boolean condition"},
 };
 static const PortDesc2 P2_SELECT_BANG_OUT[] = {
-    {.name = "next", .desc = "fires after branch completes", .kind = PortKind2::BangNext},
-    {.name = "true", .desc = "fires when true", .kind = PortKind2::BangNext},
-    {.name = "false", .desc = "fires when false", .kind = PortKind2::BangNext},
+    {.name = "next", .desc = "fires after branch completes", .kind = PortKind2::BangNext, .position = PortPosition2::Output},
+    {.name = "true", .desc = "fires when true", .kind = PortKind2::BangNext, .position = PortPosition2::Output},
+    {.name = "false", .desc = "fires when false", .kind = PortKind2::BangNext, .position = PortPosition2::Output},
 };
 
 // va_args templates
-static const PortDesc2 P2_VA_FIELD = {.name = "field", .desc = "constructor field"};
-static const PortDesc2 P2_VA_ARG   = {.name = "arg",   .desc = "function argument"};
-static const PortDesc2 P2_VA_PARAM = {.name = "param", .desc = "lambda parameter"};
+static const PortDesc2 P2_VA_FIELD = {.name = "field", .desc = "constructor field", .va_args = true};
+static const PortDesc2 P2_VA_ARG   = {.name = "arg",   .desc = "function argument", .va_args = true};
+static const PortDesc2 P2_VA_PARAM = {.name = "param", .desc = "lambda parameter", .va_args = true};
+
+// va_args outputs
+static const PortDesc2 P2_VA_EVENT_OUT = {.name = "args", .desc = "event arguments", .kind = PortKind2::Data , .position = PortPosition2::Output, .va_args = true};
+
+static const PortDesc2 P2_VA_EXPR_OUT = {.name = "expr", .desc = "expression outputs", .kind = PortKind2::Data , .position = PortPosition2::Output, .va_args = true};
 
 // new
 static const PortDesc2 P2_NEW_IN[] = {
@@ -177,8 +191,8 @@ static const PortDesc2 P2_DECL_TYPE_IN[] = {
     {.name = "type", .desc = "type definition"},
 };
 static const PortDesc2 P2_DECL_TYPE_OUT[] = {
-    {.name = "next", .desc = "fires after declaration", .kind = PortKind2::BangNext},
-    {.name = "type", .desc = "the declared type"},
+    {.name = "next", .desc = "fires after declaration", .kind = PortKind2::BangNext, .position = PortPosition2::Output},
+    {.name = "type", .desc = "the declared type", .position = PortPosition2::Output},
 };
 static const PortDesc2 P2_DECL_VAR_IN[] = {
     {.name = "bang_in", .desc = "trigger", .kind = PortKind2::BangTrigger},
@@ -189,11 +203,11 @@ static const PortDesc2 P2_DECL_VAR_OPT_IN[] = {
     {.name = "initial", .desc = "variable initial value", .optional = true},
 };
 static const PortDesc2 P2_DECL_VAR_OUT[] = {
-    {.name = "next", .desc = "fires after declaration", .kind = PortKind2::BangNext},
-    {.name = "ref", .desc = "reference to variable"},
+    {.name = "next", .desc = "fires after declaration", .kind = PortKind2::BangNext, .position = PortPosition2::Output},
+    {.name = "ref", .desc = "reference to variable", .position = PortPosition2::Output},
 };
 static const PortDesc2 P2_DECL_OUT[] = {
-    {.name = "next", .desc = "fires to start declarations", .kind = PortKind2::BangNext},
+    {.name = "next", .desc = "fires to start declarations", .kind = PortKind2::BangNext, .position = PortPosition2::Output},
 };
 static const PortDesc2 P2_DECL_EVENT_IN[] = {
     {.name = "bang_in", .desc = "trigger", .kind = PortKind2::BangTrigger},
@@ -229,10 +243,6 @@ static const PortDesc2 P2_RESIZE_IN[] = {
     {.name = "size", .desc = "new size", .type_name = "s32"},
 };
 
-// event!
-static const PortDesc2 P2_EVENT_OUT[] = {
-    {.name = "next", .desc = "fires on event", .kind = PortKind2::BangNext},
-};
 
 // ─── Node type table ───
 
@@ -241,8 +251,9 @@ static const NodeType2 NODE_TYPES2[] = {
         .type_id = NodeTypeID::Expr,
         .name = "expr",
         .desc = "Evaluate expression",
-        .output_ports = P2_RESULT,
-        .num_outputs = 1
+        .output_ports = P2_NEXT,
+        .num_outputs = 1,
+        .output_ports_va_args = &P2_VA_EXPR_OUT,
     },
     {
         .type_id = NodeTypeID::Select,
@@ -250,8 +261,8 @@ static const NodeType2 NODE_TYPES2[] = {
         .desc = "Select value by condition",
         .input_ports = P2_SELECT_IN,
         .num_inputs = 3,
-        .output_ports = P2_RESULT,
-        .num_outputs = 1
+        .output_ports = P2_NEXT_RESULT,
+        .num_outputs = 2,
     },
     {
         .type_id = NodeTypeID::New,
@@ -259,9 +270,9 @@ static const NodeType2 NODE_TYPES2[] = {
         .desc = "Instantiate a type",
         .input_ports = P2_NEW_IN,
         .num_inputs = 1,
-        .output_ports = P2_RESULT,
-        .num_outputs = 1,
-        .va_args = &P2_VA_FIELD
+        .input_ports_va_args = &P2_VA_FIELD,
+        .output_ports = P2_NEXT_RESULT,
+        .num_outputs = 2,
     },
     {
         .type_id = NodeTypeID::Dup,
@@ -269,8 +280,8 @@ static const NodeType2 NODE_TYPES2[] = {
         .desc = "Duplicate input to output",
         .input_ports = P2_VALUE,
         .num_inputs = 1,
-        .output_ports = P2_RESULT,
-        .num_outputs = 1
+        .output_ports = P2_NEXT_RESULT,
+        .num_outputs = 2,
     },
     {
         .type_id = NodeTypeID::Str,
@@ -278,17 +289,18 @@ static const NodeType2 NODE_TYPES2[] = {
         .desc = "Convert to string",
         .input_ports = P2_VALUE,
         .num_inputs = 1,
-        .output_ports = P2_RESULT,
-        .num_outputs = 1
+        .output_ports = P2_NEXT_RESULT,
+        .num_outputs = 2,
     },
     {
         .type_id = NodeTypeID::Void,
         .name = "void",
         .desc = "Void result",
-        .output_ports = P2_RESULT,
-        .num_outputs = 1
+        .output_ports = P2_NEXT_RESULT,
+        .num_outputs = 2,
     },
     {
+        .kind = NodeKind2::Banged,
         .type_id = NodeTypeID::DiscardBang,
         .name = "discard!",
         .desc = "Discard value, pass bang",
@@ -296,16 +308,18 @@ static const NodeType2 NODE_TYPES2[] = {
         .num_inputs = 2,
         .output_ports = P2_NEXT,
         .num_outputs = 1,
-        .kind = NodeKind2::Banged
     },
     {
         .type_id = NodeTypeID::Discard,
         .name = "discard",
         .desc = "Discard input values",
         .input_ports = P2_VALUE,
-        .num_inputs = 1
+        .num_inputs = 1,
+        .output_ports = P2_NEXT,
+        .num_outputs = 1
     },
     {
+        .kind = NodeKind2::Declaration,
         .type_id = NodeTypeID::DeclType,
         .name = "decl_type",
         .desc = "Declare a type",
@@ -313,9 +327,9 @@ static const NodeType2 NODE_TYPES2[] = {
         .num_inputs = 3,
         .output_ports = P2_DECL_TYPE_OUT,
         .num_outputs = 2,
-        .kind = NodeKind2::Declaration
     },
     {
+        .kind = NodeKind2::Declaration,
         .type_id = NodeTypeID::DeclVar,
         .name = "decl_var",
         .desc = "Declare a variable",
@@ -325,17 +339,17 @@ static const NodeType2 NODE_TYPES2[] = {
         .num_inputs_optional = 1,
         .output_ports = P2_DECL_VAR_OUT,
         .num_outputs = 2,
-        .kind = NodeKind2::Declaration
     },
     {
+        .kind = NodeKind2::Declaration,
         .type_id = NodeTypeID::Decl,
         .name = "decl",
         .desc = "Compile-time entry point",
         .output_ports = P2_DECL_OUT,
         .num_outputs = 1,
-        .kind = NodeKind2::Declaration
     },
     {
+        .kind = NodeKind2::Declaration,
         .type_id = NodeTypeID::DeclEvent,
         .name = "decl_event",
         .desc = "Declare event",
@@ -343,9 +357,9 @@ static const NodeType2 NODE_TYPES2[] = {
         .num_inputs = 3,
         .output_ports = P2_NEXT,
         .num_outputs = 1,
-        .kind = NodeKind2::Declaration
     },
     {
+        .kind = NodeKind2::Declaration,
         .type_id = NodeTypeID::DeclImport,
         .name = "decl_import",
         .desc = "Import module",
@@ -353,9 +367,9 @@ static const NodeType2 NODE_TYPES2[] = {
         .num_inputs = 2,
         .output_ports = P2_NEXT,
         .num_outputs = 1,
-        .kind = NodeKind2::Declaration
     },
     {
+        .kind = NodeKind2::Declaration,
         .type_id = NodeTypeID::Ffi,
         .name = "ffi",
         .desc = "Declare external function",
@@ -363,7 +377,6 @@ static const NodeType2 NODE_TYPES2[] = {
         .num_inputs = 3,
         .output_ports = P2_NEXT,
         .num_outputs = 1,
-        .kind = NodeKind2::Declaration
     },
     {
         .type_id = NodeTypeID::Call,
@@ -371,20 +384,20 @@ static const NodeType2 NODE_TYPES2[] = {
         .desc = "Call function",
         .input_ports = P2_CALL_IN,
         .num_inputs = 1,
-        .output_ports = P2_RESULT,
-        .num_outputs = 1,
-        .va_args = &P2_VA_ARG
+        .input_ports_va_args = &P2_VA_ARG,
+        .output_ports = P2_NEXT_RESULT,
+        .num_outputs = 2,
     },
     {
+        .kind = NodeKind2::Banged,
         .type_id = NodeTypeID::CallBang,
         .name = "call!",
         .desc = "Call function (bang)",
         .input_ports = P2_CALL_BANG_IN,
         .num_inputs = 2,
+        .input_ports_va_args = &P2_VA_ARG,
         .output_ports = P2_NEXT_RESULT,
         .num_outputs = 2,
-        .kind = NodeKind2::Banged,
-        .va_args = &P2_VA_ARG
     },
     {
         .type_id = NodeTypeID::Erase,
@@ -392,16 +405,16 @@ static const NodeType2 NODE_TYPES2[] = {
         .desc = "Erase from collection",
         .input_ports = P2_ERASE_IN,
         .num_inputs = 2,
-        .output_ports = P2_RESULT,
-        .num_outputs = 1
+        .output_ports = P2_NEXT_RESULT,
+        .num_outputs = 2,
     },
     {
+        .kind = NodeKind2::Banged,
         .type_id = NodeTypeID::OutputMixBang,
         .name = "output_mix!",
         .desc = "Mix into audio output",
         .input_ports = P2_OUTPUT_MIX_IN,
         .num_inputs = 2,
-        .kind = NodeKind2::Banged
     },
     {
         .type_id = NodeTypeID::Append,
@@ -409,10 +422,11 @@ static const NodeType2 NODE_TYPES2[] = {
         .desc = "Append to collection",
         .input_ports = P2_APPEND_IN,
         .num_inputs = 2,
-        .output_ports = P2_RESULT,
-        .num_outputs = 1
+        .output_ports = P2_NEXT_RESULT,
+        .num_outputs = 2,
     },
     {
+        .kind = NodeKind2::Banged,
         .type_id = NodeTypeID::AppendBang,
         .name = "append!",
         .desc = "Append to collection (bang)",
@@ -420,16 +434,18 @@ static const NodeType2 NODE_TYPES2[] = {
         .num_inputs = 3,
         .output_ports = P2_NEXT_RESULT,
         .num_outputs = 2,
-        .kind = NodeKind2::Banged
     },
     {
         .type_id = NodeTypeID::Store,
         .name = "store",
         .desc = "Store value",
         .input_ports = P2_STORE_IN,
-        .num_inputs = 2
+        .num_inputs = 2,
+        .output_ports = P2_NEXT,
+        .num_outputs = 1
     },
     {
+        .kind = NodeKind2::Banged,
         .type_id = NodeTypeID::StoreBang,
         .name = "store!",
         .desc = "Store value (bang)",
@@ -437,29 +453,30 @@ static const NodeType2 NODE_TYPES2[] = {
         .num_inputs = 3,
         .output_ports = P2_NEXT,
         .num_outputs = 1,
-        .kind = NodeKind2::Banged
     },
     {
+        .kind = NodeKind2::Event,
         .type_id = NodeTypeID::EventBang,
         .name = "event!",
         .desc = "Event source",
-        .output_ports = P2_EVENT_OUT,
+        .output_ports = P2_NEXT,
         .num_outputs = 1,
-        .kind = NodeKind2::Event
+        .output_ports_va_args = &P2_VA_EVENT_OUT,
     },
     {
+        .kind = NodeKind2::Special,
         .type_id = NodeTypeID::OnKeyDownBang,
         .name = "on_key_down!",
         .desc = "(removed)",
-        .kind = NodeKind2::Special
     },
     {
+        .kind = NodeKind2::Special,
         .type_id = NodeTypeID::OnKeyUpBang,
         .name = "on_key_up!",
         .desc = "(removed)",
-        .kind = NodeKind2::Special
     },
     {
+        .kind = NodeKind2::Banged,
         .type_id = NodeTypeID::SelectBang,
         .name = "select!",
         .desc = "Branch on condition",
@@ -467,9 +484,9 @@ static const NodeType2 NODE_TYPES2[] = {
         .num_inputs = 2,
         .output_ports = P2_SELECT_BANG_OUT,
         .num_outputs = 3,
-        .kind = NodeKind2::Banged
     },
     {
+        .kind = NodeKind2::Banged,
         .type_id = NodeTypeID::ExprBang,
         .name = "expr!",
         .desc = "Evaluate expression on bang",
@@ -477,9 +494,10 @@ static const NodeType2 NODE_TYPES2[] = {
         .num_inputs = 1,
         .output_ports = P2_NEXT,
         .num_outputs = 1,
-        .kind = NodeKind2::Banged
+        .output_ports_va_args = &P2_VA_EXPR_OUT,
     },
     {
+        .kind = NodeKind2::Banged,
         .type_id = NodeTypeID::EraseBang,
         .name = "erase!",
         .desc = "Erase from collection (bang)",
@@ -487,16 +505,18 @@ static const NodeType2 NODE_TYPES2[] = {
         .num_inputs = 3,
         .output_ports = P2_NEXT_RESULT,
         .num_outputs = 2,
-        .kind = NodeKind2::Banged
     },
     {
         .type_id = NodeTypeID::Iterate,
         .name = "iterate",
         .desc = "Iterate collection",
         .input_ports = P2_ITERATE_IN,
-        .num_inputs = 2
+        .num_inputs = 2,
+        .output_ports = P2_NEXT,
+        .num_outputs = 1
     },
     {
+        .kind = NodeKind2::Banged,
         .type_id = NodeTypeID::IterateBang,
         .name = "iterate!",
         .desc = "Iterate collection (bang)",
@@ -504,7 +524,6 @@ static const NodeType2 NODE_TYPES2[] = {
         .num_inputs = 3,
         .output_ports = P2_NEXT,
         .num_outputs = 1,
-        .kind = NodeKind2::Banged
     },
     {
         .type_id = NodeTypeID::Next,
@@ -512,8 +531,8 @@ static const NodeType2 NODE_TYPES2[] = {
         .desc = "Advance iterator",
         .input_ports = P2_VALUE,
         .num_inputs = 1,
-        .output_ports = P2_RESULT,
-        .num_outputs = 1
+        .output_ports = P2_NEXT_RESULT,
+        .num_outputs = 2,
     },
     {
         .type_id = NodeTypeID::Lock,
@@ -521,20 +540,23 @@ static const NodeType2 NODE_TYPES2[] = {
         .desc = "Execute under mutex lock",
         .input_ports = P2_LOCK_IN,
         .num_inputs = 2,
-        .va_args = &P2_VA_PARAM
+        .input_ports_va_args = &P2_VA_PARAM,
+        .output_ports = P2_NEXT,
+        .num_outputs = 1,
     },
     {
+        .kind = NodeKind2::Banged,
         .type_id = NodeTypeID::LockBang,
         .name = "lock!",
         .desc = "Execute under mutex lock (bang)",
         .input_ports = P2_LOCK_BANG_IN,
         .num_inputs = 3,
+        .input_ports_va_args = &P2_VA_PARAM,
         .output_ports = P2_NEXT,
         .num_outputs = 1,
-        .kind = NodeKind2::Banged,
-        .va_args = &P2_VA_PARAM
     },
     {
+        .kind = NodeKind2::Banged,
         .type_id = NodeTypeID::ResizeBang,
         .name = "resize!",
         .desc = "Resize vector",
@@ -542,7 +564,6 @@ static const NodeType2 NODE_TYPES2[] = {
         .num_inputs = 3,
         .output_ports = P2_NEXT,
         .num_outputs = 1,
-        .kind = NodeKind2::Banged
     },
     {
         .type_id = NodeTypeID::Cast,
@@ -550,14 +571,14 @@ static const NodeType2 NODE_TYPES2[] = {
         .desc = "Cast value to type",
         .input_ports = P2_VALUE,
         .num_inputs = 1,
-        .output_ports = P2_RESULT,
-        .num_outputs = 1
+        .output_ports = P2_NEXT_RESULT,
+        .num_outputs = 2
     },
     {
+        .kind = NodeKind2::Special,
         .type_id = NodeTypeID::Label,
         .name = "label",
         .desc = "Text label",
-        .kind = NodeKind2::Special
     },
     {
         .type_id = NodeTypeID::Deref,
@@ -565,14 +586,14 @@ static const NodeType2 NODE_TYPES2[] = {
         .desc = "Dereference iterator (internal)",
         .input_ports = P2_VALUE,
         .num_inputs = 1,
-        .output_ports = P2_RESULT,
-        .num_outputs = 1
+        .output_ports = P2_NEXT_RESULT,
+        .num_outputs = 2,
     },
     {
+        .kind = NodeKind2::Special,
         .type_id = NodeTypeID::Error,
         .name = "error",
         .desc = "Error: invalid node",
-        .kind = NodeKind2::Special
     },
 };
 

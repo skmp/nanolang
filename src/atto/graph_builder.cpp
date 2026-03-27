@@ -57,17 +57,244 @@ static std::vector<std::string> parse_toml_array(const std::string& val) {
     return result;
 }
 
+// ─── FlowArg2 base ───
+
+static void maybe_dirty(const std::shared_ptr<GraphBuilder>& gb) { if (gb) gb->mark_dirty(); }
+
+FlowArg2::FlowArg2(ArgKind kind, const std::shared_ptr<GraphBuilder>& owner)
+    : kind_(kind), owner_(owner)
+    , node_(owner ? owner->empty_node() : nullptr)
+    , net_(owner ? owner->unconnected_net() : nullptr)
+{
+    if (!owner_) throw std::logic_error("FlowArg2: owner must not be null");
+    if (!node_) throw std::logic_error("FlowArg2: node must not be null");
+    if (!net_) throw std::logic_error("FlowArg2: net must not be null");
+}
+
+void FlowArg2::mark_dirty() {
+    maybe_dirty(owner_);
+    // Only enqueue editor callbacks if editors are registered
+    if (!owner_->has_editors()) return;
+    // Enqueue type-specific arg editor callbacks
+    switch (kind_) {
+    case ArgKind::Net: {
+        auto self = std::dynamic_pointer_cast<ArgNet2>(shared_from_this());
+        owner_->add_mutation_call(this, [self]() {
+            for (auto& we : self->editors_)
+                if (auto e = we.lock()) e->arg_net_mutated(self);
+        });
+        break;
+    }
+    case ArgKind::Number: {
+        auto self = std::dynamic_pointer_cast<ArgNumber2>(shared_from_this());
+        owner_->add_mutation_call(this, [self]() {
+            for (auto& we : self->editors_)
+                if (auto e = we.lock()) e->arg_number_mutated(self);
+        });
+        break;
+    }
+    case ArgKind::String: {
+        auto self = std::dynamic_pointer_cast<ArgString2>(shared_from_this());
+        owner_->add_mutation_call(this, [self]() {
+            for (auto& we : self->editors_)
+                if (auto e = we.lock()) e->arg_string_mutated(self);
+        });
+        break;
+    }
+    case ArgKind::Expr: {
+        auto self = std::dynamic_pointer_cast<ArgExpr2>(shared_from_this());
+        owner_->add_mutation_call(this, [self]() {
+            for (auto& we : self->editors_)
+                if (auto e = we.lock()) e->arg_expr_mutated(self);
+        });
+        break;
+    }
+    }
+    // Bubble up to node (structural change)
+    if (node_ && !node_->is_the_empty)
+        node_->mark_dirty();
+}
+
+const FlowNodeBuilderPtr& FlowArg2::node() const {
+    if (!node_) throw std::logic_error("FlowArg2::node(): node is null");
+    return node_;
+}
+void FlowArg2::node(const FlowNodeBuilderPtr& n) {
+    if (!n) throw std::logic_error("FlowArg2::node(set): cannot set null, use empty_node()");
+    node_ = n;
+}
+
+const NetBuilderPtr& FlowArg2::net() const {
+    if (!net_) throw std::logic_error("FlowArg2::net(): net is null");
+    return net_;
+}
+void FlowArg2::net(const NetBuilderPtr& w) {
+    if (!w) throw std::logic_error("FlowArg2::net(set): cannot set null, use unconnected_net()");
+    net_ = w;
+}
+
+const std::shared_ptr<GraphBuilder>& FlowArg2::owner() const {
+    if (!owner_) throw std::logic_error("FlowArg2::owner(): owner is null");
+    return owner_;
+}
+
+std::shared_ptr<ArgNet2> FlowArg2::as_net() {
+    return kind_ == ArgKind::Net ? std::dynamic_pointer_cast<ArgNet2>(shared_from_this()) : nullptr;
+}
+std::shared_ptr<ArgNumber2> FlowArg2::as_number() {
+    return kind_ == ArgKind::Number ? std::dynamic_pointer_cast<ArgNumber2>(shared_from_this()) : nullptr;
+}
+std::shared_ptr<ArgString2> FlowArg2::as_string() {
+    return kind_ == ArgKind::String ? std::dynamic_pointer_cast<ArgString2>(shared_from_this()) : nullptr;
+}
+std::shared_ptr<ArgExpr2> FlowArg2::as_expr() {
+    return kind_ == ArgKind::Expr ? std::dynamic_pointer_cast<ArgExpr2>(shared_from_this()) : nullptr;
+}
+
+std::string FlowArg2::name() const {
+    if (!is_remap()) {
+        std::string prefix = port_->name;
+        if (port_->va_args) {
+            if (port_->position == PortPosition2::Input) {
+                return prefix + "[" + std::to_string(input_pin_va_idx()) + "]";
+            } else {
+                return prefix + "[" + std::to_string(output_pin_va_idx()) + "]";
+            }
+        } else {
+            return prefix;
+        }
+    } else {
+        return "remaps[" + std::to_string(remap_idx())  + "]";
+    }
+}
+
+std::string FlowArg2::fq_name() const {
+    return node_->id() + "." + name();
+}
+
+unsigned FlowArg2::remap_idx() const {
+    if (!is_remap()) throw std::logic_error("FlowArg2::remap_idx(): not a remap (port is set)");
+    auto n = node();
+    auto self = const_cast<FlowArg2*>(this)->shared_from_this();
+    for (unsigned i = 0; i < n->remaps.size(); i++) {
+        if (n->remaps[i] == self) return i;
+    }
+    throw std::logic_error("FlowArg2::remap_idx(): arg not found in node remaps");
+}
+
+unsigned FlowArg2::input_pin_idx() const {
+    if (is_remap()) throw std::logic_error("FlowArg2::input_pin_idx(): is a remap (no port)");
+    auto n = node();
+    auto self = const_cast<FlowArg2*>(this)->shared_from_this();
+    if (n->parsed_args) {
+        for (unsigned i = 0; i < (unsigned)n->parsed_args->size(); i++)
+            if ((*n->parsed_args)[i] == self) return i;
+    }
+    if (n->parsed_va_args) {
+        unsigned base = n->parsed_args ? (unsigned)n->parsed_args->size() : 0;
+        for (unsigned i = 0; i < (unsigned)n->parsed_va_args->size(); i++)
+            if ((*n->parsed_va_args)[i] == self) return base + i;
+    }
+    throw std::logic_error("FlowArg2::input_pin_idx(): arg not found in node inputs");
+}
+
+unsigned FlowArg2::input_pin_va_idx() const {
+    if (is_remap()) throw std::logic_error("FlowArg2::input_pin_va_idx(): is a remap (no port)");
+    auto n = node();
+    auto self = const_cast<FlowArg2*>(this)->shared_from_this();
+    if (n->parsed_va_args) {
+        for (unsigned i = 0; i < (unsigned)n->parsed_va_args->size(); i++)
+            if ((*n->parsed_va_args)[i] == self) return i;
+    }
+    throw std::logic_error("FlowArg2::input_pin_va_idx(): arg not found in node inputs");
+}
+
+unsigned FlowArg2::output_pin_idx() const {
+    if (is_remap()) throw std::logic_error("FlowArg2::output_pin_idx(): is a remap (no port)");
+    auto n = node();
+    auto self = const_cast<FlowArg2*>(this)->shared_from_this();
+    for (unsigned i = 0; i < (unsigned)n->outputs.size(); i++)
+        if (n->outputs[i] == self) return i;
+    throw std::logic_error("FlowArg2::output_pin_idx(): arg not found in node outputs");
+}
+
+
+unsigned FlowArg2::output_pin_va_idx() const {
+    if (is_remap()) throw std::logic_error("FlowArg2::output_pin_va_idx(): is a remap (no port)");
+    auto n = node();
+    auto self = const_cast<FlowArg2*>(this)->shared_from_this();
+    for (unsigned i = 0; i < (unsigned)n->outputs_va_args.size(); i++)
+        if (n->outputs_va_args[i] == self) return i;
+    throw std::logic_error("FlowArg2::output_pin_va_idx(): arg not found in node outputs");
+}
+
+// ─── Dirty-tracked setters ───
+
+void ArgNet2::net_id(const NodeId& v) {
+    if (v.empty()) throw std::logic_error("ArgNet2::net_id: cannot set empty id");
+    net_id_ = v; mark_dirty();
+}
+void ArgNet2::entry(std::shared_ptr<BuilderEntry> v) {
+    if (!v) throw std::logic_error("ArgNet2::entry: cannot set null entry");
+    entry_ = std::move(v); mark_dirty();
+}
+void ArgNumber2::value(double v)       { value_ = v; mark_dirty(); }
+void ArgNumber2::is_float(bool v)      { is_float_ = v; mark_dirty(); }
+void ArgString2::value(const std::string& v) { value_ = v; mark_dirty(); }
+void ArgExpr2::expr(const std::string& v)    { expr_ = v; mark_dirty(); }
+
+// ─── ParsedArgs2 ───
+
+void ParsedArgs2::push_back(FlowArg2Ptr arg) { items_.push_back(std::move(arg)); maybe_dirty(owner); }
+void ParsedArgs2::pop_back()                 { items_.pop_back(); maybe_dirty(owner); }
+void ParsedArgs2::resize(int n) {
+    // Can't create default FlowArg2 (abstract), just truncate if shrinking
+    items_.resize(n);
+    maybe_dirty(owner);
+}
+void ParsedArgs2::insert(iterator pos, FlowArg2Ptr arg) { items_.insert(pos, std::move(arg)); maybe_dirty(owner); }
+void ParsedArgs2::clear()                    { items_.clear(); maybe_dirty(owner); }
+void ParsedArgs2::set(int i, FlowArg2Ptr arg) { items_[i] = std::move(arg); maybe_dirty(owner); }
+
+// ─── BuilderEntry ───
+
+void BuilderEntry::id(const NodeId& v) { id_ = v; mark_dirty(); }
+void BuilderEntry::mark_dirty() {
+    maybe_dirty(owner_);
+    if (!owner_ || !owner_->has_editors()) return;
+    if (is(IdCategory::Node)) {
+        auto self = std::dynamic_pointer_cast<FlowNodeBuilder>(shared_from_this());
+        owner_->add_mutation_call(this, [self]() {
+            for (auto& we : self->editors_)
+                if (auto e = we.lock()) e->node_mutated(self);
+        });
+    } else if (is(IdCategory::Net)) {
+        auto self = std::dynamic_pointer_cast<NetBuilder>(shared_from_this());
+        owner_->add_mutation_call(this, [self]() {
+            for (auto& we : self->editors_)
+                if (auto e = we.lock()) e->net_mutated(self);
+        });
+    }
+}
+
+std::shared_ptr<FlowNodeBuilder> BuilderEntry::as_node() {
+    return std::dynamic_pointer_cast<FlowNodeBuilder>(shared_from_this());
+}
+std::shared_ptr<NetBuilder> BuilderEntry::as_net() {
+    return std::dynamic_pointer_cast<NetBuilder>(shared_from_this());
+}
+
 // ─── NetBuilder ───
 
 void NetBuilder::compact() {
-    destinations.erase(
-        std::remove_if(destinations.begin(), destinations.end(), [](auto& w) { return w.expired(); }),
-        destinations.end());
+    destinations().erase(
+        std::remove_if(destinations().begin(), destinations().end(), [](auto& w) { return w.expired(); }),
+        destinations().end());
 }
 
 bool NetBuilder::unused() {
     compact();
-    return source.expired() && destinations.empty();
+    return source().expired() && destinations().empty();
 }
 
 void NetBuilder::validate() const {
@@ -75,18 +302,18 @@ void NetBuilder::validate() const {
 
 // ─── v2 parse/reconstruct ───
 
-static FlowArg2 parse_token_v2(GraphBuilder& gb, const std::string& tok) {
-    if (tok.empty()) return ArgString2{""};
+static FlowArg2Ptr parse_token_v2(GraphBuilder& gb, const std::string& tok) {
+    if (tok.empty()) return gb.build_arg_string("");
 
     // Net reference: $name (non-numeric)
     if (tok[0] == '$' && tok.size() >= 2 && !std::isdigit(tok[1])) {
         auto [id, entry] = gb.find_or_create_net(tok, false);
-        return ArgNet2{NodeId(id), entry};
+        return gb.build_arg_net(NodeId(id), entry);
     }
 
     // String literal
     if (tok.front() == '"' && tok.back() == '"' && tok.size() >= 2) {
-        return ArgString2{tok.substr(1, tok.size() - 2)};
+        return gb.build_arg_string(tok.substr(1, tok.size() - 2));
     }
 
     // Number
@@ -100,11 +327,11 @@ static FlowArg2 parse_token_v2(GraphBuilder& gb, const std::string& tok) {
         if (c < '0' || c > '9') { is_number = false; break; }
     }
     if (is_number && !tok.empty()) {
-        return ArgNumber2{std::stod(tok), is_float};
+        return gb.build_arg_number(std::stod(tok), is_float);
     }
 
     // Expression (anything else)
-    return ArgExpr2{tok};
+    return gb.build_arg_expr(tok);
 }
 
 ParseResult parse_args_v2(const std::shared_ptr<GraphBuilder>& gb,
@@ -152,22 +379,20 @@ ParseResult parse_args_v2(const std::shared_ptr<GraphBuilder>& gb,
 std::string reconstruct_args_str(const ParsedArgs2& args) {
     std::string result;
     for (auto& a : args) {
+        if (!a) continue;
         if (!result.empty()) result += " ";
-        std::visit([&](auto& v) {
-            using T = std::decay_t<decltype(v)>;
-            if constexpr (std::is_same_v<T, ArgNet2>) result += v.first;
-            else if constexpr (std::is_same_v<T, ArgNumber2>) {
-                if (v.is_float) {
-                    char buf[64];
-                    snprintf(buf, sizeof(buf), "%g", v.value);
-                    result += buf;
-                } else {
-                    result += std::to_string((long long)v.value);
-                }
+        if (auto n = a->as_net()) result += n->first();
+        else if (auto num = a->as_number()) {
+            if (num->is_float()) {
+                char buf[64];
+                snprintf(buf, sizeof(buf), "%g", num->value());
+                result += buf;
+            } else {
+                result += std::to_string((long long)num->value());
             }
-            else if constexpr (std::is_same_v<T, ArgString2>) result += "\"" + v.value + "\"";
-            else if constexpr (std::is_same_v<T, ArgExpr2>) result += v.expr;
-        }, a);
+        }
+        else if (auto s = a->as_string()) result += "\"" + s->value() + "\"";
+        else if (auto e = a->as_expr()) result += e->expr();
     }
     return result;
 }
@@ -190,42 +415,67 @@ std::string FlowNodeBuilder::args_str() const {
 // ─── GraphBuilder ───
 
 std::shared_ptr<FlowNodeBuilder> GraphBuilder::add_node(NodeId id, NodeTypeID type, std::shared_ptr<ParsedArgs2> args) {
-    auto nb = std::make_shared<FlowNodeBuilder>();
+    auto nb = std::make_shared<FlowNodeBuilder>(shared_from_this());
     nb->type_id = type;
     nb->parsed_args = std::move(args);
-    nb->id = id;
+    nb->id(id);
     entries[std::move(id)] = nb;
     return nb;
 }
 
-void GraphBuilder::ensure_unconnected() {
-    if (entries.count("$unconnected")) return;
-    auto net = std::make_shared<NetBuilder>();
-    net->is_the_unconnected = true;
-    net->auto_wire = true;
-    net->id = "$unconnected";
-    entries["$unconnected"] = net;
+FlowNodeBuilderPtr GraphBuilder::empty_node() {
+    ensure_sentinels();
+    return empty_;
+}
+
+NetBuilderPtr GraphBuilder::unconnected_net() {
+    ensure_sentinels();
+    return unconnected_;
+}
+
+void GraphBuilder::ensure_sentinels() {
+    if (!unconnected_) {
+        unconnected_ = std::make_shared<NetBuilder>(shared_from_this());
+        unconnected_->is_the_unconnected(true);
+        unconnected_->auto_wire(true);
+        unconnected_->id("$unconnected");
+        entries["$unconnected"] = unconnected_;
+    }
+    if (!empty_) {
+        empty_ = std::make_shared<FlowNodeBuilder>(shared_from_this());
+        empty_->is_the_empty = true;
+        empty_->id("$empty");
+        entries["$empty"] = empty_;
+    }
 }
 
 std::pair<NodeId, BuilderEntryPtr> GraphBuilder::find_or_create_net(const NodeId& name, bool for_source) {
+    if (name == "$unconnected" || name == "$empty")
+        throw std::logic_error("find_or_create_net: use unconnected_net()/empty_node() for sentinel '" + name + "'");
     auto it = entries.find(name);
     if (it != entries.end()) {
-        if (auto net = it->second->as_Net()) {
-            if (for_source && !net->source.expired())
+        if (auto net = it->second->as_net()) {
+            if (for_source && !net->source().expired())
                 throw std::logic_error("find_or_create_net(\"" + name + "\"): net already has a source");
             return {it->first, it->second};
         }
-        // Exists as a node — don't overwrite
         return {it->first, nullptr};
     }
-    auto net = std::make_shared<NetBuilder>();
-    net->auto_wire = (name.size() >= 6 && name.substr(0, 6) == "$auto-");
-    net->id = name;
+    auto net = std::make_shared<NetBuilder>(shared_from_this());
+    net->auto_wire(name.size() >= 6 && name.substr(0, 6) == "$auto-");
+    net->id(name);
     entries[name] = net;
     return {entries.find(name)->first, net};
 }
 
+BuilderEntryPtr GraphBuilder::find_or_null_node(const NodeId& id) {
+    auto it = entries.find(id);
+    return (it != entries.end()) ? it->second : nullptr;
+}
+
 BuilderEntryPtr GraphBuilder::find(const NodeId& id) {
+    if (id == "$unconnected" || id == "$empty")
+        throw std::logic_error("find: use unconnected_net()/empty_node() for sentinel '" + id + "'");
     auto it = entries.find(id);
     return (it != entries.end()) ? it->second : nullptr;
 }
@@ -233,19 +483,19 @@ BuilderEntryPtr GraphBuilder::find(const NodeId& id) {
 FlowNodeBuilderPtr GraphBuilder::find_node(const NodeId& id) {
     auto it = entries.find(id);
     if (it == entries.end()) return nullptr;
-    return it->second->as_Node();
+    return it->second->as_node();
 }
 
 NetBuilderPtr GraphBuilder::find_net(const NodeId& name) {
     auto it = entries.find(name);
     if (it == entries.end()) return nullptr;
-    return it->second->as_Net();
+    return it->second->as_net();
 }
 
 void GraphBuilder::compact() {
     for (auto it = entries.begin(); it != entries.end(); ) {
-        if (auto net = it->second->as_Net()) {
-            if (!net->is_the_unconnected && net->unused()) {
+        if (auto net = it->second->as_net()) {
+            if (!net->is_the_unconnected() && net->unused()) {
                 it = entries.erase(it);
                 continue;
             }
@@ -260,6 +510,228 @@ NodeId GraphBuilder::next_id() {
         snprintf(buf, sizeof(buf), "$a-%x", n);
         if (!entries.count(buf)) return buf;
     }
+}
+
+bool GraphBuilder::rename(const BuilderEntryPtr& entry, const NodeId& new_id) {
+    if (!entry) return false;
+    if (entries.count(new_id)) return false; // collision
+
+    const NodeId old_id = entry->id();
+    entries.erase(old_id);
+    entry->id(new_id);
+    entries[new_id] = entry;
+    mark_dirty();
+    return true;
+}
+
+FlowArg2Ptr GraphBuilder::build_arg_net(NodeId id, BuilderEntryPtr entry, const PortDesc2* port) {
+    auto p = std::shared_ptr<ArgNet2>(new ArgNet2{std::move(id), std::move(entry), shared_from_this()});
+    if (port) p->port(port);
+    pins_.push_back(p);
+    return p;
+}
+FlowArg2Ptr GraphBuilder::build_arg_number(double value, bool is_float, const PortDesc2* port) {
+    auto p = std::shared_ptr<ArgNumber2>(new ArgNumber2{value, is_float, shared_from_this()});
+    if (port) p->port(port);
+    pins_.push_back(p);
+    return p;
+}
+FlowArg2Ptr GraphBuilder::build_arg_string(std::string value, const PortDesc2* port) {
+    auto p = std::shared_ptr<ArgString2>(new ArgString2{std::move(value), shared_from_this()});
+    if (port) p->port(port);
+    pins_.push_back(p);
+    return p;
+}
+FlowArg2Ptr GraphBuilder::build_arg_expr(std::string expr, const PortDesc2* port) {
+    auto p = std::shared_ptr<ArgExpr2>(new ArgExpr2{std::move(expr), shared_from_this()});
+    if (port) p->port(port);
+    pins_.push_back(p);
+    return p;
+}
+
+// ─── Mutation batching ───
+
+void GraphBuilder::edit_start() {
+    if (!mutations_.empty())
+        throw std::logic_error("GraphBuilder::edit_start(): previous edit_commit() was missed ("
+                               + std::to_string(mutations_.size()) + " pending mutations)");
+}
+
+void GraphBuilder::edit_commit() {
+    auto mutations = std::move(mutations_);
+    mutations_.clear();
+    mutation_items_.clear();
+    for (auto& fn : mutations)
+        fn();
+}
+
+void GraphBuilder::add_mutation_call(void* ptr, std::function<void()>&& fn) {
+    if (mutation_items_.count(ptr)) return;
+    mutation_items_.insert(ptr);
+    mutations_.push_back(std::move(fn));
+}
+
+// ─── Editor registration ───
+
+// Helper: create arg editors for all args belonging to a node
+static void register_arg_editors(const std::shared_ptr<INodeEditor>& node_editor,
+                                 const FlowNodeBuilderPtr& node) {
+    // Helper lambda to process a single arg
+    auto process_arg = [&](const FlowArg2Ptr& arg) {
+        if (!arg) return;
+        switch (arg->kind()) {
+        case ArgKind::Net: {
+            auto a = arg->as_net();
+            auto ed = node_editor->create_arg_net_editor(a);
+            if (ed) a->editors_.push_back(ed);
+            break;
+        }
+        case ArgKind::Number: {
+            auto a = arg->as_number();
+            auto ed = node_editor->create_arg_number_editor(a);
+            if (ed) a->editors_.push_back(ed);
+            break;
+        }
+        case ArgKind::String: {
+            auto a = arg->as_string();
+            auto ed = node_editor->create_arg_string_editor(a);
+            if (ed) a->editors_.push_back(ed);
+            break;
+        }
+        case ArgKind::Expr: {
+            auto a = arg->as_expr();
+            auto ed = node_editor->create_arg_expr_editor(a);
+            if (ed) a->editors_.push_back(ed);
+            break;
+        }
+        }
+    };
+
+    // Process all arg containers on the node
+    if (node->parsed_args) {
+        for (int i = 0; i < node->parsed_args->size(); i++)
+            process_arg((*node->parsed_args)[i]);
+    }
+    if (node->parsed_va_args) {
+        for (int i = 0; i < node->parsed_va_args->size(); i++)
+            process_arg((*node->parsed_va_args)[i]);
+    }
+    for (auto& arg : node->remaps) process_arg(arg);
+    for (auto& arg : node->outputs) process_arg(arg);
+    for (auto& arg : node->outputs_va_args) process_arg(arg);
+}
+
+// Helper: enqueue initial mutated callbacks bottom-up for a node and its args
+static void enqueue_initial_mutations(GraphBuilder* gb, const FlowNodeBuilderPtr& node) {
+    // Enqueue arg mutations first (innermost)
+    auto enqueue_arg = [&](const FlowArg2Ptr& arg) {
+        if (!arg) return;
+        switch (arg->kind()) {
+        case ArgKind::Net: {
+            auto a = arg->as_net();
+            gb->add_mutation_call(a.get(), [a]() {
+                for (auto& we : a->editors_)
+                    if (auto e = we.lock()) e->arg_net_mutated(a);
+            });
+            break;
+        }
+        case ArgKind::Number: {
+            auto a = arg->as_number();
+            gb->add_mutation_call(a.get(), [a]() {
+                for (auto& we : a->editors_)
+                    if (auto e = we.lock()) e->arg_number_mutated(a);
+            });
+            break;
+        }
+        case ArgKind::String: {
+            auto a = arg->as_string();
+            gb->add_mutation_call(a.get(), [a]() {
+                for (auto& we : a->editors_)
+                    if (auto e = we.lock()) e->arg_string_mutated(a);
+            });
+            break;
+        }
+        case ArgKind::Expr: {
+            auto a = arg->as_expr();
+            gb->add_mutation_call(a.get(), [a]() {
+                for (auto& we : a->editors_)
+                    if (auto e = we.lock()) e->arg_expr_mutated(a);
+            });
+            break;
+        }
+        }
+    };
+
+    if (node->parsed_args)
+        for (int i = 0; i < node->parsed_args->size(); i++)
+            enqueue_arg((*node->parsed_args)[i]);
+    if (node->parsed_va_args)
+        for (int i = 0; i < node->parsed_va_args->size(); i++)
+            enqueue_arg((*node->parsed_va_args)[i]);
+    for (auto& a : node->remaps) enqueue_arg(a);
+    for (auto& a : node->outputs) enqueue_arg(a);
+    for (auto& a : node->outputs_va_args) enqueue_arg(a);
+
+    // Then enqueue node mutation (outer)
+    gb->add_mutation_call(node.get(), [node]() {
+        for (auto& we : node->editors_)
+            if (auto e = we.lock()) e->node_mutated(node);
+    });
+}
+
+void GraphBuilder::add_editor(const std::shared_ptr<IGraphEditor>& editor) {
+    editors_.push_back(editor);
+
+    // Register existing entries and fire initial mutations
+    edit_start();
+
+    for (auto& [id, entry] : entries) {
+        if (auto node = entry->as_node()) {
+            if (node->shadow || node->is_the_empty) continue;
+            auto node_ed = editor->node_added(id, node);
+            if (node_ed) {
+                node->editors_.push_back(node_ed);
+                register_arg_editors(node_ed, node);
+                enqueue_initial_mutations(this, node);
+            }
+        } else if (auto net = entry->as_net()) {
+            if (net->is_the_unconnected()) continue;
+            auto net_ed = editor->net_added(id, net);
+            if (net_ed) {
+                net->editors_.push_back(net_ed);
+                add_mutation_call(net.get(), [net]() {
+                    for (auto& we : net->editors_)
+                        if (auto e = we.lock()) e->net_mutated(net);
+                });
+            }
+        }
+    }
+
+    edit_commit();
+}
+
+void GraphBuilder::remove_editor(const std::shared_ptr<IGraphEditor>& editor) {
+    editors_.erase(
+        std::remove_if(editors_.begin(), editors_.end(),
+            [&](const std::weak_ptr<IGraphEditor>& w) {
+                auto s = w.lock();
+                return !s || s == editor;
+            }),
+        editors_.end());
+    // Note: per-item editor weak_ptrs will naturally expire
+}
+
+// ─── FlowNodeBuilder::mark_layout_dirty ───
+
+void FlowNodeBuilder::mark_layout_dirty() {
+    auto gb = owner();
+    if (gb) gb->mark_dirty();
+    if (!gb || !gb->has_editors()) return;
+    auto self = std::dynamic_pointer_cast<FlowNodeBuilder>(shared_from_this());
+    gb->add_mutation_call(this, [self]() {
+        for (auto& we : self->editors_)
+            if (auto e = we.lock()) e->node_layout_changed(self);
+    });
 }
 
 // ─── Deserializer ───
@@ -281,7 +753,7 @@ BuilderResult Deserializer::parse_node(
         if (args.size() != 1)
             throw std::invalid_argument("Label/Error node requires exactly 1 argument, got " + std::to_string(args.size()));
         nb.parsed_args = std::make_shared<ParsedArgs2>();
-        nb.parsed_args->push_back(ArgString2{args[0]});
+        nb.parsed_args->push_back(gb->build_arg_string(args[0]));
         return std::pair{id, std::move(nb)};
     }
 
@@ -304,7 +776,8 @@ FlowNodeBuilder& Deserializer::parse_or_error(
 
     if (auto* p = std::get_if<std::pair<NodeId, FlowNodeBuilder>>(&result)) {
         auto entry = std::make_shared<FlowNodeBuilder>(std::move(p->second));
-        entry->id = p->first;
+        entry->id(p->first);
+        entry->owner(gb);
         gb->entries[p->first] = entry;
         return *entry;
     }
@@ -315,12 +788,12 @@ FlowNodeBuilder& Deserializer::parse_or_error(
         if (!args_joined.empty()) args_joined += " ";
         args_joined += a;
     }
-    auto entry = std::make_shared<FlowNodeBuilder>();
+    auto entry = std::make_shared<FlowNodeBuilder>(gb);
     entry->type_id = NodeTypeID::Error;
     entry->parsed_args = std::make_shared<ParsedArgs2>();
-    entry->parsed_args->push_back(ArgString2{type + " " + args_joined});
+    entry->parsed_args->push_back(gb->build_arg_string(type + " " + args_joined));
     entry->error = error_msg;
-    entry->id = id;
+    entry->id(id);
     gb->entries[id] = entry;
     return *entry;
 }
@@ -338,7 +811,7 @@ Deserializer::ParseAttoResult Deserializer::parse_atto(std::istream& f) {
     }
 
     auto gb = std::make_shared<GraphBuilder>();
-    gb->ensure_unconnected();
+    gb->ensure_sentinels();
 
     bool in_node = false;
     std::string cur_id, cur_type;
@@ -380,40 +853,85 @@ Deserializer::ParseAttoResult Deserializer::parse_atto(std::istream& f) {
             bool is_expr = is_any_of(nb.type_id, NodeTypeID::Expr, NodeTypeID::ExprBang);
             int old_num_nexts = old_nt ? old_nt->num_nexts : 0;
 
-            // Helper: wire a net and return ArgNet2
-            auto wire_output = [&](const std::string& net_name) -> ArgNet2 {
+            // Helper: net a net and return ArgNet2
+            auto wire_output = [&](const std::string& net_name) -> FlowArg2Ptr {
                 auto [resolved, net_ptr] = gb->find_or_create_net(net_name, true);
-                if (auto net = net_ptr ? net_ptr->as_Net() : nullptr)
-                    net->source = node_entry;
-                return {resolved, net_ptr};
+                if (auto net = net_ptr ? net_ptr->as_net() : nullptr)
+                    net->source(node_entry);
+                return gb->build_arg_net(resolved, net_ptr);
             };
 
-            // Filter out empty and -as_lambda entries, wire all nets
+            // Filter out empty and -as_lambda entries, net all nets
             // For expr: outputs are all data (no nexts), dynamic count
             // For others: [nexts..., data_outs..., post_bang]
             if (is_expr) {
-                // Expr: positional mapping — all outputs are data, last may be post_bang
+                // Expr/Expr!: split outputs into fixed (outputs) and va (outputs_va_args)
+                // Old format:
+                //   Expr (Flow):  [out0, out1, ..., post_bang] — post_bang is side-bang → outputs[0]
+                //   Expr! (Banged): [next, out0, out1, ...] — next → outputs[0]
+                bool is_flow_expr = (nb.type_id == NodeTypeID::Expr);
+                auto* va_port = new_nt ? new_nt->output_ports_va_args : nullptr;
+
+                // Collect all non-empty, non-lambda entries
+                std::vector<FlowArg2Ptr> all_outs;
+                FlowArg2Ptr post_bang_arg = nullptr;
                 for (int i = 0; i < (int)cur_outputs.size(); i++) {
                     auto& net_name = cur_outputs[i];
                     if (net_name.empty()) continue;
-                    // Check for post_bang suffix
-                    bool is_post_bang = (net_name.size() > 10 &&
-                        net_name.compare(net_name.size() - 10, 10, "-post_bang") == 0);
                     if (net_name.size() > 10 && net_name.compare(net_name.size() - 10, 10, "-as_lambda") == 0)
                         continue;
+                    bool is_post_bang = is_flow_expr && (net_name.size() > 10 &&
+                        net_name.compare(net_name.size() - 10, 10, "-post_bang") == 0);
                     auto arg = wire_output(net_name);
-                    // post_bang is side-bang for flow nodes — don't add to outputs array
-                    // (it's implicit from NodeKind2::Flow)
-                    if (!is_post_bang) {
-                        while ((int)nb.outputs.size() <= i)
-                            nb.outputs.push_back({"$unconnected", gb->find("$unconnected")});
-                        nb.outputs[i] = std::move(arg);
+                    if (is_post_bang) {
+                        // Side-bang for flow expr → goes to outputs[0]
+                        if (new_nt && new_nt->num_outputs > 0)
+                            arg->port(&new_nt->output_ports[0]);
+                        post_bang_arg = std::move(arg);
+                    } else {
+                        if (va_port) arg->port(va_port);
+                        all_outs.push_back(std::move(arg));
                     }
                 }
+
+                // Populate fixed outputs from descriptor
+                int fixed_out = new_nt ? new_nt->num_outputs : 0;
+                nb.outputs.resize(fixed_out);
+                auto unconnected = gb->unconnected_net();
+
+                if (is_flow_expr) {
+                    // Flow expr: outputs[0] = side-bang (post_bang or $unconnected)
+                    if (fixed_out > 0) {
+                        nb.outputs[0] = post_bang_arg ? std::move(post_bang_arg)
+                            : gb->build_arg_net("$unconnected", unconnected,
+                                new_nt ? &new_nt->output_ports[0] : nullptr);
+                    }
+                    // All data outputs go to outputs_va_args
+                    for (auto& a : all_outs)
+                        nb.outputs_va_args.push_back(std::move(a));
+                } else {
+                    // Banged expr!: outputs[0] = next (first entry from all_outs if it's bang)
+                    if (fixed_out > 0 && !all_outs.empty()) {
+                        all_outs[0]->port(&new_nt->output_ports[0]);
+                        nb.outputs[0] = std::move(all_outs[0]);
+                        // Rest go to outputs_va_args
+                        for (int i = 1; i < (int)all_outs.size(); i++)
+                            nb.outputs_va_args.push_back(std::move(all_outs[i]));
+                    } else {
+                        for (int i = 0; i < fixed_out; i++)
+                            nb.outputs[i] = gb->build_arg_net("$unconnected", unconnected,
+                                &new_nt->output_ports[i]);
+                    }
+                }
+
+                // Fill va_args to match expression count
+                int expr_count = nb.parsed_args ? nb.parsed_args->size() : 0;
+                while ((int)nb.outputs_va_args.size() < expr_count)
+                    nb.outputs_va_args.push_back(gb->build_arg_net("$unconnected", unconnected, va_port));
             } else {
                 // Name-based mapping for non-expr nodes
                 int old_num_outs = old_nt ? old_nt->outputs : 0;
-                std::map<std::string, ArgNet2> out_net_map;
+                std::map<std::string, FlowArg2Ptr> out_net_map;
 
                 for (int i = 0; i < (int)cur_outputs.size(); i++) {
                     auto& net_name = cur_outputs[i];
@@ -440,20 +958,35 @@ Deserializer::ParseAttoResult Deserializer::parse_atto(std::istream& f) {
                 // Map to new descriptor order
                 if (new_nt) {
                     nb.outputs.resize(new_nt->num_outputs);
-                    auto unconnected = gb->find("$unconnected");
+                    auto unconnected = gb->unconnected_net();
+                    std::set<std::string> consumed;
                     for (int i = 0; i < new_nt->num_outputs; i++) {
-                        const char* name = new_nt->output_ports[i].name;
-                        auto it = out_net_map.find(name);
+                        auto* pd = &new_nt->output_ports[i];
+                        auto it = out_net_map.find(pd->name);
                         if (it != out_net_map.end()) {
+                            it->second->port(pd);
                             nb.outputs[i] = std::move(it->second);
-                        } else if (strcmp(name, "next") == 0) {
+                            consumed.insert(pd->name);
+                        } else if (strcmp(pd->name, "next") == 0) {
                             auto it2 = out_net_map.find("bang");
-                            if (it2 != out_net_map.end())
+                            if (it2 != out_net_map.end()) {
+                                it2->second->port(pd);
                                 nb.outputs[i] = std::move(it2->second);
-                            else
-                                nb.outputs[i] = {"$unconnected", unconnected};
+                                consumed.insert("bang");
+                            } else {
+                                nb.outputs[i] = gb->build_arg_net("$unconnected", unconnected, pd);
+                            }
                         } else {
-                            nb.outputs[i] = {"$unconnected", unconnected};
+                            nb.outputs[i] = gb->build_arg_net("$unconnected", unconnected, pd);
+                        }
+                    }
+                    // Spillover: unconsumed outputs go to outputs_va_args (for event! etc.)
+                    if (new_nt->output_ports_va_args) {
+                        for (auto& [name, arg] : out_net_map) {
+                            if (!consumed.count(name) && name != "post_bang") {
+                                arg->port(new_nt->output_ports_va_args);
+                                nb.outputs_va_args.push_back(std::move(arg));
+                            }
                         }
                     }
                 }
@@ -468,10 +1001,9 @@ Deserializer::ParseAttoResult Deserializer::parse_atto(std::istream& f) {
             bool args_are_type = is_any_of(nb.type_id, NodeTypeID::Cast, NodeTypeID::New);
 
             // Helper: resolve net/node name to ArgNet2 and register destination
-            auto resolve_net = [&](const std::string& net_name) -> ArgNet2 {
+            auto resolve_net = [&](const std::string& net_name) -> FlowArg2Ptr {
                 if (net_name.empty()) {
-                    auto [resolved, ptr] = gb->find_or_create_net("$unconnected");
-                    return {resolved, ptr};
+                    return gb->build_arg_net("$unconnected", gb->unconnected_net());
                 }
                 // Strip -as_lambda suffix → resolve to node entry directly
                 std::string resolved_name = net_name;
@@ -482,15 +1014,14 @@ Deserializer::ParseAttoResult Deserializer::parse_atto(std::istream& f) {
                 // Try finding as any entry (node or net)
                 auto ptr = gb->find(resolved_name);
                 if (ptr) {
-                    // If it's a net, register as destination
-                    if (auto net = ptr->as_Net())
-                        net->destinations.push_back(node_entry);
-                    return {resolved_name, ptr};
+                    if (auto net = ptr->as_net())
+                        net->destinations().push_back(node_entry);
+                    return gb->build_arg_net(resolved_name, ptr);
                 }
                 // Not found yet — create as net
                 auto [id, net_ptr] = gb->find_or_create_net(resolved_name);
-                net_ptr->as_Net()->destinations.push_back(node_entry);
-                return {id, net_ptr};
+                net_ptr->as_net()->destinations().push_back(node_entry);
+                return gb->build_arg_net(id, net_ptr);
             };
 
             if (is_expr) {
@@ -507,7 +1038,7 @@ Deserializer::ParseAttoResult Deserializer::parse_atto(std::istream& f) {
                         // $N remap
                         int remap_idx = i - bang_offset;
                         while ((int)nb.remaps.size() <= remap_idx)
-                            nb.remaps.push_back({"$unconnected", gb->find("$unconnected")});
+                            nb.remaps.push_back(gb->build_arg_net("$unconnected", gb->unconnected_net()));
                         nb.remaps[remap_idx] = std::move(arg);
                     }
                 }
@@ -567,14 +1098,14 @@ Deserializer::ParseAttoResult Deserializer::parse_atto(std::istream& f) {
                 }
 
                 // Step 2: Build port_name → ArgNet2 map from inputs array
-                std::map<std::string, ArgNet2> net_map;
+                std::map<std::string, FlowArg2Ptr> net_map;
                 for (int i = 0; i < (int)cur_inputs.size() && i < (int)old_pin_names.size(); i++) {
                     net_map[old_pin_names[i]] = resolve_net(cur_inputs[i]);
                 }
 
                 // Step 3: Build port_name → parsed_value map from inlined args
                 // Inlined args cover input_ports[0..num_inline_args-1]
-                std::map<std::string, FlowArg2> inline_map;
+                std::map<std::string, FlowArg2Ptr> inline_map;
                 if (!args_are_type && nb.parsed_args) {
                     auto info = compute_inline_args(args_joined, old_nt->inputs);
                     int num_inline = std::min(info.num_inline_args, old_nt->inputs);
@@ -590,31 +1121,34 @@ Deserializer::ParseAttoResult Deserializer::parse_atto(std::istream& f) {
                     merged->rewrite_input_count = nb.parsed_args->rewrite_input_count;
 
                 // Helper: find value by port name with fallback for bang→bang_in rename
-                auto find_by_name = [&](const char* name) -> std::pair<bool, FlowArg2> {
+                auto find_by_name = [&](const char* name) -> FlowArg2Ptr {
                     auto net_it = net_map.find(name);
                     if (net_it != net_map.end())
-                        return {true, std::move(net_it->second)};
+                        return std::move(net_it->second);
                     auto inline_it = inline_map.find(name);
                     if (inline_it != inline_map.end())
-                        return {true, std::move(inline_it->second)};
-                    // Fallback: old "bang" → new "bang_in"
+                        return std::move(inline_it->second);
                     if (strcmp(name, "bang_in") == 0) {
                         auto it2 = net_map.find("bang");
                         if (it2 != net_map.end())
-                            return {true, std::move(it2->second)};
+                            return std::move(it2->second);
                     }
-                    return {false, {}};
+                    return nullptr;
                 };
 
                 // Pass 1: fill by name matching
                 std::vector<bool> filled(new_nt->total_inputs(), false);
                 for (int i = 0; i < new_nt->total_inputs(); i++) {
-                    auto [found, value] = find_by_name(new_nt->input_port(i)->name);
-                    if (found) {
+                    auto* pd = new_nt->input_port(i);
+                    auto value = find_by_name(pd->name);
+                    if (value) {
+                        value->port(pd);
                         merged->push_back(std::move(value));
                         filled[i] = true;
                     } else {
-                        merged->push_back(resolve_net("")); // placeholder
+                        auto placeholder = resolve_net("");
+                        placeholder->port(pd);
+                        merged->push_back(std::move(placeholder));
                     }
                 }
 
@@ -631,7 +1165,9 @@ Deserializer::ParseAttoResult Deserializer::parse_atto(std::istream& f) {
                     for (int i = 0; i < new_nt->total_inputs(); i++) {
                         if (!filled[i] && new_nt->input_port(i)->kind != PortKind2::BangTrigger) {
                             if (arg_cursor < (int)nb.parsed_args->size()) {
-                                (*merged)[i] = std::move((*nb.parsed_args)[arg_cursor++]);
+                                auto arg = std::move((*nb.parsed_args)[arg_cursor++]);
+                                arg->port(new_nt->input_port(i));
+                                merged->set(i, std::move(arg));
                                 filled[i] = true;
                             }
                         }
@@ -648,16 +1184,16 @@ Deserializer::ParseAttoResult Deserializer::parse_atto(std::istream& f) {
             for (auto& net_name : cur_inputs) {
                 if (net_name.empty()) continue;
                 auto [_, net_ptr] = gb->find_or_create_net(net_name);
-                if (auto net = net_ptr ? net_ptr->as_Net() : nullptr)
-                    net->destinations.push_back(node_entry);
+                if (auto net = net_ptr ? net_ptr->as_net() : nullptr)
+                    net->destinations().push_back(node_entry);
             }
         }
 
         // Ensure remaps are sized to rewrite_input_count (from $N refs in expressions)
         if (nb.parsed_args && nb.parsed_args->rewrite_input_count > (int)nb.remaps.size()) {
-            auto unconnected = gb->find("$unconnected");
+            auto unconnected = gb->unconnected_net();
             while ((int)nb.remaps.size() < nb.parsed_args->rewrite_input_count)
-                nb.remaps.push_back({"$unconnected", unconnected});
+                nb.remaps.push_back(gb->build_arg_net("$unconnected", unconnected));
         }
 
         // Trim trailing $unconnected optional ports from parsed_args
@@ -666,8 +1202,8 @@ Deserializer::ParseAttoResult Deserializer::parse_atto(std::istream& f) {
             auto* trim_nt = find_node_type2(nb.type_id);
             if (trim_nt && nb.parsed_args) {
                 while ((int)nb.parsed_args->size() > trim_nt->num_inputs) {
-                    auto* an = std::get_if<ArgNet2>(&nb.parsed_args->back());
-                    if (!an || an->first != "$unconnected") break;
+                    auto an = nb.parsed_args->back()->as_net();
+                    if (!an || an->first() != "$unconnected") break;
                     nb.parsed_args->pop_back();
                 }
             }
@@ -720,16 +1256,16 @@ Deserializer::ParseAttoResult Deserializer::parse_atto(std::istream& f) {
         auto fixup_args = [&](ParsedArgs2* pa) {
             if (!pa) return;
             for (auto& a : *pa) {
-                if (auto* an = std::get_if<ArgNet2>(&a)) {
-                    if (!an->second || !an->second->as_Net()) continue;
-                    auto actual = gb->find(an->first);
-                    if (actual && actual->as_Node())
-                        an->second = actual;
-                }
+                auto an = a->as_net();
+                if (!an) continue;
+                if (!an->second() || !an->second()->as_net()) continue;
+                auto actual = gb->find_or_null_node(an->first());
+                if (actual && actual->as_node())
+                    an->entry(actual);
             }
         };
         for (auto& [id, entry] : gb->entries) {
-            auto node_p = entry->as_Node();
+            auto node_p = entry->as_node();
             if (!node_p) continue;
             fixup_args(node_p->parsed_args.get());
             fixup_args(node_p->parsed_va_args.get());
@@ -737,12 +1273,12 @@ Deserializer::ParseAttoResult Deserializer::parse_atto(std::istream& f) {
     }
 
     // ─── Fold shadow nodes into parents ───
-    auto unconnected_entry = gb->find("$unconnected");
+    auto unconnected_entry = gb->unconnected_net();
 
     // Collect shadow ids
     std::vector<NodeId> shadow_ids;
     for (auto& [id, entry] : gb->entries) {
-        auto node_p = entry->as_Node();
+        auto node_p = entry->as_node();
         if (!node_p) continue;
         if (node_p->shadow)
             shadow_ids.push_back(id);
@@ -759,7 +1295,7 @@ Deserializer::ParseAttoResult Deserializer::parse_atto(std::istream& f) {
         if (!parent_ptr) continue;
 
         auto shadow_entry = gb->find(shadow_id);
-        auto shadow_ptr = shadow_entry ? shadow_entry->as_Node() : nullptr;
+        auto shadow_ptr = shadow_entry ? shadow_entry->as_node() : nullptr;
         if (!shadow_ptr) continue;
 
         // Insert shadow expression into parent's parsed_args
@@ -767,20 +1303,19 @@ Deserializer::ParseAttoResult Deserializer::parse_atto(std::istream& f) {
         if (parent_ptr->parsed_args && shadow_ptr->parsed_args && !shadow_ptr->parsed_args->empty()) {
             std::string shadow_out_prefix = shadow_id + "-out";
             bool replaced = false;
-            for (auto& a : *parent_ptr->parsed_args) {
-                if (auto* an = std::get_if<ArgNet2>(&a)) {
-                    if (an->first.compare(0, shadow_out_prefix.size(), shadow_out_prefix) == 0) {
-                        a = (*shadow_ptr->parsed_args)[0];
-                        replaced = true;
-                        break;
-                    }
+            for (int ai = 0; ai < parent_ptr->parsed_args->size(); ai++) {
+                auto an = (*parent_ptr->parsed_args)[ai]->as_net();
+                if (an && an->first().compare(0, shadow_out_prefix.size(), shadow_out_prefix) == 0) {
+                    parent_ptr->parsed_args->set(ai, (*shadow_ptr->parsed_args)[0]);
+                    replaced = true;
+                    break;
                 }
             }
             // Fallback: try positional insertion (for nodes without merged inputs)
             if (!replaced) {
                 while ((int)parent_ptr->parsed_args->size() <= arg_index)
-                    parent_ptr->parsed_args->push_back(ArgString2{""});
-                (*parent_ptr->parsed_args)[arg_index] = (*shadow_ptr->parsed_args)[0];
+                    parent_ptr->parsed_args->push_back(gb->build_arg_string(""));
+                parent_ptr->parsed_args->set(arg_index, (*shadow_ptr->parsed_args)[0]);
             }
         }
 
@@ -790,20 +1325,20 @@ Deserializer::ParseAttoResult Deserializer::parse_atto(std::istream& f) {
             auto& sin = sin_it->second;
             for (int i = 0; i < (int)sin.size(); i++) {
                 while ((int)parent_ptr->remaps.size() <= i)
-                    parent_ptr->remaps.push_back(ArgNet2{"$unconnected", unconnected_entry});
+                    parent_ptr->remaps.push_back(gb->build_arg_net("$unconnected", unconnected_entry));
 
                 if (!sin[i].empty()) {
                     auto net_ptr = gb->find(sin[i]);
                     if (net_ptr) {
-                        parent_ptr->remaps[i] = ArgNet2{sin[i], net_ptr};
+                        parent_ptr->remaps[i] = gb->build_arg_net(sin[i], net_ptr);
 
-                        if (auto net = net_ptr->as_Net()) {
-                            auto& dests = net->destinations;
+                        if (auto net = net_ptr->as_net()) {
+                            auto& dests = net->destinations();
                             dests.erase(
                                 std::remove_if(dests.begin(), dests.end(),
                                     [&](auto& w) { return w.lock() == shadow_entry; }),
                                 dests.end());
-                            net->destinations.push_back(parent_ptr);
+                            net->destinations().push_back(parent_ptr);
                         }
                     }
                 }
@@ -817,9 +1352,9 @@ Deserializer::ParseAttoResult Deserializer::parse_atto(std::istream& f) {
         // Remove nets where shadow is source (internal shadow→parent plumbing)
         std::vector<NodeId> nets_to_remove;
         for (auto& [net_id, net_entry] : gb->entries) {
-            auto net_as = net_entry->as_Net();
+            auto net_as = net_entry->as_net();
             if (!net_as) continue;
-            auto src = net_as->source.lock();
+            auto src = net_as->source().lock();
             if (src == shadow_entry)
                 nets_to_remove.push_back(net_id);
         }
@@ -833,18 +1368,72 @@ Deserializer::ParseAttoResult Deserializer::parse_atto(std::istream& f) {
     // ─── Split parsed_args into base + va_args for nodes with va_args ───
     for (auto& [id, entry] : gb->entries) {
         if (!entry->is(IdCategory::Node)) continue;
-        auto& node = *entry->as_Node();
+        auto& node = *entry->as_node();
         auto* nt = find_node_type2(node.type_id);
-        if (!nt || !nt->va_args || !node.parsed_args) continue;
+        if (!nt || !nt->input_ports_va_args || !node.parsed_args) continue;
 
         // Split at total descriptor input count (required + optional)
         int fixed_args = nt->total_inputs();
 
         if ((int)node.parsed_args->size() > fixed_args) {
             node.parsed_va_args = std::make_shared<ParsedArgs2>();
-            for (int i = fixed_args; i < (int)node.parsed_args->size(); i++)
-                node.parsed_va_args->push_back(std::move((*node.parsed_args)[i]));
+            for (int i = fixed_args; i < (int)node.parsed_args->size(); i++) {
+                auto arg = std::move((*node.parsed_args)[i]);
+                arg->port(nt->input_ports_va_args);
+                node.parsed_va_args->push_back(std::move(arg));
+            }
             node.parsed_args->resize(fixed_args);
+        }
+    }
+
+    // ─── Remove nets with no destinations → replace with $unconnected ───
+    {
+        auto unconnected = gb->unconnected_net();
+        auto unconnected_entry = std::static_pointer_cast<BuilderEntry>(unconnected);
+
+        // Collect nets to remove (have source but no destinations)
+        std::set<BuilderEntryPtr> dead_nets;
+        for (auto& [id, entry] : gb->entries) {
+            auto net = entry->as_net();
+            if (!net || net->is_the_unconnected()) continue;
+            net->compact();
+            if (net->destinations().empty()) {
+                dead_nets.insert(entry);
+            }
+        }
+
+        if (!dead_nets.empty()) {
+            // Replace all ArgNet2 references to dead nets with $unconnected
+            auto fixup_arg = [&](const FlowArg2Ptr& a) {
+                auto n = a->as_net();
+                if (!n) return;
+                if (dead_nets.count(n->second())) {
+                    n->entry(unconnected_entry);
+                    n->net_id(unconnected->id());
+                }
+            };
+            auto fixup_args = [&](ParsedArgs2* pa) {
+                if (!pa) return;
+                for (auto& a : *pa) fixup_arg(a);
+            };
+
+            for (auto& [id, entry] : gb->entries) {
+                auto node = entry->as_node();
+                if (!node) continue;
+                fixup_args(node->parsed_args.get());
+                fixup_args(node->parsed_va_args.get());
+                for (auto& r : node->remaps) fixup_arg(r);
+                for (auto& o : node->outputs) fixup_arg(o);
+                for (auto& o : node->outputs_va_args) fixup_arg(o);
+            }
+
+            // Remove dead nets from entries
+            for (auto it = gb->entries.begin(); it != gb->entries.end(); ) {
+                if (dead_nets.count(it->second))
+                    it = gb->entries.erase(it);
+                else
+                    ++it;
+            }
         }
     }
 
@@ -884,9 +1473,9 @@ Deserializer::ParseAttoResult Deserializer::parse_atto(std::istream& f) {
         };
 
         // Helper: rename ArgNet2 in-place
-        auto remap_arg = [&](FlowArg2& a) {
-            if (auto* an = std::get_if<ArgNet2>(&a))
-                an->first = remap_id(an->first);
+        auto remap_arg = [&](const FlowArg2Ptr& a) {
+            if (auto n = a->as_net())
+                n->net_id(remap_id(n->first()));
         };
         auto remap_args = [&](ParsedArgs2* pa) {
             if (!pa) return;
@@ -895,20 +1484,39 @@ Deserializer::ParseAttoResult Deserializer::parse_atto(std::istream& f) {
 
         // Rename all references inside nodes
         for (auto& [id, entry] : gb->entries) {
-            auto node_p = entry->as_Node();
+            auto node_p = entry->as_node();
             if (!node_p) continue;
             remap_args(node_p->parsed_args.get());
             remap_args(node_p->parsed_va_args.get());
-            for (auto& r : node_p->remaps) r.first = remap_id(r.first);
-            for (auto& o : node_p->outputs) o.first = remap_id(o.first);
+            for (auto& r : node_p->remaps) if (auto n = r->as_net()) n->net_id(remap_id(n->first()));
+            for (auto& o : node_p->outputs) if (auto n = o->as_net()) n->net_id(remap_id(n->first()));
+            for (auto& o : node_p->outputs_va_args) if (auto n = o->as_net()) n->net_id(remap_id(n->first()));
         }
 
-        // Rebuild entries map with new keys
+        // Rebuild entries map with new keys and update entry IDs
         std::map<NodeId, BuilderEntryPtr> new_entries;
         for (auto& [id, entry] : gb->entries) {
-            new_entries[remap_id(id)] = std::move(entry);
+            auto new_id = remap_id(id);
+            entry->id(new_id);
+            new_entries[new_id] = std::move(entry);
         }
         gb->entries = std::move(new_entries);
+    }
+
+    // ─── Assign node() on all pins ───
+    for (auto& [id, entry] : gb->entries) {
+        auto node_p = entry->as_node();
+        if (!node_p) continue;
+        auto assign_node = [&](ParsedArgs2* pa) {
+            if (!pa) return;
+            for (int i = 0; i < pa->size(); i++)
+                (*pa)[i]->node(node_p);
+        };
+        assign_node(node_p->parsed_args.get());
+        assign_node(node_p->parsed_va_args.get());
+        for (auto& r : node_p->remaps) r->node(node_p);
+        for (auto& o : node_p->outputs) o->node(node_p);
+        for (auto& o : node_p->outputs_va_args) o->node(node_p);
     }
 
     gb->compact();

@@ -671,21 +671,43 @@ Legacy formats (`nanoprog@0`, `nanoprog@1`, `attoprog@0`, `attoprog@1`) are load
 
 Node IDs and net names share the same namespace:
 - Format: `$[a-zA-Z_-][a-zA-Z0-9_-]*`
-- Auto-generated: `$auto-<guid>` for unnamed entries
-- `$0`, `$1`, ... `$N` are reserved for expression pin inputs
-- `$unconnected` is a reserved sentinel for unconnected pins
+- Auto-generated on import: `$a-0`, `$a-1`, ... `$a-f`, `$a-10`, ... (compact hex, migrated from old `$auto-<guid>`)
+- `$0`, `$1`, ... `$N` are reserved for expression pin inputs (remaps)
+- `$unconnected` is a reserved sentinel net for unconnected pins
+- `$empty` is a reserved sentinel node for unassigned pin ownership
 - The `$` prefix is stored in the file
+
+### Sentinel Entries
+
+| Sentinel | Type | Purpose |
+|---|---|---|
+| `$unconnected` | Net | Default wire for unconnected pins |
+| `$empty` | Node | Default node owner for pins not yet assigned to a node |
+
+Both are pre-registered by `GraphBuilder::ensure_sentinels()`. Direct `find()` or `find_or_create_net()` calls with these names throw — use `gb->unconnected_net()` / `gb->empty_node()` instead.
 
 ### Node Structure
 
 ```toml
 [[node]]
-id = "$my-node"          # human-readable identifier
+id = "$a-5"              # compact hex identifier
 type = "store!"          # node type name
 args = ["oscs", "$0"]    # inline arguments (expressions, literals, net refs)
-remaps = ["$data-net"]   # $N → net mapping for expression pin inputs
+remaps = ["$a-3-out0"]   # $N → net mapping for expression pin inputs
 position = [100, 200]    # canvas coordinates
 ```
+
+### Node Kinds
+
+| Kind | Bang input | Bang output | Side-bang | Description |
+|---|---|---|---|---|
+| `Flow` | No | Yes (side-bang, right) | Yes | Dataflow node — all flow nodes have a side-bang |
+| `Banged` | Yes (top) | Yes (bottom) | No | Imperative node with bang trigger |
+| `Event` | No | Yes (bottom) | No | Event source |
+| `Declaration` | Yes (top) | Yes (bottom) | No | Compile-time declaration |
+| `Special` | No | No | No | Label or Error |
+
+Flow nodes always have `outputs[0]` as the side-bang (BangNext). It is rendered on the right side, not at the bottom.
 
 ### Arguments (`args`)
 
@@ -697,14 +719,14 @@ An argument can be:
 - **Number** (`42`, `3.14f`): inline constant — displayed in node text
 - **String** (`"hello"`): inline string literal — displayed in node text
 
-Only `ArgNet2` (net reference) entries produce visible input pins. Inline values are displayed in the node's label text.
+Only net reference entries produce visible input pins. Inline values are displayed in the node's label text.
 
 ### Remaps (`remaps`)
 
 The `remaps` array maps `$N` expression pin inputs to named nets:
 
 ```toml
-remaps = ["$iter-item", "$iter-amp"]
+remaps = ["$a-2-out0", "$a-2-out1"]
 ```
 
 - `remaps[0]` = net for `$0`, `remaps[1]` = net for `$1`, etc.
@@ -713,6 +735,13 @@ remaps = ["$iter-item", "$iter-amp"]
 
 ### Pin Model
 
+Pins are graph entities (`FlowArg2` hierarchy: `ArgNet2`, `ArgNumber2`, `ArgString2`, `ArgExpr2`). Each pin has:
+- **`node()`** — owning FlowNodeBuilder (always valid, `$empty` if unassigned)
+- **`wire()`** / **`net()`** — associated NetBuilder (always valid, `$unconnected` if unassigned)
+- **`port()`** — PortDesc2 descriptor (null for remaps)
+- **`name()`** — computed: `"port_name"` or `"va_name[idx]"` or `"remaps[idx]"`
+- **`is_remap()`** — true if port is null (remap pin)
+
 #### Input pins (top of node, left to right)
 
 Only net reference (`$name`) arguments produce visible pins. The visible pin count is:
@@ -720,12 +749,20 @@ Only net reference (`$name`) arguments produce visible pins. The visible pin cou
 | Section | Visible pins | Source |
 |---|---|---|
 | **Base args** | Only net refs in `args` | 1:1 with descriptor input ports |
-| **Va-args** | Only net refs in va-args | Named `{template}_0`, `_1`, ... |
+| **Input va-args** | Only net refs in va-args | Named `va_name[0]`, `va_name[1]`, ... |
+| **+diamond** | Add button (if node has input va-args) | Rendered as ◇ with + |
 | **Remaps** | All entries | `$0`, `$1`, ... from expressions |
 
 #### Output pins (bottom of node)
 
-All descriptor output ports are visible. Exception: `expr`/`expr!` output count equals `args` count.
+Fixed descriptor output ports are rendered at the bottom, EXCEPT for flow nodes where `outputs[0]` (side-bang) is rendered on the right side. Output va-args follow fixed outputs.
+
+| Section | Pins | Source |
+|---|---|---|
+| **Fixed outputs** | Descriptor output ports (skip side-bang for flow) | `outputs[skip_sb..]` |
+| **Output va-args** | Dynamic outputs | `outputs_va_args[]` |
+
+Expr/expr! have output va-args sized to match expression count. Event! has output va-args for spillover outputs.
 
 #### Pin kinds
 
@@ -733,27 +770,52 @@ All descriptor output ports are visible. Exception: `expr`/`expr!` output count 
 |---|---|---|
 | `BangTrigger` | Square (top) | Trigger input |
 | `Data` | Circle | Data value |
-| `Lambda` | Triangle | Lambda capture (accepts node refs or net refs) |
-| `BangNext` | Square (bottom) | Bang continuation output |
+| `Lambda` | Down-pointing triangle | Lambda capture (accepts node refs) |
+| `BangNext` | Square (bottom/right) | Bang continuation output |
+| `Va-args` | Diamond (◇) | Variable-length input/output |
+| `Optional` | Diamond with ? | Optional input (trailing) |
+
+#### Special pins
+
+| Pin | Position | Visual | Description |
+|---|---|---|---|
+| **Lambda grab** | Left center | Left-pointing triangle (purple) | Capture this node as lambda |
+| **Side-bang** | Right center | Square (yellow) | Post-bang output (flow nodes only) |
 
 ### Lambda Captures via Node ID
 
-When a `$id` in an argument resolves to a **node** (not a net), it is a lambda capture. The referenced node's subgraph becomes the lambda body.
+When a `$id` in an argument resolves to a **node** (not a net), it is a lambda capture. The wire renders from the source node's lambda grab (left side) to the destination's lambda pin.
 
-- `find_node(id)` → lambda capture
-- `find_net(id)` → data wire
-- Both `Lambda` and `Data` pins can accept lambda captures
-- `Lambda` pins can ONLY accept lambdas (node refs)
+- Node reference → lambda capture (wire from grab)
+- Net reference → data wire (wire from output pin)
+- `Lambda` pins accept only node refs
+- `Data` pins can accept either
 
-### Va-args
+### Input Va-args
 
-Some node types accept a variable number of additional inputs (e.g., `new` for struct fields, `call` for function arguments, `lock` for lambda parameters). The va-args template is defined on the node type descriptor. Va-args pins are named `{template_name}_0`, `{template_name}_1`, etc.
+Some node types accept a variable number of additional inputs. The va-args template is defined on `NodeType2::input_ports_va_args`.
 
 | Node | Va-args template | Description |
 |---|---|---|
-| `new` | `field` | Constructor fields (`field_0`, `field_1`, ...) |
-| `call` / `call!` | `arg` | Function arguments (`arg_0`, `arg_1`, ...) |
-| `lock` / `lock!` | `param` | Lambda parameters (`param_0`, `param_1`, ...) |
+| `new` | `field` | Constructor fields (`field[0]`, `field[1]`, ...) |
+| `call` / `call!` | `arg` | Function arguments (`arg[0]`, `arg[1]`, ...) |
+| `lock` / `lock!` | `param` | Lambda parameters (`param[0]`, `param[1]`, ...) |
+
+### Output Va-args
+
+Some node types have dynamic output counts. The template is defined on `NodeType2::output_ports_va_args`.
+
+| Node | Va-args template | Description |
+|---|---|---|
+| `expr` | `expr` | One output per expression (`expr[0]`, `expr[1]`, ...) |
+| `expr!` | `expr` | Same, after the fixed `next` output |
+| `event!` | `args` | Event argument outputs |
+
+### Optional Ports
+
+Optional ports are always trailing in the descriptor. They are split into separate `input_optional_ports` / `num_inputs_optional` on NodeType2. If not connected, they are omitted from `parsed_args` (shorter array). The editor shows absent optionals as ◇ with ? inside.
+
+Currently only `decl_var` has an optional port (`initial`).
 
 ### Viewport (Meta File)
 
