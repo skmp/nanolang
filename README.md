@@ -53,6 +53,12 @@ cmake -B build -DCMAKE_TOOLCHAIN_FILE=vcpkg/scripts/buildsystems/vcpkg.cmake
 cmake --build build --parallel --config Release
 ```
 
+## Instructions
+
+New to the project? Start with the [Instructions](docs/instructions.md) — a guide to interpreting and following instructions, operating on the codebase, and building instruments with the Organic Assembler. It covers everything from the build system and architectural layers to the anatomy of an instrument and the audio callback pattern.
+
+For naming philosophy, see [Names](docs/names.md). For the full documentation suite: [Architecture](docs/architecture.md), [Language Spec](docs/attolang.md), [Patterns](docs/patterns.md), [Thinking](docs/thinking.md), [Style](docs/style.md), [Coding](docs/coding.md), [Changelog](docs/changelog.md).
+
 ## License
 
 MIT — see [LICENSE](LICENSE).
