@@ -264,3 +264,79 @@ void FlowNode::parse_args() {
         inline_meta.ref_pin_count = (info.pin_slots.max_slot >= 0) ? (info.pin_slots.max_slot + 1) : 0;
     }
 }
+
+// ─── split_args: split string into singular expressions ───
+
+SplitResult split_args(const std::string& args_str) {
+    std::vector<std::string> result;
+    std::string current;
+    int paren_depth = 0;
+    int brace_depth = 0;
+    bool in_string = false;
+    bool escape = false;
+
+    for (size_t i = 0; i < args_str.size(); i++) {
+        char c = args_str[i];
+
+        if (escape) {
+            current += c;
+            escape = false;
+            continue;
+        }
+        if (c == '\\' && in_string) {
+            escape = true;
+            current += c;
+            continue;
+        }
+        if (c == '"') {
+            in_string = !in_string;
+            current += c;
+            continue;
+        }
+        if (in_string) {
+            current += c;
+            continue;
+        }
+
+        if (c == '(') { paren_depth++; current += c; continue; }
+        if (c == ')') {
+            paren_depth--;
+            if (paren_depth < 0)
+                return std::string("Mismatched ')' at position " + std::to_string(i));
+            current += c;
+            continue;
+        }
+        if (c == '{') { brace_depth++; current += c; continue; }
+        if (c == '}') {
+            brace_depth--;
+            if (brace_depth < 0)
+                return std::string("Mismatched '}' at position " + std::to_string(i));
+            current += c;
+            continue;
+        }
+
+        if ((c == ' ' || c == '\t') && paren_depth == 0 && brace_depth == 0) {
+            if (!current.empty()) {
+                result.push_back(current);
+                current.clear();
+            }
+            continue;
+        }
+
+        current += c;
+    }
+
+    if (in_string)
+        return std::string("Unterminated string literal");
+    if (paren_depth > 0)
+        return std::string("Unclosed '(' — " + std::to_string(paren_depth) + " level(s) deep");
+    if (brace_depth > 0)
+        return std::string("Unclosed '{' — " + std::to_string(brace_depth) + " level(s) deep");
+
+    if (!current.empty())
+        result.push_back(current);
+
+    return result;
+}
+
+// (v2 types and functions moved to graph_builder.h/cpp)

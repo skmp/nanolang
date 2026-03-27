@@ -701,25 +701,9 @@ position = [551.91, 422.962]
 id = "$auto-e073eb5950485587_s1"
 type = "expr"
 shadow = true
-args = ["(osc:&osc_def)"]
+args = ["(osc:&osc_def)->osc_res"]
 outputs = ["$auto-e073eb5950485587_s1-out0"]
 position = [551.91, 362.962]
-
-[[node]]
-id = "$auto-e073eb5950485587_s2"
-type = "expr"
-shadow = true
-args = ["->"]
-outputs = ["$auto-e073eb5950485587_s2-out0"]
-position = [551.91, 302.962]
-
-[[node]]
-id = "$auto-e073eb5950485587_s3"
-type = "expr"
-shadow = true
-args = ["osc_res"]
-outputs = ["$auto-e073eb5950485587_s3-out0"]
-position = [551.91, 242.962]
 
 [[node]]
 id = "$auto-fe155835bba6cd45_s0"
@@ -733,25 +717,9 @@ position = [554.325, 467.55]
 id = "$auto-fe155835bba6cd45_s1"
 type = "expr"
 shadow = true
-args = ["(osc:&osc_def)"]
+args = ["(osc:&osc_def)->void"]
 outputs = ["$auto-fe155835bba6cd45_s1-out0"]
 position = [554.325, 407.55]
-
-[[node]]
-id = "$auto-fe155835bba6cd45_s2"
-type = "expr"
-shadow = true
-args = ["->"]
-outputs = ["$auto-fe155835bba6cd45_s2-out0"]
-position = [554.325, 347.55]
-
-[[node]]
-id = "$auto-fe155835bba6cd45_s3"
-type = "expr"
-shadow = true
-args = ["void"]
-outputs = ["$auto-fe155835bba6cd45_s3-out0"]
-position = [554.325, 287.55]
 
 [[node]]
 id = "$auto-09f161f1210cec4f_s0"
@@ -957,25 +925,9 @@ position = [1467.98, 389.477]
 id = "$auto-20115e980dcd5b53_s1"
 type = "expr"
 shadow = true
-args = ["(args:vector<string> envs:vector<string>)"]
+args = ["(args:vector<string> envs:vector<string>)->void"]
 outputs = ["$auto-20115e980dcd5b53_s1-out0"]
 position = [1467.98, 329.477]
-
-[[node]]
-id = "$auto-20115e980dcd5b53_s2"
-type = "expr"
-shadow = true
-args = ["->"]
-outputs = ["$auto-20115e980dcd5b53_s2-out0"]
-position = [1467.98, 269.477]
-
-[[node]]
-id = "$auto-20115e980dcd5b53_s3"
-type = "expr"
-shadow = true
-args = ["void"]
-outputs = ["$auto-20115e980dcd5b53_s3-out0"]
-position = [1467.98, 209.477]
 
 [[node]]
 id = "$auto-0e02c497002f40c2_s0"
@@ -1013,25 +965,9 @@ position = [557.37, 851.95]
 id = "$auto-c5373cf3d77e7979_s1"
 type = "expr"
 shadow = true
-args = ["(midi_key:u8 freq:f32)"]
+args = ["(midi_key:u8 freq:f32)->void"]
 outputs = ["$auto-c5373cf3d77e7979_s1-out0"]
 position = [557.37, 791.95]
-
-[[node]]
-id = "$auto-c5373cf3d77e7979_s2"
-type = "expr"
-shadow = true
-args = ["->"]
-outputs = ["$auto-c5373cf3d77e7979_s2-out0"]
-position = [557.37, 731.95]
-
-[[node]]
-id = "$auto-c5373cf3d77e7979_s3"
-type = "expr"
-shadow = true
-args = ["void"]
-outputs = ["$auto-c5373cf3d77e7979_s3-out0"]
-position = [557.37, 671.95]
 
 [[node]]
 id = "$auto-48a2c13cec7e5013_s0"
@@ -1045,25 +981,9 @@ position = [561, 914]
 id = "$auto-48a2c13cec7e5013_s1"
 type = "expr"
 shadow = true
-args = ["(midi_key:u8)"]
+args = ["(midi_key:u8)->void"]
 outputs = ["$auto-48a2c13cec7e5013_s1-out0"]
 position = [561, 854]
-
-[[node]]
-id = "$auto-48a2c13cec7e5013_s2"
-type = "expr"
-shadow = true
-args = ["->"]
-outputs = ["$auto-48a2c13cec7e5013_s2-out0"]
-position = [561, 794]
-
-[[node]]
-id = "$auto-48a2c13cec7e5013_s3"
-type = "expr"
-shadow = true
-args = ["void"]
-outputs = ["$auto-48a2c13cec7e5013_s3-out0"]
-position = [561, 734]
 
 [[node]]
 id = "$auto-9facb8e5368e52c0_s0"
@@ -1085,25 +1005,9 @@ position = [563.229, 970.563]
 id = "$auto-c17ebd09a44700e1_s1"
 type = "expr"
 shadow = true
-args = ["()"]
+args = ["()->void"]
 outputs = ["$auto-c17ebd09a44700e1_s1-out0"]
 position = [563.229, 910.563]
-
-[[node]]
-id = "$auto-c17ebd09a44700e1_s2"
-type = "expr"
-shadow = true
-args = ["->"]
-outputs = ["$auto-c17ebd09a44700e1_s2-out0"]
-position = [563.229, 850.563]
-
-[[node]]
-id = "$auto-c17ebd09a44700e1_s3"
-type = "expr"
-shadow = true
-args = ["void"]
-outputs = ["$auto-c17ebd09a44700e1_s3-out0"]
-position = [563.229, 790.563]
 
 [[node]]
 id = "$auto-50417175624d2751_s0"
@@ -1117,25 +1021,10 @@ position = [566.535, 1028.41]
 id = "$auto-50417175624d2751_s1"
 type = "expr"
 shadow = true
-args = ["()"]
+args = ["()->void"]
 outputs = ["$auto-50417175624d2751_s1-out0"]
 position = [566.535, 968.41]
 
-[[node]]
-id = "$auto-50417175624d2751_s2"
-type = "expr"
-shadow = true
-args = ["->"]
-outputs = ["$auto-50417175624d2751_s2-out0"]
-position = [566.535, 908.41]
-
-[[node]]
-id = "$auto-50417175624d2751_s3"
-type = "expr"
-shadow = true
-args = ["void"]
-outputs = ["$auto-50417175624d2751_s3-out0"]
-position = [566.535, 848.41]
 
 [[node]]
 id = "$auto-decl_on_quit_s0"
@@ -1149,25 +1038,9 @@ position = [566.535, 1080]
 id = "$auto-decl_on_quit_s1"
 type = "expr"
 shadow = true
-args = ["()"]
+args = ["()->void"]
 outputs = ["$auto-decl_on_quit_s1-out0"]
 position = [566.535, 1020]
-
-[[node]]
-id = "$auto-decl_on_quit_s2"
-type = "expr"
-shadow = true
-args = ["->"]
-outputs = ["$auto-decl_on_quit_s2-out0"]
-position = [566.535, 960]
-
-[[node]]
-id = "$auto-decl_on_quit_s3"
-type = "expr"
-shadow = true
-args = ["void"]
-outputs = ["$auto-decl_on_quit_s3-out0"]
-position = [566.535, 900]
 
 [[node]]
 id = "$auto-445319c565ebdaa8_s1"

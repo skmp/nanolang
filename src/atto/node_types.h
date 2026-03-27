@@ -41,6 +41,7 @@ enum class NodeTypeID : uint8_t {
     Cast,           // 34
     Label,          // 35
     Deref,          // 36 — internal: dereference iterator to value (shadow node only)
+    Error,          // 37 — error node: displays original args, no pins (like label)
     COUNT,
     Unknown = 255
 };
@@ -141,6 +142,7 @@ static const NodeType NODE_TYPES[] = {
     {NodeTypeID::Cast,          "cast",       "Cast value to type",                    0,1, 0,1, false,false,false,false, nullptr, P_VALUE, nullptr, P_RESULT},
     {NodeTypeID::Label,         "label",      "Text label (no connections)",           0,0, 0,0, false,true, false,false, nullptr, nullptr, nullptr, nullptr},
     {NodeTypeID::Deref,         "deref",      "Dereference iterator (internal)",       0,1, 0,1, false,false,false,false, nullptr, P_VALUE, nullptr, P_RESULT},
+    {NodeTypeID::Error,         "error",      "Error: invalid node",                   0,0, 0,0, false,false,false,false, nullptr, nullptr, nullptr, nullptr},
 };
 static constexpr int NUM_NODE_TYPES = sizeof(NODE_TYPES) / sizeof(NODE_TYPES[0]);
 

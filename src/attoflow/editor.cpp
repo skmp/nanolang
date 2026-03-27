@@ -324,10 +324,18 @@ void FlowEditorWindow::open_tab(const std::string& file_path) {
     TabState tab;
     tab.file_path = abs_path;
     tab.tab_name = fs::path(file_path).stem().string();
+    tab.use_editor2 = true;
+
     if (fs::exists(abs_path)) {
-        load_atto(abs_path, tab.graph);
+        // Try loading via Editor2Pane first
+        if (!tab.editor2.load(abs_path)) {
+            // Fallback to legacy loader
+            tab.use_editor2 = false;
+            load_atto(abs_path, tab.graph);
+        }
     }
-    if (tab.graph.has_viewport) {
+
+    if (!tab.use_editor2 && tab.graph.has_viewport) {
         tab.canvas_offset = {tab.graph.viewport_x, tab.graph.viewport_y};
         tab.canvas_zoom = tab.graph.viewport_zoom;
     }
@@ -885,6 +893,12 @@ void FlowEditorWindow::draw() {
     // --- Canvas ---
     ImGui::BeginChild("##flow_canvas", {canvas_w, canvas_h}, false,
                       ImGuiWindowFlags_NoScrollbar);
+
+    if (active().use_editor2) {
+        active().editor2.draw();
+        ImGui::EndChild(); // flow_canvas
+    } else {
+    // === Legacy Editor1 canvas ===
 
     ImVec2 canvas_origin = ImGui::GetCursorScreenPos();
     ImVec2 canvas_size = ImGui::GetContentRegionAvail();
@@ -2007,7 +2021,8 @@ void FlowEditorWindow::draw() {
         }
     }
 
-    ImGui::EndChild(); // flow_canvas
+    ImGui::EndChild(); // flow_canvas (legacy)
+    } // end legacy Editor1 canvas
 
     // --- Horizontal splitter (between canvas and bottom panel) ---
     ImGui::InvisibleButton("##hsplitter", {canvas_w, 4.0f});

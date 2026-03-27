@@ -4,6 +4,7 @@
 #include <imgui_impl_sdl3.h>
 #include <imgui_impl_sdlrenderer3.h>
 #include <cstdio>
+#include "LiberationMono_Regular.h"
 
 // Wraps an SDL3 window + renderer + ImGui context.
 // Each instance is an independent ImGui context, enabling multi-window apps.
@@ -42,9 +43,15 @@ struct SdlImGuiWindow {
         ImGui::SetCurrentContext(imgui_ctx);
         ImGuiIO& io = ImGui::GetIO();
         io.ConfigFlags |= ImGuiConfigFlags_NavEnableKeyboard;
-        ImFontConfig font_cfg;
-        font_cfg.SizePixels = 17.0f * dpi_scale;
-        io.Fonts->AddFontDefault(&font_cfg);
+        {
+            float font_size = 16.0f * dpi_scale;
+            ImFontConfig font_cfg;
+            font_cfg.FontDataOwnedByAtlas = false;
+            io.Fonts->AddFontFromMemoryTTF(
+                (void*)LiberationMono_Regular_data,
+                LiberationMono_Regular_size,
+                font_size, &font_cfg);
+        }
         io.FontGlobalScale = 1.0f / dpi_scale;
         ImGui::StyleColorsDark();
         ImGui_ImplSDL3_InitForSDLRenderer(window, renderer);
@@ -67,9 +74,23 @@ struct SdlImGuiWindow {
             ImGui::SetCurrentContext(imgui_ctx);
             ImGuiIO& io = ImGui::GetIO();
             io.Fonts->Clear();
-            ImFontConfig font_cfg;
-            font_cfg.SizePixels = 17.0f * dpi_scale;
-            io.Fonts->AddFontDefault(&font_cfg);
+            {
+                float font_size = 16.0f * dpi_scale;
+                ImFont* font = nullptr;
+                const char* font_paths[] = {
+                    "fonts/LiberationMono-Regular.ttf",
+                    "../src/attoflow/fonts/LiberationMono-Regular.ttf",
+                    "src/attoflow/fonts/LiberationMono-Regular.ttf",
+                    nullptr
+                };
+                for (auto* p = font_paths; *p && !font; p++)
+                    font = io.Fonts->AddFontFromFileTTF(*p, font_size);
+                if (!font) {
+                    ImFontConfig font_cfg;
+                    font_cfg.SizePixels = font_size;
+                    io.Fonts->AddFontDefault(&font_cfg);
+                }
+            }
             io.FontGlobalScale = 1.0f / dpi_scale;
             ImGui_ImplSDLRenderer3_DestroyFontsTexture();
             io.Fonts->Build();
