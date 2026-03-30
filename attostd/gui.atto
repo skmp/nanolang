@@ -1,0 +1,11 @@
+# GUI/AV runtime FFI bindings for attolang
+# Import with: decl_import std/gui
+
+# Create a window with audio and video callbacks.
+# Blocks until the window is closed.
+# audio_tick: called per audio sample (48kHz)
+# video_tick: called per video frame
+# on_close: called when window is closed
+[[node]]
+type = "ffi"
+args = ["av_create_window", "(title:string audio_tick:&()->void sample_rate:s32 channels:s32 video_tick:&()->void width:s32 height:s32 on_close:&()->void)", "->", "void"]

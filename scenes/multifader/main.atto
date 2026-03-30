@@ -1,0 +1,920 @@
+version = "attoprog@0"
+
+[viewport]
+x = -6131.11
+y = -1999.86
+zoom = 1.4641
+
+[[node]]
+guid = "934e3b98bb914e95"
+type = "decl_type"
+args = ["osc_res", "s:f32", "e:bool"]
+position = [757.077, 266.729]
+
+[[node]]
+guid = "e073eb5950485587"
+type = "decl_type"
+args = ["gen_fn", "(osc:&osc_def)", "->", "osc_res"]
+position = [758.057, 314.363]
+
+[[node]]
+guid = "fe155835bba6cd45"
+type = "decl_type"
+args = ["stop_fn", "(osc:&osc_def)", "->", "void"]
+position = [757.467, 358.2]
+
+[[node]]
+guid = "09f161f1210cec4f"
+type = "decl_type"
+args = ["osc_def", "gen:gen_fn", "stop:stop_fn", "p:f32", "pstep:f32", "a:f32", "astep:f32"]
+position = [760.607, 402.392]
+
+[[node]]
+guid = "c0fbc2b794fa65b4"
+type = "decl_type"
+args = ["key_set", "map<u8,", "^list_iterator<osc_def>>"]
+position = [760.787, 453.323]
+
+[[node]]
+guid = "e530be85f0c2565e"
+type = "decl_type"
+args = ["osc_list", "list<osc_def>"]
+position = [761.717, 498.199]
+
+[[node]]
+guid = "b11adccc2e0b937c"
+type = "decl_var"
+args = ["keys", "key_set"]
+position = [753.51, 697.467]
+
+[[node]]
+guid = "91b1885ec31bca0d"
+type = "decl_var"
+args = ["oscs", "osc_list"]
+position = [754.71, 742.669]
+
+[[node]]
+guid = "831e483b4e4602dc"
+type = "append"
+args = ["$oscs"]
+position = [1762.05, 2099.45]
+connections = ["831e483b4e4602dc.out0->182cde3e88fc2aec.value"]
+
+[[node]]
+guid = "df6e4aa3d0d8d2bc"
+type = "new"
+args = ["osc_def"]
+position = [1746.02, 2025.51]
+connections = ["df6e4aa3d0d8d2bc.out0->831e483b4e4602dc_s1.0"]
+
+[[node]]
+guid = "c81c38e5f70d7c98"
+type = "expr"
+args = ["sin($0.p)*$1/32.f"]
+position = [1865.5, 1443.11]
+connections = ["c81c38e5f70d7c98.post_bang->f35abbba8775f1de.bang_in0", "c81c38e5f70d7c98.out0->b64eb56b2a60eda2.0", "c81c38e5f70d7c98.out0->b64eb56b2a60eda2.s"]
+
+[[node]]
+guid = "445319c565ebdaa8"
+type = "store!"
+args = ["$0.astep", "0.995f"]
+position = [1784.69, 1675.87]
+connections = ["445319c565ebdaa8.as_lambda->df6e4aa3d0d8d2bc.stop"]
+
+[[node]]
+guid = "1d7ed7a2c6bd9465"
+type = "expr"
+args = ["0"]
+position = [1776.07, 1758.84]
+connections = ["1d7ed7a2c6bd9465.out0->df6e4aa3d0d8d2bc.2", "1d7ed7a2c6bd9465.out0->df6e4aa3d0d8d2bc.p"]
+
+[[node]]
+guid = "cc68627fd36abb94"
+type = "expr"
+args = ["2*pi/$0"]
+position = [1805.57, 1828.22]
+connections = ["cc68627fd36abb94.out0->df6e4aa3d0d8d2bc.3", "cc68627fd36abb94.out0->df6e4aa3d0d8d2bc.pstep"]
+
+[[node]]
+guid = "9786d74433799f1e"
+type = "expr"
+args = ["1"]
+position = [1831.1, 1894.92]
+connections = ["9786d74433799f1e.out0->df6e4aa3d0d8d2bc.4", "9786d74433799f1e.out0->df6e4aa3d0d8d2bc.5", "9786d74433799f1e.out0->df6e4aa3d0d8d2bc.astep", "9786d74433799f1e.out0->df6e4aa3d0d8d2bc.a"]
+
+[[node]]
+guid = "f35abbba8775f1de"
+type = "store!"
+args = ["$0.p"]
+position = [2133.84, 1421.55]
+connections = ["f35abbba8775f1de.bang0->3e4a660fc6f1a8d2.bang_in0"]
+
+[[node]]
+guid = "3e4a660fc6f1a8d2"
+type = "store!"
+args = ["$0.a"]
+position = [2142.29, 1537.16]
+
+[[node]]
+guid = "2018c2b6134a0c05"
+type = "expr"
+args = ["$0", "$0.a"]
+position = [1863.71, 1327.64]
+connections = ["2018c2b6134a0c05.out0->c81c38e5f70d7c98.$0", "2018c2b6134a0c05.out0->f35abbba8775f1de.$0", "2018c2b6134a0c05.out0->3e4a660fc6f1a8d2.$0", "2018c2b6134a0c05.out0->c81c38e5f70d7c98.0", "2018c2b6134a0c05.out1->c81c38e5f70d7c98.$1", "2018c2b6134a0c05.out1->18cbc672fb22e68e.0", "2018c2b6134a0c05.out1->c81c38e5f70d7c98.1", "2018c2b6134a0c05.out0->f35abbba8775f1de.0", "2018c2b6134a0c05.out0->3e4a660fc6f1a8d2.0", "2018c2b6134a0c05.out0->f35abbba8775f1de_s1.0", "2018c2b6134a0c05.out0->3e4a660fc6f1a8d2_s1.0"]
+
+[[node]]
+guid = "b64eb56b2a60eda2"
+type = "new"
+args = ["osc_res"]
+position = [1766.95, 1565.73]
+connections = ["b64eb56b2a60eda2.as_lambda->df6e4aa3d0d8d2bc.0", "b64eb56b2a60eda2.as_lambda->df6e4aa3d0d8d2bc.gen"]
+
+[[node]]
+guid = "18cbc672fb22e68e"
+type = "expr"
+args = ["$0<0.001f"]
+position = [1925.12, 1517.33]
+connections = ["18cbc672fb22e68e.out0->b64eb56b2a60eda2.1", "18cbc672fb22e68e.out0->b64eb56b2a60eda2.e"]
+
+[[node]]
+guid = "e6a647578747ca01"
+type = "iterate"
+args = ["$oscs"]
+position = [3718.47, 1973.21]
+connections = ["e6a647578747ca01.as_lambda->a8da10815e6d03ff.fn", "e6a647578747ca01.post_bang->611f1c8e7cfcd0f0.bang_in0"]
+
+[[node]]
+guid = "5551d3ed2caa466f"
+type = "expr"
+args = ["$0.gen($0)"]
+position = [3767.6, 1676.35]
+connections = ["5551d3ed2caa466f.out0->a81d5e94c0631e58.0", "5551d3ed2caa466f.post_bang->1a6c0c7662614047.bang_in0", "5551d3ed2caa466f.out0->1a6c0c7662614047_s1.1"]
+
+[[node]]
+guid = "a81d5e94c0631e58"
+type = "select"
+args = ["$0.e", "$2", "$1"]
+position = [3781.35, 1891.39]
+connections = ["a81d5e94c0631e58.as_lambda->e6a647578747ca01.fn"]
+
+[[node]]
+guid = "1a6c0c7662614047"
+type = "store!"
+args = ["$0"]
+position = [3962.49, 1744.95]
+
+[[node]]
+guid = "8a90b92d139d3284"
+type = "dup"
+position = [3811.81, 1541.74]
+connections = ["8a90b92d139d3284.out0->5551d3ed2caa466f.0", "8a90b92d139d3284.out0->b78d3f85fe8f654a.value", "8a90b92d139d3284.out0->59970d1e2f56ca0f_s1.0"]
+
+[[node]]
+guid = "59970d1e2f56ca0f"
+type = "erase"
+args = ["$oscs"]
+position = [3839.65, 1835.09]
+connections = ["59970d1e2f56ca0f.out0->a81d5e94c0631e58.2"]
+
+[[node]]
+guid = "cd25eae0b4b57597"
+type = "label"
+args = ["Types"]
+position = [751.907, 224.758]
+
+[[node]]
+guid = "bcf571394c110f9b"
+type = "label"
+args = ["globals"]
+position = [754.75, 663.398]
+
+[[node]]
+guid = "87b12613436dd250"
+type = "label"
+args = ["Events"]
+position = [1675.63, 343.249]
+
+[[node]]
+guid = "b78d3f85fe8f654a"
+type = "next"
+position = [3804.16, 1784.82]
+connections = ["b78d3f85fe8f654a.out0->a81d5e94c0631e58.1"]
+
+[[node]]
+guid = "e74cec1135c3a130"
+type = "decl_local"
+args = ["mixs", "f32"]
+position = [3599.65, 1422.97]
+connections = ["e74cec1135c3a130.out0->1a6c0c7662614047.0", "e74cec1135c3a130.bang0->a8da10815e6d03ff.bang_in0", "e74cec1135c3a130.out0->436d853ee8e34fa5.0", "e74cec1135c3a130.out0->1a6f72206be6c366.0", "e74cec1135c3a130.out0->1a6c0c7662614047_s1.0", "e74cec1135c3a130.out0->1a6f72206be6c366_s1.0", "e74cec1135c3a130.bang_in0->store_atick.value"]
+
+[[node]]
+guid = "809ab9a7f7fa1b7e"
+type = "output_mix!"
+position = [3590.62, 2660.6]
+
+[[node]]
+guid = "e22ffceeeeebc676"
+type = "decl_var"
+args = ["delay_line", "array<f32,48000>"]
+position = [1106.47, 690.426]
+
+[[node]]
+guid = "d48027929dca66a0"
+type = "decl_var"
+args = ["delay_line_pos", "s32"]
+position = [1107.75, 751.727]
+
+[[node]]
+guid = "0a536bc07ab8e6ba"
+type = "expr"
+args = ["$delay_line_pos", "mod($delay_line_pos+1,$delay_line_size)"]
+position = [3705.11, 2332.2]
+connections = ["0a536bc07ab8e6ba.post_bang->a34b262f215ea808.bang_in0", "0a536bc07ab8e6ba.out1->a34b262f215ea808.value", "0a536bc07ab8e6ba.out1->436d853ee8e34fa5.1", "0a536bc07ab8e6ba.out0->694aaecf19c1f260.0"]
+
+[[node]]
+guid = "a34b262f215ea808"
+type = "store!"
+args = ["$delay_line_pos"]
+position = [4299.05, 2394.49]
+
+[[node]]
+guid = "694aaecf19c1f260"
+type = "store!"
+args = ["$delay_line[$0]"]
+position = [3572.9, 2594.95]
+connections = ["694aaecf19c1f260.bang0->809ab9a7f7fa1b7e.bang_in0"]
+
+[[node]]
+guid = "436d853ee8e34fa5"
+type = "expr"
+args = ["$0+$delay_line[$1]*0.7f"]
+position = [3646.02, 2523.26]
+connections = ["436d853ee8e34fa5.out0->809ab9a7f7fa1b7e.value", "436d853ee8e34fa5.out0->694aaecf19c1f260.value"]
+
+[[node]]
+guid = "a250677580c18180"
+type = "decl_var"
+args = ["delay_line_size", "s32"]
+position = [1111.46, 801.996]
+
+[[node]]
+guid = "20115e980dcd5b53"
+type = "decl_event"
+args = ["start", "(args:vector<string> envs:vector<string>)", "->", "void"]
+position = [1667.98, 389.477]
+
+[[node]]
+guid = "ddaf4497489a54c2"
+type = "event!"
+args = ["~start"]
+position = [771.53, 1196.46]
+connections = ["ddaf4497489a54c2.bang0->45df349a6ae05f56.bang_in0"]
+
+[[node]]
+guid = "45df349a6ae05f56"
+type = "store!"
+args = ["$delay_line_size"]
+position = [785.327, 1265.73]
+connections = ["45df349a6ae05f56.bang0->357217da0fbaf413.bang_in0"]
+
+[[node]]
+guid = "0e02c497002f40c2"
+type = "decl_var"
+args = ["oscs_mutex", "mutex"]
+position = [756.636, 792.818]
+
+[[node]]
+guid = "a8da10815e6d03ff"
+type = "lock!"
+args = ["$oscs_mutex"]
+position = [3502.01, 2048.75]
+connections = ["a8da10815e6d03ff.bang0->694aaecf19c1f260.bang_in0"]
+
+[[node]]
+guid = "0352425ee9785174"
+type = "label"
+args = ["Imports"]
+position = [1681.12, 632.204]
+
+[[node]]
+guid = "1e3de9365a34db20"
+type = "decl_import"
+args = ["std/imgui"]
+position = [1683.32, 681.704]
+
+[[node]]
+guid = "scan_keys_node"
+type = "call!"
+args = ["$imgui_scan_piano_keys", "$klavie_down", "$klavie_up"]
+position = [5734.13, 1486.7]
+connections = ["scan_keys_node.bang0->4320923f2a319682.bang_in0", "scan_keys_node.bang_in0->store_vtick.value"]
+
+[[node]]
+guid = "4320923f2a319682"
+type = "call!"
+args = ["$imgui_begin_fullscreen"]
+position = [5734.13, 1556.7]
+connections = ["4320923f2a319682.bang0->gui_slider_node.bang_in0"]
+
+[[node]]
+guid = "gui_slider_node"
+type = "call!"
+args = ["$imgui_slider_int", "\"Delay Size\"", "$delay_line_size", "1", "48000"]
+position = [5734.13, 1629.7]
+connections = ["gui_slider_node.bang0->plot_delay_node.bang_in0"]
+
+[[node]]
+guid = "expr_delay_ref"
+type = "expr"
+args = ["$delay_line"]
+position = [5910.42, 1704.34]
+connections = ["expr_delay_ref.out0->cast_delay_node.value"]
+
+[[node]]
+guid = "cast_delay_node"
+type = "cast"
+args = ["vector<f32>"]
+position = [5829.83, 1780.5]
+connections = ["cast_delay_node.out0->plot_delay_node.1", "cast_delay_node.out0->plot_delay_node.0"]
+
+[[node]]
+guid = "plot_delay_node"
+type = "call!"
+args = ["$imgui_plot_lines", "\"Delay Line\"", "$0", "0", "$delay_line_size", "-0.05f", "0.05f", "\"\""]
+position = [5734.13, 1846.7]
+connections = ["plot_delay_node.bang0->a51ae6d45b7a2ef9.bang_in0"]
+
+[[node]]
+guid = "gui_end_node"
+type = "call!"
+args = ["$imgui_end"]
+position = [5785.38, 3390.85]
+
+[[node]]
+guid = "c5373cf3d77e7979"
+type = "decl_var"
+args = ["klavie_down", "(midi_key:u8 freq:f32)", "->", "void"]
+position = [757.37, 851.95]
+
+[[node]]
+guid = "48a2c13cec7e5013"
+type = "decl_var"
+args = ["klavie_up", "(midi_key:u8)", "->", "void"]
+position = [761, 914]
+
+[[node]]
+guid = "daa77173e91ec011"
+type = "lock"
+args = ["$oscs_mutex"]
+position = [1202.59, 2435.03]
+connections = ["daa77173e91ec011.as_lambda->f79f6fb421f321f0.value"]
+
+[[node]]
+guid = "b475716d61845870"
+type = "expr"
+args = ["$0:midi_key", "$1:freq"]
+position = [1284.42, 1561.27]
+connections = ["b475716d61845870.out0->203.0", "b475716d61845870.out0->203.key", "b475716d61845870.out0->464e34210d6248b6.$0", "b475716d61845870.out0->464e34210d6248b6.item", "b475716d61845870.out1->cc68627fd36abb94.0", "b475716d61845870.out0->a3cda7b2eaa0cc3c.0", "b475716d61845870.out0->cb9a285934d2d07b.0", "b475716d61845870.out0->182cde3e88fc2aec.0"]
+
+[[node]]
+guid = "f79f6fb421f321f0"
+type = "store!"
+args = ["$klavie_down"]
+position = [1224.44, 1270.42]
+connections = ["f79f6fb421f321f0.bang0->487ba455bf42a84c.bang_in0"]
+
+[[node]]
+guid = "487ba455bf42a84c"
+type = "store!"
+args = ["$klavie_up"]
+position = [2527.9, 1282.56]
+connections = ["487ba455bf42a84c.bang0->store_atick.bang_in0"]
+
+[[node]]
+guid = "c7381b7375adf0ce"
+type = "select"
+position = [2734.55, 1619.72]
+connections = ["c7381b7375adf0ce.as_lambda->487ba455bf42a84c.value"]
+
+[[node]]
+guid = "a4638623e82d8e17"
+type = "expr"
+args = ["$keys[$0].stop($keys[$0])"]
+position = [2750.22, 1521.28]
+connections = ["a4638623e82d8e17.out0->c7381b7375adf0ce.if_true", "a4638623e82d8e17.post_bang->8bbb6e2930a59a81.bang_in0"]
+
+[[node]]
+guid = "8bbb6e2930a59a81"
+type = "erase!"
+args = ["$keys"]
+position = [3070.95, 1557.71]
+
+[[node]]
+guid = "d08c1c1fdad95ee4"
+type = "expr"
+args = ["$0:midi_key"]
+position = [2731.42, 1400.77]
+connections = ["d08c1c1fdad95ee4.out0->a4638623e82d8e17.0", "d08c1c1fdad95ee4.out0->081b2e7c7b05405a.0", "d08c1c1fdad95ee4.out0->8bbb6e2930a59a81.key"]
+
+[[node]]
+guid = "081b2e7c7b05405a"
+type = "expr"
+args = ["$keys?[$0]"]
+position = [2697.56, 1472.1]
+connections = ["081b2e7c7b05405a.out0->c7381b7375adf0ce.condition"]
+
+[[node]]
+guid = "7771f927d195eceb"
+type = "void"
+position = [2826.45, 1558.83]
+connections = ["7771f927d195eceb.out0->c7381b7375adf0ce.if_false"]
+
+[[node]]
+guid = "a3cda7b2eaa0cc3c"
+type = "select"
+args = ["$keys?[$0]"]
+position = [1297.72, 2337.6]
+connections = ["a3cda7b2eaa0cc3c.as_lambda->daa77173e91ec011.fn", "a3cda7b2eaa0cc3c.post_bang->182cde3e88fc2aec.bang_in0"]
+
+[[node]]
+guid = "cb9a285934d2d07b"
+type = "expr"
+args = ["$keys[$0].stop($keys[$0])"]
+position = [1345.11, 2180.75]
+connections = ["cb9a285934d2d07b.out0->a3cda7b2eaa0cc3c.if_true"]
+
+[[node]]
+guid = "182cde3e88fc2aec"
+type = "store!"
+args = ["$keys[$0]"]
+position = [1727.27, 2235.78]
+
+[[node]]
+guid = "225009e132d0e7d5"
+type = "void"
+position = [1391.84, 2252.47]
+connections = ["225009e132d0e7d5.out0->a3cda7b2eaa0cc3c.if_false"]
+
+[[node]]
+guid = "9facb8e5368e52c0"
+type = "decl_import"
+args = ["std/gui"]
+position = [1687, 735]
+
+[[node]]
+guid = "c17ebd09a44700e1"
+type = "decl_var"
+args = ["audio_tick", "()", "->", "void"]
+position = [763.229, 970.563]
+
+[[node]]
+guid = "50417175624d2751"
+type = "decl_var"
+args = ["video_tick", "()", "->", "void"]
+position = [766.535, 1028.41]
+
+[[node]]
+guid = "store_atick"
+type = "store!"
+args = ["$audio_tick"]
+position = [3338.42, 1279.93]
+connections = ["store_atick.bang0->store_vtick.bang_in0"]
+
+[[node]]
+guid = "store_vtick"
+type = "store!"
+args = ["$video_tick"]
+position = [4680.05, 1298.48]
+connections = ["store_vtick.bang0->dcdb8bb52c9d14ef.bang_in0"]
+
+[[node]]
+guid = "av_window_node"
+type = "call!"
+args = ["$av_create_window", "\"Multifader\"", "$audio_tick", "48000", "1", "$video_tick", "3000", "1800", "$on_quit"]
+position = [4808.12, 2496.31]
+
+[[node]]
+guid = "dcdb8bb52c9d14ef"
+type = "store!"
+args = ["$on_quit"]
+position = [4799.81, 2260.41]
+connections = ["dcdb8bb52c9d14ef.bang0->av_window_node.bang_in0"]
+
+[[node]]
+guid = "decl_on_quit"
+type = "decl_var"
+args = ["on_quit", "()", "->", "void"]
+position = [766.535, 1080]
+
+[[node]]
+guid = "56eb5d29abcb9fb0"
+type = "void"
+position = [4965.91, 2377.32]
+connections = ["56eb5d29abcb9fb0.as_lambda->dcdb8bb52c9d14ef.value"]
+
+[[node]]
+guid = "6b5fdc38a5fc5115"
+type = "decl_type"
+args = ["multifader_def", "vector<osc_desc>"]
+position = [764.144, 589.413]
+
+[[node]]
+guid = "1c6d5005eefdccc5"
+type = "decl_var"
+args = ["multifader", "multifader_def"]
+position = [1132.47, 989.287]
+
+[[node]]
+guid = "50bc0ecc6382fdc3"
+type = "resize!"
+args = ["$multifader"]
+position = [782.61, 1450.79]
+connections = ["50bc0ecc6382fdc3.bang0->f79f6fb421f321f0.bang_in0"]
+
+[[node]]
+guid = "e841786b4853bdb4"
+type = "decl_var"
+args = ["multifader_size", "s32"]
+position = [1147.34, 1054.64]
+
+[[node]]
+guid = "357217da0fbaf413"
+type = "store!"
+args = ["$multifader_size"]
+position = [788.074, 1361.31]
+connections = ["357217da0fbaf413.bang0->50bc0ecc6382fdc3.bang_in0"]
+
+[[node]]
+guid = "39914660d17b5167"
+type = "call!"
+args = ["$imgui_slider_int", "\"Mutlifader Size\"", "$multifader_size", "4", "128"]
+position = [6063.67, 2007.49]
+connections = ["39914660d17b5167.bang0->a59d80498369a652.bang_in0", "39914660d17b5167.bang_in0->a51ae6d45b7a2ef9.fn", "39914660d17b5167.result->209892e6ebff530f.condition"]
+
+[[node]]
+guid = "209892e6ebff530f"
+type = "select"
+position = [6095.42, 2193]
+connections = ["209892e6ebff530f.out0->a59d80498369a652.value"]
+
+[[node]]
+guid = "f6fbbfe3a7e17151"
+type = "resize!"
+args = ["$multifader"]
+position = [6340.46, 2122.88]
+
+[[node]]
+guid = "0c130b04cc412034"
+type = "void"
+position = [6203.3, 2095.52]
+connections = ["0c130b04cc412034.out0->209892e6ebff530f.if_true", "0c130b04cc412034.post_bang->f6fbbfe3a7e17151.bang_in0"]
+
+[[node]]
+guid = "7f15b4f0a619eb95"
+type = "void"
+position = [6232.21, 2144.4]
+connections = ["7f15b4f0a619eb95.out0->209892e6ebff530f.if_false"]
+
+[[node]]
+guid = "a59d80498369a652"
+type = "discard!"
+position = [6073.6, 2264.42]
+connections = ["a59d80498369a652.bang0->4720763d79742017.bang_in0"]
+
+[[node]]
+guid = "3e18ce10a1107fe7"
+type = "iterate!"
+args = ["$multifader"]
+position = [7020.39, 2701.99]
+
+[[node]]
+guid = "65e4fae39fe80c0d"
+type = "decl_type"
+args = ["osc_desc", "freq:f32", "amplitude:f32", "p:f32"]
+position = [765.673, 544.81]
+
+[[node]]
+guid = "9a0bfeb228f9bc53"
+type = "call!"
+args = ["$imgui_vslider_float", "\"##\"+$0+$1", "16", "256", "$2", "0", "1"]
+position = [7271.66, 2639.09]
+connections = ["9a0bfeb228f9bc53.bang0->851ac0b61d2eb6be.bang_in0"]
+
+[[node]]
+guid = "85bb24d2452da6fe"
+type = "dup"
+position = [7156.52, 2516.92]
+connections = ["85bb24d2452da6fe.post_bang->9a0bfeb228f9bc53.bang_in0", "85bb24d2452da6fe.out0->65c4b1e6907a0a5e.value", "85bb24d2452da6fe.out0->79853828b0c5ab9f.1"]
+
+[[node]]
+guid = "65c4b1e6907a0a5e"
+type = "next"
+position = [7135.89, 2646.03]
+connections = ["65c4b1e6907a0a5e.as_lambda->3e18ce10a1107fe7.fn"]
+
+[[node]]
+guid = "51052e5d2ff99a1f"
+type = "str"
+position = [7335.38, 2520.81]
+connections = ["51052e5d2ff99a1f.post_bang->e17587a2b42a703c.bang_in0", "51052e5d2ff99a1f.out0->9a0bfeb228f9bc53.1"]
+
+[[node]]
+guid = "e4b9fd32bb57d6d8"
+type = "decl_local"
+args = ["slider_id", "u8"]
+position = [7010.06, 2398.83]
+connections = ["e4b9fd32bb57d6d8.bang0->3e18ce10a1107fe7.bang_in0", "e4b9fd32bb57d6d8.out0->51052e5d2ff99a1f.value", "e4b9fd32bb57d6d8.out0->e17587a2b42a703c.0", "e4b9fd32bb57d6d8.out0->e17587a2b42a703c_s1.0"]
+
+[[node]]
+guid = "e17587a2b42a703c"
+type = "store!"
+args = ["$0"]
+position = [7499.37, 2528.73]
+
+[[node]]
+guid = "851ac0b61d2eb6be"
+type = "call!"
+args = ["$imgui_same_line"]
+position = [7270.64, 2715.54]
+
+[[node]]
+guid = "300199e139aabda0"
+type = "call!"
+args = ["$imgui_new_line"]
+position = [6095.67, 2878.5]
+connections = ["300199e139aabda0.bang0->ba3d75dccf927ab5.bang", "300199e139aabda0.bang0->ba3d75dccf927ab5.bang_in0"]
+
+[[node]]
+guid = "4720763d79742017"
+type = "call!"
+args = ["$imgui_push_style_var_vec2", "14", "0", "0"]
+position = [6071.19, 2354.28]
+connections = ["4720763d79742017.bang0->e9db4a8dfeb209ff.bang_in0"]
+
+[[node]]
+guid = "ee2d2e3176a4f3f2"
+type = "call!"
+args = ["$imgui_pop_style_var", "1"]
+position = [6111.22, 3481.24]
+
+[[node]]
+guid = "a51ae6d45b7a2ef9"
+type = "lock!"
+args = ["$oscs_mutex"]
+position = [5744.31, 2114.25]
+connections = ["a51ae6d45b7a2ef9.bang0->gui_end_node.bang_in0"]
+
+[[node]]
+guid = "611f1c8e7cfcd0f0"
+type = "iterate!"
+args = ["$multifader"]
+position = [3887.82, 2162.23]
+
+[[node]]
+guid = "4b9cd8adfc324a01"
+type = "store!"
+args = ["$0.p"]
+position = [4225.53, 2053.54]
+connections = ["4b9cd8adfc324a01.bang0->1a6f72206be6c366.bang_in0"]
+
+[[node]]
+guid = "01472aa1a7d18724"
+type = "dup"
+position = [4021.03, 1936.96]
+connections = ["01472aa1a7d18724.out0->4b9cd8adfc324a01.0", "01472aa1a7d18724.out0->fbf49c9b139d5aaa.value", "01472aa1a7d18724.out0->a1743af9670fc2d6.0", "01472aa1a7d18724.post_bang->a1743af9670fc2d6.bang_in0", "01472aa1a7d18724.out0->4b9cd8adfc324a01_s1.0"]
+
+[[node]]
+guid = "a1743af9670fc2d6"
+type = "expr!"
+args = ["sin($0.p)*$0.amplitude/32.f"]
+position = [4222.52, 1979.72]
+connections = ["a1743af9670fc2d6.bang0->4b9cd8adfc324a01.bang_in0", "a1743af9670fc2d6.out0->1a6f72206be6c366_s1.1"]
+
+[[node]]
+guid = "fbf49c9b139d5aaa"
+type = "next"
+position = [3989.18, 2056.41]
+connections = ["fbf49c9b139d5aaa.as_lambda->611f1c8e7cfcd0f0.fn"]
+
+[[node]]
+guid = "1a6f72206be6c366"
+type = "store!"
+args = ["$0"]
+position = [4207.49, 2175.07]
+
+[[node]]
+guid = "72264fc5624eb3aa"
+type = "call!"
+args = ["$imgui_button", "\"Randomize Ampl\""]
+position = [6091.68, 2572.64]
+connections = ["72264fc5624eb3aa.bang0->abe3b1a0f76b590d.bang_in0", "72264fc5624eb3aa.result->abe3b1a0f76b590d.condition"]
+
+[[node]]
+guid = "df17a75311fbaaf2"
+type = "call!"
+args = ["$imgui_button", "\"Randomize Freq\""]
+position = [6101.33, 3144.01]
+connections = ["df17a75311fbaaf2.result->4df29b2c1bca35b1.condition", "df17a75311fbaaf2.bang0->4df29b2c1bca35b1.bang", "df17a75311fbaaf2.bang0->4df29b2c1bca35b1.bang_in0"]
+
+[[node]]
+guid = "abe3b1a0f76b590d"
+type = "select!"
+position = [6091.24, 2639]
+connections = ["abe3b1a0f76b590d.bang0->300199e139aabda0.bang_in0", "abe3b1a0f76b590d.bang1->433d30f3b4ade795.bang_in0"]
+
+[[node]]
+guid = "ab643c7f0a091a8e"
+type = "iterate!"
+args = ["$multifader"]
+position = [6765.57, 3076.09]
+
+[[node]]
+guid = "ebba6e8412f916f9"
+type = "store!"
+args = ["$0($1)"]
+position = [7066.59, 2981.64]
+
+[[node]]
+guid = "9d7b3263da1c14a9"
+type = "next"
+position = [6861.18, 2985.02]
+connections = ["9d7b3263da1c14a9.as_lambda->ab643c7f0a091a8e.fn"]
+
+[[node]]
+guid = "6c3bb45f75189e8e"
+type = "dup"
+position = [6864.33, 2803.72]
+connections = ["6c3bb45f75189e8e.out0->9d7b3263da1c14a9.value", "6c3bb45f75189e8e.post_bang->ebba6e8412f916f9.bang_in0", "6c3bb45f75189e8e.out0->ebba6e8412f916f9.1"]
+
+[[node]]
+guid = "831e483b4e4602dc_s1"
+type = "expr"
+args = ["$0"]
+position = [1562.05, 2039.45]
+connections = ["831e483b4e4602dc_s1.out0->831e483b4e4602dc.value"]
+
+[[node]]
+guid = "f35abbba8775f1de_s1"
+type = "expr"
+args = ["$0.p+$0.pstep"]
+position = [1925.37, 1393.72]
+connections = ["f35abbba8775f1de_s1.out0->f35abbba8775f1de.value"]
+
+[[node]]
+guid = "3e4a660fc6f1a8d2_s1"
+type = "expr"
+args = ["$0.a*$0.astep"]
+position = [1938.57, 1480.26]
+connections = ["3e4a660fc6f1a8d2_s1.out0->3e4a660fc6f1a8d2.value"]
+
+[[node]]
+guid = "1a6c0c7662614047_s1"
+type = "expr"
+args = ["$0+$1.s"]
+position = [3763.4, 1724.04]
+connections = ["1a6c0c7662614047_s1.out0->1a6c0c7662614047.value"]
+
+[[node]]
+guid = "59970d1e2f56ca0f_s1"
+type = "expr"
+args = ["$0"]
+position = [3639.65, 1775.09]
+connections = ["59970d1e2f56ca0f_s1.out0->59970d1e2f56ca0f.key"]
+
+[[node]]
+guid = "45df349a6ae05f56_s1"
+type = "expr"
+args = ["2048*16"]
+position = [585.327, 1205.73]
+connections = ["45df349a6ae05f56_s1.out0->45df349a6ae05f56.value"]
+
+[[node]]
+guid = "50bc0ecc6382fdc3_s1"
+type = "expr"
+args = ["32"]
+position = [582.61, 1390.79]
+connections = ["50bc0ecc6382fdc3_s1.out0->50bc0ecc6382fdc3.size"]
+
+[[node]]
+guid = "357217da0fbaf413_s1"
+type = "expr"
+args = ["32"]
+position = [588.074, 1301.31]
+connections = ["357217da0fbaf413_s1.out0->357217da0fbaf413.value"]
+
+[[node]]
+guid = "f6fbbfe3a7e17151_s1"
+type = "expr"
+args = ["$multifader_size"]
+position = [6176.93, 2049.3]
+connections = ["f6fbbfe3a7e17151_s1.out0->f6fbbfe3a7e17151.size"]
+
+[[node]]
+guid = "e17587a2b42a703c_s1"
+type = "expr"
+args = ["$0+1"]
+position = [7299.37, 2468.73]
+connections = ["e17587a2b42a703c_s1.out0->e17587a2b42a703c.value"]
+
+[[node]]
+guid = "4b9cd8adfc324a01_s1"
+type = "expr"
+args = ["$0.p+pi*$0.freq/(2*48000)"]
+position = [4025.53, 1993.54]
+connections = ["4b9cd8adfc324a01_s1.out0->4b9cd8adfc324a01.value"]
+
+[[node]]
+guid = "1a6f72206be6c366_s1"
+type = "expr"
+args = ["$0+$1"]
+position = [4007.49, 2115.07]
+connections = ["1a6f72206be6c366_s1.out0->1a6f72206be6c366.value"]
+
+[[node]]
+guid = "ebba6e8412f916f9_s1"
+type = "expr"
+args = ["rand(0.1f,0.7f)"]
+position = [7085.84, 2889.53]
+connections = ["ebba6e8412f916f9_s1.out0->ebba6e8412f916f9.value"]
+
+[[node]]
+guid = "e9db4a8dfeb209ff"
+type = "expr!"
+args = ["$0(\"amp\", $1)"]
+position = [6092.68, 2507.94]
+connections = ["e9db4a8dfeb209ff.bang0->72264fc5624eb3aa.bang_in0"]
+
+[[node]]
+guid = "cb8637e31b8a36d8"
+type = "expr"
+args = ["$0:name", "$1:field_accessor"]
+position = [6627.61, 2412.77]
+connections = ["cb8637e31b8a36d8.post_bang->e4b9fd32bb57d6d8.bang_in0", "cb8637e31b8a36d8.as_lambda->e9db4a8dfeb209ff.0", "cb8637e31b8a36d8.out0->9a0bfeb228f9bc53.0", "cb8637e31b8a36d8.as_lambda->ba3d75dccf927ab5.0", "cb8637e31b8a36d8.out1->79853828b0c5ab9f.0"]
+
+[[node]]
+guid = "8ced1cd8fdea758d"
+type = "expr"
+args = ["$0.amplitude"]
+position = [6228.13, 2429.45]
+connections = ["8ced1cd8fdea758d.as_lambda->e9db4a8dfeb209ff.1"]
+
+[[node]]
+guid = "ba3d75dccf927ab5"
+type = "expr!"
+args = ["$0(\"freq\", $1)"]
+position = [6100.95, 3041.59]
+connections = ["ba3d75dccf927ab5.bang0->df17a75311fbaaf2.bang_in0"]
+
+[[node]]
+guid = "38bd53d2956f0e0c"
+type = "expr"
+args = ["$0.freq"]
+position = [6188.32, 2957.84]
+connections = ["38bd53d2956f0e0c.as_lambda->ba3d75dccf927ab5.1"]
+
+[[node]]
+guid = "111aa0bf8b2740bd"
+type = "expr"
+args = ["$0:field_accessor"]
+position = [6566.82, 2800.21]
+connections = ["111aa0bf8b2740bd.out0->ebba6e8412f916f9.0", "111aa0bf8b2740bd.as_lambda->433d30f3b4ade795.0", "111aa0bf8b2740bd.as_lambda->a09da930c570b98e.0", "111aa0bf8b2740bd.post_bang->ab643c7f0a091a8e.bang_in0"]
+
+[[node]]
+guid = "433d30f3b4ade795"
+type = "expr!"
+args = ["$0($1)"]
+position = [6118.85, 2764.02]
+
+[[node]]
+guid = "1815fcaa1415916b"
+type = "expr"
+args = ["$0.amplitude"]
+position = [6173.25, 2683.38]
+connections = ["1815fcaa1415916b.as_lambda->433d30f3b4ade795.1"]
+
+[[node]]
+guid = "4df29b2c1bca35b1"
+type = "select!"
+position = [6104.98, 3284.77]
+connections = ["4df29b2c1bca35b1.bang1->a09da930c570b98e.bang_in0", "4df29b2c1bca35b1.bang0->ee2d2e3176a4f3f2.bang_in0"]
+
+[[node]]
+guid = "a09da930c570b98e"
+type = "expr!"
+args = ["$0($1)"]
+position = [6160.61, 3383.78]
+
+[[node]]
+guid = "faf02beaaef149ea"
+type = "expr"
+args = ["$0.amplitude"]
+position = [6222.99, 3332.15]
+connections = ["faf02beaaef149ea.as_lambda->a09da930c570b98e.1"]
+
+[[node]]
+guid = "79853828b0c5ab9f"
+type = "expr"
+args = ["$0($1)"]
+position = [7338.67, 2585.59]
+connections = ["79853828b0c5ab9f.out0->9a0bfeb228f9bc53.2"]
+

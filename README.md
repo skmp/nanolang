@@ -1,28 +1,36 @@
-# nanolang
+# Organic Assembler
 
-A visual dataflow programming language with a node-based editor, standalone compiler, and runtime. Programs are authored as flow graphs in `.nano` files and compiled to C++. See an [example program](scenes/klavier/main.nano) and the full [language specification](nanolang.md).
+An Operating System for Instruments (Όργανα), written in attolang. Instruments are multimodal dataflow programs — authored as node graphs possibly using the **attoflow** editor, compiled, and run in real time.
 
-![nanolang](https://github.com/skmp/nanolang/blob/main/docs/nanolang.png)
+Each instrument is a self-contained `.atto` program that defines its Functionality. The System compiles these programs runs them with hot-reload support.
+
+<img width="3840" height="2088" alt="nanolang" src="https://github.com/user-attachments/assets/8cdf22fc-34e3-4b70-9df0-a1fdd2024ec4" />
+
+[![Youtube/the Organic Assembler](https://img.youtube.com/vi/ymzuD-oekFM/0.jpg)](https://www.youtube.com/watch?v=ymzuD-oekFM)
+
+Listen to the [introductory podcast](docs/podcasts/introducing-orgasm.md) — *Growing Instruments with the Organic Assembler* ([SoundCloud](https://soundcloud.com/poiitidis/growing-instruments-with-the), [YouTube](https://youtu.be/ymzuD-oekFM)).
+
+See an [example instrument](scenes/klavier/main.atto) and the full [language specification](docs/attolang.md).
 
 ## Components
 
 | Target | Description |
 |--------|-------------|
-| **nanolang** | Core library — type system, expression parser, type inference, serialization |
-| **nanoflow** | Visual node editor (SDL3 + Dear ImGui) |
-| **nanoc** | Standalone compiler (`.nano` → C++) |
-| **nanoruntime** | Runtime with GUI and ImGui bindings |
+| **attolang** | Core language library — type system, expression parser, type inference, serialization |
+| **attoflow** | Visual node editor for authoring instruments (SDL3 + Dear ImGui) |
+| **attoc** | Standalone compiler (`.atto` → C++) |
+| **attoruntime** | Instrument runtime with GUI and audio bindings |
 
 ## Language Highlights
 
-- **Sigil-based value categories** — `%` data, `&` reference, `^` iterator, `@` lambda, `#` enum, `!` bang (trigger), `~` event
 - **Rich type system** — scalars (`u8`–`s64`, `f32`/`f64`, `bool`, `string`), containers (`vector`, `map`, `list`, `set`, `queue`), fixed-size arrays, tensors, named struct types, function types
+- **First-class literals, symbols, and types** — `literal<T,V>`, `symbol<name,type>`, `type<T>` as compile-time values
 - **Bidirectional type inference** with automatic integer upcasting and iterator-to-reference decay
 - **Bang-driven control flow** — nodes postfixed with `!` have explicit execution ordering via bang signals
 - **Inline expressions** — node arguments can embed literals, variable refs, and sub-expressions directly
 - **Lambda construction** — expression nodes can be captured as callable lambdas with automatic capture/parameter resolution
 - **FFI support** — declare external C functions and call them from the graph
-- **Standard library modules** — e.g. `decl_import std/imgui` for ImGui bindings
+- **Standard library modules** — e.g. `decl_import "std/imgui"` for ImGui bindings
 
 ## Building
 
@@ -47,6 +55,12 @@ git clone https://github.com/microsoft/vcpkg.git
 cmake -B build -DCMAKE_TOOLCHAIN_FILE=vcpkg/scripts/buildsystems/vcpkg.cmake
 cmake --build build --parallel --config Release
 ```
+
+## Instructions
+
+New to the project? Start with the [Instructions](docs/instructions.md) — a guide to interpreting and following instructions, operating on the codebase, and building instruments with the Organic Assembler. It covers everything from the build system and architectural layers to the anatomy of an instrument and the audio callback pattern.
+
+For naming philosophy, see [Names](docs/names.md). For the full documentation suite: [Architecture](docs/architecture.md), [Language Spec](docs/attolang.md), [Patterns](docs/patterns.md), [Thinking](docs/thinking.md), [Style](docs/style.md), [Coding](docs/coding.md), [Changelog](docs/changelog.md).
 
 ## License
 
