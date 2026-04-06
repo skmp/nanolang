@@ -6,3 +6,4 @@
 .generated/
 output/
 imgui.ini
+.atto/
